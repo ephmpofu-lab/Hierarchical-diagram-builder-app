@@ -2,6 +2,12 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
+class Comment(BaseModel):
+    id: str
+    text: str
+    created_at: str
+
+
 class Node(BaseModel):
     id: str
     label: str
@@ -11,6 +17,15 @@ class Node(BaseModel):
     canvas_x: float = 0
     canvas_y: float = 0
     collapsed: bool = False
+
+    node_type: Optional[str] = None
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    complexity: Optional[str] = None
+    risk_level: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    owner: Optional[str] = None
+    comments: List[Comment] = Field(default_factory=list)
 
 
 class Reference(BaseModel):
@@ -30,6 +45,20 @@ class ReferenceCreate(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class ReferenceUpdate(BaseModel):
+    from_: Optional[str] = Field(default=None, alias="from")
+    to: Optional[str] = None
+    label: Optional[str] = None
+
+    model_config = {"populate_by_name": True}
+
+
+class ActivityEntry(BaseModel):
+    id: str
+    timestamp: str
+    message: str
+
+
 class Project(BaseModel):
     id: str
     name: str
@@ -37,6 +66,7 @@ class Project(BaseModel):
     updated_at: str
     nodes: Dict[str, Node] = Field(default_factory=dict)
     references: List[Reference] = Field(default_factory=list)
+    activity_log: List[ActivityEntry] = Field(default_factory=list)
 
 
 class ProjectSummary(BaseModel):
@@ -64,6 +94,13 @@ class NodeUpdate(BaseModel):
     label: Optional[str] = None
     notes: Optional[str] = None
     collapsed: Optional[bool] = None
+    node_type: Optional[str] = None
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    complexity: Optional[str] = None
+    risk_level: Optional[str] = None
+    tags: Optional[List[str]] = None
+    owner: Optional[str] = None
 
 
 class NodePosition(BaseModel):
@@ -73,6 +110,10 @@ class NodePosition(BaseModel):
 
 class NodeWithLevel(Node):
     level: int
+
+
+class CommentCreate(BaseModel):
+    text: str
 
 
 class TemplateNode(BaseModel):
@@ -100,3 +141,17 @@ class TemplateSummary(BaseModel):
 
 class TemplateCreate(BaseModel):
     name: str
+
+
+class OutlineImport(BaseModel):
+    text: str
+
+
+class ValidationReport(BaseModel):
+    score: int
+    rating: str
+    duplicate_labels: List[str]
+    circular_references: List[List[str]]
+    large_modules: List[str]
+    single_child_nodes: List[str]
+    missing_notes_count: int

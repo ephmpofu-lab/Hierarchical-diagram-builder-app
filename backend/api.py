@@ -1,22 +1,28 @@
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
 from . import storage, tree
 from .models import (
+    Comment,
+    CommentCreate,
     NodeCreate,
     NodePosition,
     NodeUpdate,
     NodeWithLevel,
+    OutlineImport,
     Project,
     ProjectCreate,
     ProjectRename,
     ProjectSummary,
     Reference,
     ReferenceCreate,
+    ReferenceUpdate,
     Template,
     TemplateCreate,
     TemplateSummary,
+    ValidationReport,
 )
 
 router = APIRouter(prefix="/api")
@@ -41,6 +47,21 @@ def api_create_project(body: ProjectCreate):
     return storage.create_project(body.name.strip())
 
 
+@router.post("/projects/from-outline", response_model=Project, status_code=201)
+def api_create_project_from_outline(body: OutlineImport, name: Optional[str] = Query(None)):
+    root_template = tree.parse_outline_text(body.text)
+    project_name = name.strip() if name and name.strip() else root_template.label
+    project = storage.create_project(project_name)
+    root_id = next(iter(project.nodes))
+    project.nodes[root_id].label = root_template.label
+    project.nodes[root_id].notes = root_template.notes
+    for child_template in root_template.children:
+        tree.apply_template(project, root_id, child_template)
+    tree.log_activity(project, f"Created project from imported outline ({len(project.nodes)} nodes)")
+    storage.save_project(project)
+    return project
+
+
 @router.get("/projects/{project_id}")
 def api_get_project(project_id: str):
     project = storage.load_project(project_id)
@@ -51,6 +72,12 @@ def api_get_project(project_id: str):
 def api_get_project_raw(project_id: str):
     """Exact on-disk file format, no computed fields — used for JSON export."""
     return storage.load_project(project_id)
+
+
+@router.get("/projects/{project_id}/validation", response_model=ValidationReport)
+def api_get_validation(project_id: str):
+    project = storage.load_project(project_id)
+    return tree.build_validation_report(project)
 
 
 @router.put("/projects/{project_id}", response_model=Project)
@@ -70,6 +97,7 @@ def api_add_node(project_id: str, body: NodeCreate):
     project = storage.load_project(project_id)
     node_id = str(uuid.uuid4())
     tree.add_node(project, body.parent_id, body.label, node_id, body.insert_after)
+    tree.log_activity(project, f"Added node '{body.label}'")
     storage.save_project(project)
     node = project.nodes[node_id]
     return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node_id))
@@ -78,7 +106,23 @@ def api_add_node(project_id: str, body: NodeCreate):
 @router.put("/projects/{project_id}/nodes/{node_id}", response_model=NodeWithLevel)
 def api_update_node(project_id: str, node_id: str, body: NodeUpdate):
     project = storage.load_project(project_id)
-    tree.rename_node(project, node_id, body.label, body.notes, body.collapsed)
+    old_label = project.nodes[node_id].label
+    tree.rename_node(
+        project,
+        node_id,
+        body.label,
+        body.notes,
+        body.collapsed,
+        body.node_type,
+        body.status,
+        body.priority,
+        body.complexity,
+        body.risk_level,
+        body.tags,
+        body.owner,
+    )
+    if body.label is not None and body.label != old_label:
+        tree.log_activity(project, f"Renamed '{old_label}' to '{body.label}'")
     storage.save_project(project)
     node = project.nodes[node_id]
     return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node_id))
@@ -87,7 +131,9 @@ def api_update_node(project_id: str, node_id: str, body: NodeUpdate):
 @router.delete("/projects/{project_id}/nodes/{node_id}", status_code=204)
 def api_delete_node(project_id: str, node_id: str, promote_children: bool = Query(False)):
     project = storage.load_project(project_id)
+    label = project.nodes[node_id].label
     tree.delete_node(project, node_id, promote_children)
+    tree.log_activity(project, f"Deleted node '{label}'")
     storage.save_project(project)
 
 
@@ -104,6 +150,7 @@ def api_move_node(project_id: str, node_id: str, body: NodePosition):
 def api_indent_node(project_id: str, node_id: str):
     project = storage.load_project(project_id)
     tree.indent_node(project, node_id)
+    tree.log_activity(project, f"Indented '{project.nodes[node_id].label}'")
     storage.save_project(project)
     node = project.nodes[node_id]
     return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node_id))
@@ -113,6 +160,7 @@ def api_indent_node(project_id: str, node_id: str):
 def api_outdent_node(project_id: str, node_id: str):
     project = storage.load_project(project_id)
     tree.outdent_node(project, node_id)
+    tree.log_activity(project, f"Outdented '{project.nodes[node_id].label}'")
     storage.save_project(project)
     node = project.nodes[node_id]
     return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node_id))
@@ -125,6 +173,20 @@ def api_outdent_node(project_id: str, node_id: str):
 def api_add_reference(project_id: str, body: ReferenceCreate):
     project = storage.load_project(project_id)
     ref = tree.add_reference(project, body.from_, body.to, body.label)
+    tree.log_activity(
+        project, f"Linked '{project.nodes[body.from_].label}' -> '{project.nodes[body.to].label}'"
+    )
+    storage.save_project(project)
+    return ref
+
+
+@router.put("/projects/{project_id}/references/{reference_id}", response_model=Reference)
+def api_update_reference(project_id: str, reference_id: str, body: ReferenceUpdate):
+    project = storage.load_project(project_id)
+    ref = tree.update_reference(project, reference_id, body.from_, body.to, body.label)
+    tree.log_activity(
+        project, f"Relinked reference to '{project.nodes[ref.from_].label}' -> '{project.nodes[ref.to].label}'"
+    )
     storage.save_project(project)
     return ref
 
@@ -133,6 +195,26 @@ def api_add_reference(project_id: str, body: ReferenceCreate):
 def api_delete_reference(project_id: str, reference_id: str):
     project = storage.load_project(project_id)
     tree.delete_reference(project, reference_id)
+    storage.save_project(project)
+
+
+# ---------- Comments ----------
+
+
+@router.post("/projects/{project_id}/nodes/{node_id}/comments", response_model=Comment, status_code=201)
+def api_add_comment(project_id: str, node_id: str, body: CommentCreate):
+    project = storage.load_project(project_id)
+    if not body.text.strip():
+        raise HTTPException(status_code=400, detail="Comment text cannot be empty")
+    comment = tree.add_comment(project, node_id, body.text.strip())
+    storage.save_project(project)
+    return comment
+
+
+@router.delete("/projects/{project_id}/nodes/{node_id}/comments/{comment_id}", status_code=204)
+def api_delete_comment(project_id: str, node_id: str, comment_id: str):
+    project = storage.load_project(project_id)
+    tree.delete_comment(project, node_id, comment_id)
     storage.save_project(project)
 
 
@@ -163,6 +245,21 @@ def api_apply_template(project_id: str, node_id: str, template_id: str):
     project = storage.load_project(project_id)
     template = storage.load_template(template_id)
     new_id = tree.apply_template(project, node_id, template.root)
+    tree.log_activity(project, f"Applied template '{template.name}' under '{project.nodes[node_id].label}'")
+    storage.save_project(project)
+    node = project.nodes[new_id]
+    return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, new_id))
+
+
+# ---------- Outline import ----------
+
+
+@router.post("/projects/{project_id}/nodes/{node_id}/import-outline", response_model=NodeWithLevel, status_code=201)
+def api_import_outline_under_node(project_id: str, node_id: str, body: OutlineImport):
+    project = storage.load_project(project_id)
+    root_template = tree.parse_outline_text(body.text)
+    new_id = tree.apply_template(project, node_id, root_template)
+    tree.log_activity(project, f"Imported outline under '{project.nodes[node_id].label}'")
     storage.save_project(project)
     node = project.nodes[new_id]
     return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, new_id))
