@@ -443,6 +443,45 @@ button {
   color: #fff;
 }
 
+.view-mode-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-right: 4px;
+}
+
+.view-mode-toggle .btn {
+  border: none;
+  border-radius: 0;
+}
+
+.view-mode-toggle .btn + .btn {
+  border-left: 1px solid var(--border);
+}
+
+#focusModeBtn.active,
+#fullArchModeBtn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.canvas-svg .faded-node {
+  opacity: 0.35;
+}
+
+.canvas-svg .faded-edge {
+  opacity: 0.35;
+}
+
+.canvas-svg .overflow-note {
+  font-size: 11px;
+  fill: var(--text-muted);
+  text-anchor: middle;
+  user-select: none;
+}
+
 .ref-mode-banner {
   background: var(--warning-bg);
   color: var(--warning-text);

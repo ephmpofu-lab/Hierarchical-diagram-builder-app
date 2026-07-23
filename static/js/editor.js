@@ -56,6 +56,8 @@ const zoomLevelEl = document.getElementById("zoomLevel");
 const fitViewBtn = document.getElementById("fitViewBtn");
 const addGroupBtn = document.getElementById("addGroupBtn");
 const showDepsBtn = document.getElementById("showDepsBtn");
+const focusModeBtn = document.getElementById("focusModeBtn");
+const fullArchModeBtn = document.getElementById("fullArchModeBtn");
 const minimapSvg = document.getElementById("minimapSvg");
 const healthToggleBtn = document.getElementById("healthToggleBtn");
 const healthPanel = document.getElementById("healthPanel");
@@ -95,6 +97,7 @@ let lastViewH = 500;
 let showDependencies = false;
 let expandedGroupOverflow = false; // "show all" for progressive disclosure of many ungrouped children
 let lastValidationReport = null;
+let viewMode = "focus"; // "focus" | "full"
 
 const ROW_GAP = 130;
 const COL_GAP = 24;
@@ -495,9 +498,23 @@ function curvePath(from, to) {
   return `M ${from.x} ${from.y} C ${from.x} ${midY}, ${to.x} ${midY}, ${to.x} ${to.y}`;
 }
 
+// Places `siblings` in a row alongside the already-positioned `activeId` node (which stays
+// put), fanning outward left/right of it, and marks each as faded context — visible, but
+// dimmed, so ancestor context is never fully hidden even though it isn't the active branch.
+function layoutSiblingRow(siblings, activeId, y, positions, fadedIds) {
+  const activeX = positions.get(activeId).x;
+  siblings.forEach((sib, i) => {
+    const side = i % 2 === 0 ? 1 : -1;
+    const rank = Math.floor(i / 2) + 1;
+    positions.set(sib.id, { x: activeX + side * rank * (NODE_W + COL_GAP), y });
+    fadedIds.add(sib.id);
+  });
+}
+
 function computeCanvasLayout(viewW, viewH) {
   const focus = project.nodes[focusedNodeId];
   const parent = focus.parent_id ? project.nodes[focus.parent_id] : null;
+  const grandparent = parent && parent.parent_id ? project.nodes[parent.parent_id] : null;
   const allChildren = focus.children.map((id) => project.nodes[id]);
   const visibleChildren =
     !expandedGroupOverflow && allChildren.length > MAX_UNGROUPED_VISIBLE
@@ -506,8 +523,26 @@ function computeCanvasLayout(viewW, viewH) {
   const hiddenCount = allChildren.length - visibleChildren.length;
 
   const positions = new Map();
+  const fadedIds = new Set();
+  const contextEdges = []; // {fromId, toId} for faded ancestor/sibling context, drawn dimmed
+
   positions.set(focus.id, { x: viewW / 2, y: viewH / 2 });
   if (parent) positions.set(parent.id, { x: viewW / 2, y: viewH / 2 - ROW_GAP });
+  if (grandparent) positions.set(grandparent.id, { x: viewW / 2, y: viewH / 2 - 2 * ROW_GAP });
+
+  // Never fully hide ancestor context: show the focused node's siblings, and the parent's
+  // siblings, faded rather than omitted — only the direct root→focus path and focus's own
+  // children render at full opacity.
+  if (parent) {
+    const focusSiblings = parent.children.filter((id) => id !== focus.id).map((id) => project.nodes[id]);
+    layoutSiblingRow(focusSiblings, focus.id, viewH / 2, positions, fadedIds);
+    for (const sib of focusSiblings) contextEdges.push({ fromId: parent.id, toId: sib.id });
+  }
+  if (grandparent) {
+    const parentSiblings = grandparent.children.filter((id) => id !== parent.id).map((id) => project.nodes[id]);
+    layoutSiblingRow(parentSiblings, parent.id, viewH / 2 - ROW_GAP, positions, fadedIds);
+    for (const sib of parentSiblings) contextEdges.push({ fromId: grandparent.id, toId: sib.id });
+  }
 
   const n = visibleChildren.length;
   const rowOffsetX = n > 0 ? -((n - 1) * (NODE_W + COL_GAP)) / 2 : 0;
@@ -520,16 +555,26 @@ function computeCanvasLayout(viewW, viewH) {
 
   let minX = viewW / 2 - NODE_W / 2;
   let maxX = viewW / 2 + NODE_W / 2;
-  const minY = (parent ? viewH / 2 - ROW_GAP : viewH / 2) - NODE_H / 2;
+  let minY = (grandparent ? viewH / 2 - 2 * ROW_GAP : parent ? viewH / 2 - ROW_GAP : viewH / 2) - NODE_H / 2;
   let maxY = viewH / 2 + NODE_H / 2;
-  for (const child of visibleChildren) {
-    const p = positions.get(child.id);
-    minX = Math.min(minX, p.x - NODE_W / 2);
-    maxX = Math.max(maxX, p.x + NODE_W / 2);
-    maxY = Math.max(maxY, p.y + NODE_H / 2);
+  for (const pos of positions.values()) {
+    minX = Math.min(minX, pos.x - NODE_W / 2);
+    maxX = Math.max(maxX, pos.x + NODE_W / 2);
+    minY = Math.min(minY, pos.y - NODE_H / 2);
+    maxY = Math.max(maxY, pos.y + NODE_H / 2);
   }
 
-  return { focus, parent, visibleChildren, hiddenCount, positions, bounds: { minX, maxX, minY, maxY } };
+  return {
+    focus,
+    parent,
+    grandparent,
+    visibleChildren,
+    hiddenCount,
+    positions,
+    fadedIds,
+    contextEdges,
+    bounds: { minX, maxX, minY, maxY },
+  };
 }
 
 function renderCanvas() {
@@ -542,7 +587,16 @@ function renderCanvas() {
   const viewW = rect.width || 800;
   const viewH = rect.height || 500;
 
-  const { focus, parent, visibleChildren, hiddenCount, positions } = computeCanvasLayout(viewW, viewH);
+  if (viewMode === "full") {
+    renderFullArchitectureCanvas(viewW, viewH);
+  } else {
+    renderFocusCanvas(viewW, viewH);
+  }
+}
+
+function renderFocusCanvas(viewW, viewH) {
+  const { focus, parent, grandparent, visibleChildren, hiddenCount, positions, fadedIds, contextEdges } =
+    computeCanvasLayout(viewW, viewH);
   const visibleIds = new Set(positions.keys());
 
   const viewport = document.createElementNS(SVG_NS, "g");
@@ -555,6 +609,12 @@ function renderCanvas() {
   const refGroup = document.createElementNS(SVG_NS, "g");
   const nodesGroup = document.createElementNS(SVG_NS, "g");
 
+  for (const contextEdge of contextEdges) {
+    const fromPos = positions.get(contextEdge.fromId);
+    const toPos = positions.get(contextEdge.toId);
+    edgesGroup.appendChild(drawTreeEdge(fromPos, toPos, contextEdge.fromId, contextEdge.toId, true));
+  }
+
   if (parent) {
     const parentPos = positions.get(parent.id);
     const focusPos = positions.get(focus.id);
@@ -563,6 +623,9 @@ function renderCanvas() {
       edgesGroup.appendChild(drawTreeHandle(parentPos, focus.id, focusPos));
       edgesGroup.appendChild(drawTreeHandle(focusPos, focus.id, parentPos));
     }
+  }
+  if (grandparent && parent) {
+    edgesGroup.appendChild(drawTreeEdge(positions.get(grandparent.id), positions.get(parent.id), grandparent.id, parent.id));
   }
 
   if (visibleChildren.length > 0) {
@@ -600,6 +663,10 @@ function renderCanvas() {
     }
   }
 
+  if (grandparent) nodesGroup.appendChild(drawNode(grandparent, positions.get(grandparent.id)));
+  for (const fadedId of fadedIds) {
+    nodesGroup.appendChild(drawNode(project.nodes[fadedId], positions.get(fadedId), true));
+  }
   if (parent) nodesGroup.appendChild(drawNode(parent, positions.get(parent.id)));
   nodesGroup.appendChild(drawNode(focus, positions.get(focus.id)));
   for (const child of visibleChildren) {
@@ -612,6 +679,112 @@ function renderCanvas() {
 
   viewport.appendChild(edgesGroup);
   viewport.appendChild(refGroup);
+  viewport.appendChild(nodesGroup);
+  canvasSvg.appendChild(viewport);
+
+  lastVisiblePositions = positions;
+  lastViewW = viewW;
+  lastViewH = viewH;
+
+  canvasSvg.onclick = (e) => {
+    if (e.target === canvasSvg && selectedEdgeKey) {
+      selectedEdgeKey = null;
+      renderCanvas();
+    }
+  };
+}
+
+// Full Architecture mode: every non-collapsed node in the project, laid out one row per
+// hierarchy level, nothing faded. This is the "show me everything at once" counterpart to
+// Focus Mode's single-branch-plus-context view.
+function computeFullArchitectureLayout(viewW, viewH) {
+  const levelBuckets = new Map();
+  const edges = [];
+  const visited = new Set();
+  const overflowByParent = new Map();
+
+  function walk(nodeId) {
+    if (visited.has(nodeId)) return;
+    visited.add(nodeId);
+    const node = project.nodes[nodeId];
+    if (!levelBuckets.has(node.level)) levelBuckets.set(node.level, []);
+    levelBuckets.get(node.level).push(node);
+    if (node.collapsed) return;
+    const children = node.children;
+    const shown = children.length > MAX_UNGROUPED_VISIBLE ? children.slice(0, MAX_UNGROUPED_VISIBLE) : children;
+    if (children.length > shown.length) overflowByParent.set(nodeId, children.length - shown.length);
+    for (const childId of shown) {
+      edges.push({ fromId: nodeId, toId: childId });
+      walk(childId);
+    }
+  }
+  walk(rootId);
+
+  const positions = new Map();
+  const levels = [...levelBuckets.keys()].sort((a, b) => a - b);
+  levels.forEach((level, rowIndex) => {
+    const nodesInRow = levelBuckets.get(level);
+    const n = nodesInRow.length;
+    const rowWidth = n * NODE_W + Math.max(0, n - 1) * COL_GAP;
+    const startX = viewW / 2 - rowWidth / 2 + NODE_W / 2;
+    nodesInRow.forEach((node, i) => {
+      positions.set(node.id, { x: startX + i * (NODE_W + COL_GAP), y: 60 + rowIndex * ROW_GAP });
+    });
+  });
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const pos of positions.values()) {
+    minX = Math.min(minX, pos.x - NODE_W / 2);
+    maxX = Math.max(maxX, pos.x + NODE_W / 2);
+    minY = Math.min(minY, pos.y - NODE_H / 2);
+    maxY = Math.max(maxY, pos.y + NODE_H / 2);
+  }
+  if (!isFinite(minX)) {
+    minX = 0;
+    maxX = NODE_W;
+    minY = 0;
+    maxY = NODE_H;
+  }
+
+  return { positions, edges, overflowByParent, bounds: { minX, maxX, minY, maxY } };
+}
+
+function renderFullArchitectureCanvas(viewW, viewH) {
+  const { positions, edges, overflowByParent, bounds } = computeFullArchitectureLayout(viewW, viewH);
+
+  const viewport = document.createElementNS(SVG_NS, "g");
+  viewport.setAttribute(
+    "transform",
+    `translate(${viewW / 2 + panOffsetX} ${viewH / 2 + panOffsetY}) scale(${zoomScale}) translate(${-viewW / 2} ${-viewH / 2})`
+  );
+
+  const edgesGroup = document.createElementNS(SVG_NS, "g");
+  const nodesGroup = document.createElementNS(SVG_NS, "g");
+
+  for (const edge of edges) {
+    const fromPos = positions.get(edge.fromId);
+    const toPos = positions.get(edge.toId);
+    if (!fromPos || !toPos) continue;
+    edgesGroup.appendChild(drawTreeEdge(fromPos, toPos, edge.fromId, edge.toId));
+  }
+
+  for (const [nodeId, pos] of positions.entries()) {
+    nodesGroup.appendChild(drawNode(project.nodes[nodeId], pos));
+    const overflow = overflowByParent.get(nodeId);
+    if (overflow) {
+      const label = document.createElementNS(SVG_NS, "text");
+      label.setAttribute("class", "overflow-note");
+      label.setAttribute("x", pos.x);
+      label.setAttribute("y", pos.y + NODE_H / 2 + 14);
+      label.textContent = `+${overflow} more not shown`;
+      nodesGroup.appendChild(label);
+    }
+  }
+
+  viewport.appendChild(edgesGroup);
   viewport.appendChild(nodesGroup);
   canvasSvg.appendChild(viewport);
 
@@ -729,7 +902,7 @@ function drawTreeBranches(focusPos, children, positions) {
   return group;
 }
 
-function drawTreeEdge(from, to, fromId, toId) {
+function drawTreeEdge(from, to, fromId, toId, faded = false) {
   const group = document.createElementNS(SVG_NS, "g");
   const key = toId ? edgeKey("tree", toId) : null;
 
@@ -738,7 +911,10 @@ function drawTreeEdge(from, to, fromId, toId) {
   hit.setAttribute("d", curvePath(from, to));
 
   const line = document.createElementNS(SVG_NS, "path");
-  line.setAttribute("class", "edge" + (key && selectedEdgeKey === key ? " selected" : ""));
+  line.setAttribute(
+    "class",
+    "edge" + (faded ? " faded-edge" : "") + (key && selectedEdgeKey === key ? " selected" : "")
+  );
   line.setAttribute("d", curvePath(from, to));
   if (fromId) group.dataset.fromId = fromId;
   if (toId) group.dataset.toId = toId;
@@ -939,12 +1115,13 @@ function drawRefTag(nodePos, text, targetId, index, anchorId) {
   return group;
 }
 
-function drawNode(node, pos) {
+function drawNode(node, pos, faded = false) {
   const group = document.createElementNS(SVG_NS, "g");
   const classes = ["node-group"];
   if (node.id === focusedNodeId) classes.push("focused");
   if (node.id === pendingRefFrom) classes.push("ref-pending");
   if (node.is_group) classes.push("is-group");
+  if (faded) classes.push("faded-node");
   group.setAttribute("class", classes.join(" "));
   group.dataset.id = node.id;
 
@@ -1352,7 +1529,7 @@ function fitToView() {
   const rect = canvasSvg.getBoundingClientRect();
   const viewW = rect.width || 800;
   const viewH = rect.height || 500;
-  const { bounds } = computeCanvasLayout(viewW, viewH);
+  const { bounds } = viewMode === "full" ? computeFullArchitectureLayout(viewW, viewH) : computeCanvasLayout(viewW, viewH);
   const boxW = Math.max(bounds.maxX - bounds.minX, 1);
   const boxH = Math.max(bounds.maxY - bounds.minY, 1);
   const padding = 60;
@@ -1364,6 +1541,16 @@ function fitToView() {
 }
 
 fitViewBtn.addEventListener("click", fitToView);
+
+function setViewMode(mode) {
+  if (viewMode === mode) return;
+  viewMode = mode;
+  focusModeBtn.classList.toggle("active", mode === "focus");
+  fullArchModeBtn.classList.toggle("active", mode === "full");
+  fitToView();
+}
+focusModeBtn.addEventListener("click", () => setViewMode("focus"));
+fullArchModeBtn.addEventListener("click", () => setViewMode("full"));
 
 addGroupBtn.addEventListener("click", async () => {
   if (!focusedNodeId) return;
