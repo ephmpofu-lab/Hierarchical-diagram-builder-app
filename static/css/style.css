@@ -75,6 +75,10 @@ body {
   font-family: "Inter", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   background: var(--bg);
   color: var(--text);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
 }
 
 button {
@@ -263,6 +267,9 @@ button {
   max-width: 1000px;
   margin: 0 auto;
   padding: 32px;
+  flex: 1;
+  overflow-y: auto;
+  width: 100%;
 }
 
 .empty-state {
@@ -320,7 +327,8 @@ button {
 .editor-panes {
   display: grid;
   grid-template-columns: 300px 1fr 280px;
-  height: calc(100vh - 57px);
+  flex: 1;
+  min-height: 0;
 }
 
 .pane {
@@ -637,6 +645,17 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.outline-row .level-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-left: 6px;
 }
 
 .outline-row .label-input {
@@ -1001,15 +1020,10 @@ hr.inspector-divider {
 /* ---------- Bottom panel (health / validation / activity) ---------- */
 
 .bottom-panel {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  max-height: 42vh;
+  flex-shrink: 0;
+  max-height: 240px;
   background: var(--surface);
   border-top: 1px solid var(--border);
-  box-shadow: var(--shadow);
-  z-index: 60;
   overflow-y: auto;
 }
 

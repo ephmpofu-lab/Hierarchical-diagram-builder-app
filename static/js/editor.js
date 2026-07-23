@@ -165,6 +165,10 @@ function renderNode(nodeId) {
     startRename(nodeId, row, label);
   });
 
+  const levelBadge = document.createElement("span");
+  levelBadge.className = "level-badge";
+  levelBadge.textContent = `L${node.level}`;
+
   const actions = document.createElement("span");
   actions.className = "row-actions";
 
@@ -191,6 +195,7 @@ function renderNode(nodeId) {
 
   row.appendChild(toggle);
   row.appendChild(label);
+  row.appendChild(levelBadge);
   row.appendChild(actions);
   row.addEventListener("click", () => {
     focusNode(nodeId);
@@ -1104,9 +1109,18 @@ zoomOutBtn.addEventListener("click", () => setZoom(zoomScale - ZOOM_STEP));
 canvasSvg.addEventListener(
   "wheel",
   (e) => {
-    if (!project) return;
+    if (!project || !focusedNodeId) return;
     e.preventDefault();
-    setZoom(zoomScale + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
+    if (e.ctrlKey || e.metaKey) {
+      setZoom(zoomScale + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
+      return;
+    }
+    const focus = project.nodes[focusedNodeId];
+    const baseX = panCenterX !== null ? panCenterX : focus.canvas_x;
+    const baseY = panCenterY !== null ? panCenterY : focus.canvas_y;
+    panCenterX = baseX + e.deltaX / zoomScale;
+    panCenterY = baseY + e.deltaY / zoomScale;
+    renderCanvas();
   },
   { passive: false }
 );
