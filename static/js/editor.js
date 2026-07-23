@@ -727,7 +727,8 @@ function curvePath(from, to) {
 // dimmed, so ancestor context is never fully hidden even though it isn't the active branch.
 function layoutSiblingRow(siblings, activeId, y, positions, fadedIds) {
   // Soft-cap even faded context rows so an ancestor with hundreds of siblings doesn't
-  // blow out the layout — this is context, not the thing being worked on.
+  // blow out the layout — this is context, not the thing being worked on. Returns the
+  // capped list actually placed, so callers can group edges to exactly these nodes.
   const capped = siblings.length > MAX_UNGROUPED_VISIBLE ? siblings.slice(0, MAX_UNGROUPED_VISIBLE) : siblings;
   const activeX = positions.get(activeId).x;
   capped.forEach((sib, i) => {
@@ -736,6 +737,7 @@ function layoutSiblingRow(siblings, activeId, y, positions, fadedIds) {
     positions.set(sib.id, { x: activeX + side * rank * (NODE_W + COL_GAP), y });
     fadedIds.add(sib.id);
   });
+  return capped;
 }
 
 function computeCanvasLayout(viewW, viewH) {
@@ -761,7 +763,7 @@ function computeCanvasLayout(viewW, viewH) {
 
   const positions = new Map();
   const fadedIds = new Set();
-  const contextEdges = []; // {fromId, toId} for faded ancestor/sibling context, drawn dimmed
+  const contextGroups = []; // {fromId, siblings: Node[]} — drawn via the same trunk+bus connector, dimmed
 
   positions.set(focus.id, { x: viewW / 2, y: viewH / 2 });
 
@@ -772,14 +774,14 @@ function computeCanvasLayout(viewW, viewH) {
     positions.set(ancestor.id, { x: viewW / 2, y });
     const childOnPath = i === 0 ? focus.id : ancestorChain[i - 1].id;
     const siblings = ancestor.children.filter((id) => id !== childOnPath).map((id) => project.nodes[id]);
-    layoutSiblingRow(siblings, ancestor.id, y, positions, fadedIds);
-    for (const sib of siblings) contextEdges.push({ fromId: ancestor.id, toId: sib.id });
+    const placed = layoutSiblingRow(siblings, ancestor.id, y, positions, fadedIds);
+    if (placed.length > 0) contextGroups.push({ fromId: ancestor.id, siblings: placed });
   });
 
   if (parent) {
     const focusSiblings = parent.children.filter((id) => id !== focus.id).map((id) => project.nodes[id]);
-    layoutSiblingRow(focusSiblings, focus.id, viewH / 2, positions, fadedIds);
-    for (const sib of focusSiblings) contextEdges.push({ fromId: parent.id, toId: sib.id });
+    const placed = layoutSiblingRow(focusSiblings, focus.id, viewH / 2, positions, fadedIds);
+    if (placed.length > 0) contextGroups.push({ fromId: parent.id, siblings: placed });
   }
 
   const n = visibleChildren.length;
@@ -810,7 +812,7 @@ function computeCanvasLayout(viewW, viewH) {
     hiddenCount,
     positions,
     fadedIds,
-    contextEdges,
+    contextGroups,
     bounds: { minX, maxX, minY, maxY },
   };
 }
@@ -835,7 +837,7 @@ function renderCanvas() {
 }
 
 function renderFocusCanvas(viewW, viewH) {
-  const { focus, parent, ancestorChain, visibleChildren, hiddenCount, positions, fadedIds, contextEdges } =
+  const { focus, parent, ancestorChain, visibleChildren, hiddenCount, positions, fadedIds, contextGroups } =
     computeCanvasLayout(viewW, viewH);
   const visibleIds = new Set(positions.keys());
 
@@ -850,10 +852,8 @@ function renderFocusCanvas(viewW, viewH) {
   const refGroup = document.createElementNS(SVG_NS, "g");
   const nodesGroup = document.createElementNS(SVG_NS, "g");
 
-  for (const contextEdge of contextEdges) {
-    const fromPos = positions.get(contextEdge.fromId);
-    const toPos = positions.get(contextEdge.toId);
-    edgesGroup.appendChild(drawTreeEdge(fromPos, toPos, contextEdge.fromId, contextEdge.toId, true));
+  for (const group of contextGroups) {
+    edgesGroup.appendChild(drawTreeBranches(positions.get(group.fromId), group.siblings, positions, true));
   }
 
   if (parent) {
@@ -944,7 +944,7 @@ function renderFocusCanvas(viewW, viewH) {
 // Focus Mode's single-branch-plus-context view.
 function computeFullArchitectureLayout(viewW, viewH) {
   const levelBuckets = new Map();
-  const edges = [];
+  const childrenByParent = new Map(); // parentId -> Node[] shown, drawn as one trunk+bus group
   const visited = new Set();
   const overflowByParent = new Map();
 
@@ -958,10 +958,8 @@ function computeFullArchitectureLayout(viewW, viewH) {
     const children = node.children;
     const shown = children.length > MAX_UNGROUPED_VISIBLE ? children.slice(0, MAX_UNGROUPED_VISIBLE) : children;
     if (children.length > shown.length) overflowByParent.set(nodeId, children.length - shown.length);
-    for (const childId of shown) {
-      edges.push({ fromId: nodeId, toId: childId });
-      walk(childId);
-    }
+    if (shown.length > 0) childrenByParent.set(nodeId, shown.map((id) => project.nodes[id]));
+    for (const childId of shown) walk(childId);
   }
   walk(rootId);
 
@@ -994,11 +992,11 @@ function computeFullArchitectureLayout(viewW, viewH) {
     maxY = NODE_H;
   }
 
-  return { positions, edges, overflowByParent, bounds: { minX, maxX, minY, maxY } };
+  return { positions, childrenByParent, overflowByParent, bounds: { minX, maxX, minY, maxY } };
 }
 
 function renderFullArchitectureCanvas(viewW, viewH) {
-  const { positions, edges, overflowByParent, bounds } = computeFullArchitectureLayout(viewW, viewH);
+  const { positions, childrenByParent, overflowByParent, bounds } = computeFullArchitectureLayout(viewW, viewH);
 
   const viewport = document.createElementNS(SVG_NS, "g");
   viewport.setAttribute("class", "viewport-group" + (smoothZoomNextRender ? " smooth" : ""));
@@ -1010,11 +1008,12 @@ function renderFullArchitectureCanvas(viewW, viewH) {
   const edgesGroup = document.createElementNS(SVG_NS, "g");
   const nodesGroup = document.createElementNS(SVG_NS, "g");
 
-  for (const edge of edges) {
-    const fromPos = positions.get(edge.fromId);
-    const toPos = positions.get(edge.toId);
-    if (!fromPos || !toPos) continue;
-    edgesGroup.appendChild(drawTreeEdge(fromPos, toPos, edge.fromId, edge.toId));
+  // Same trunk+bus distribution rail as Focus Mode, per parent — never a flat fan of
+  // individual parent-child lines, at any level or node count.
+  for (const [parentId, children] of childrenByParent.entries()) {
+    const parentPos = positions.get(parentId);
+    if (!parentPos) continue;
+    edgesGroup.appendChild(drawTreeBranches(parentPos, children, positions));
   }
 
   for (const [nodeId, pos] of positions.entries()) {
@@ -1078,13 +1077,14 @@ function edgeKey(kind, id) {
   return `${kind}:${id}`;
 }
 
-function drawTreeBranches(focusPos, children, positions) {
+function drawTreeBranches(focusPos, children, positions, faded = false) {
   const group = document.createElementNS(SVG_NS, "g");
   if (children.length === 0) return group;
+  const edgeClass = "edge" + (faded ? " faded-edge" : "");
 
   if (children.length === 1) {
     const childPos = positions.get(children[0].id);
-    group.appendChild(drawTreeEdge(focusPos, childPos, null, children[0].id));
+    group.appendChild(drawTreeEdge(focusPos, childPos, null, children[0].id, faded));
     const key = edgeKey("tree", children[0].id);
     if (selectedEdgeKey === key) {
       group.appendChild(drawTreeHandle(focusPos, children[0].id, childPos));
@@ -1096,7 +1096,10 @@ function drawTreeBranches(focusPos, children, positions) {
   // Classic org-chart connector: one trunk from the parent down to a shared horizontal
   // bus, then one short branch per child — much clearer than N lines fanning from a
   // single point once there are more than a couple of children. Children are always laid
-  // out in a single deterministic row, so the bus always lines up cleanly.
+  // out in a single deterministic row, so the bus always lines up cleanly. This is the ONLY
+  // hierarchy connector strategy used anywhere in the app — Full Architecture mode and faded
+  // ancestor-context rows reuse this same function rather than falling back to one edge per
+  // parent-child pair, so no level of the tree ever reverts to a fan of individual lines.
   const childPositions = children.map((c) => positions.get(c.id));
   const busY = focusPos.y + (childPositions[0].y - focusPos.y) / 2;
   const xs = childPositions.map((p) => p.x);
@@ -1104,12 +1107,12 @@ function drawTreeBranches(focusPos, children, positions) {
   const maxX = Math.max(...xs, focusPos.x);
 
   const trunk = document.createElementNS(SVG_NS, "path");
-  trunk.setAttribute("class", "edge");
+  trunk.setAttribute("class", edgeClass);
   trunk.setAttribute("d", `M ${focusPos.x} ${focusPos.y} L ${focusPos.x} ${busY}`);
   group.appendChild(trunk);
 
   const bus = document.createElementNS(SVG_NS, "line");
-  bus.setAttribute("class", "edge");
+  bus.setAttribute("class", edgeClass);
   bus.setAttribute("x1", minX);
   bus.setAttribute("y1", busY);
   bus.setAttribute("x2", maxX);
@@ -1125,7 +1128,7 @@ function drawTreeBranches(focusPos, children, positions) {
     hit.setAttribute("class", "edge-hit");
     hit.setAttribute("d", `M ${childPos.x} ${busY} L ${childPos.x} ${childPos.y}`);
     const branch = document.createElementNS(SVG_NS, "path");
-    branch.setAttribute("class", "edge" + (selectedEdgeKey === key ? " selected" : ""));
+    branch.setAttribute("class", edgeClass + (selectedEdgeKey === key ? " selected" : ""));
     branch.setAttribute("d", `M ${childPos.x} ${busY} L ${childPos.x} ${childPos.y}`);
     branchGroup.dataset.toId = child.id;
     branchGroup.dataset.x1 = childPos.x;
