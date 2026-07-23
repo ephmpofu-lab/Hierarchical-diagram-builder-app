@@ -241,6 +241,10 @@ function renderNode(nodeId) {
   row.addEventListener("click", () => {
     focusNode(nodeId);
   });
+  row.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    openContextMenu(nodeId, e.clientX, e.clientY);
+  });
 
   wrapper.appendChild(row);
 
@@ -1016,7 +1020,249 @@ function drawNode(node, pos) {
     }
   });
 
+  group.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openContextMenu(node.id, e.clientX, e.clientY);
+  });
+
   return group;
+}
+
+// ---------- Context menu ----------
+
+let clipboardSubtree = null;
+let openContextMenuEl = null;
+
+function closeContextMenu() {
+  if (openContextMenuEl) {
+    openContextMenuEl.remove();
+    openContextMenuEl = null;
+  }
+}
+
+document.addEventListener("click", () => closeContextMenu());
+document.addEventListener("contextmenu", (e) => {
+  if (openContextMenuEl && !openContextMenuEl.contains(e.target)) closeContextMenu();
+});
+window.addEventListener("blur", () => closeContextMenu());
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeContextMenu();
+});
+
+async function patchNodeById(nodeId, payload) {
+  await fetch(`/api/projects/${projectId}/nodes/${nodeId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await loadProject();
+}
+
+function contextMenuItem(text, onClick, opts = {}) {
+  const item = document.createElement("button");
+  item.className = "context-menu-item" + (opts.danger ? " danger" : "");
+  item.textContent = text;
+  item.disabled = !!opts.disabled;
+  item.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeContextMenu();
+    onClick();
+  });
+  return item;
+}
+
+function contextMenuSeparator() {
+  const sep = document.createElement("div");
+  sep.className = "context-menu-separator";
+  return sep;
+}
+
+function contextMenuSubmenu(text, options, onPick) {
+  const wrap = document.createElement("div");
+  wrap.className = "context-menu-item context-menu-has-submenu";
+  const label = document.createElement("span");
+  label.textContent = text;
+  const arrow = document.createElement("span");
+  arrow.className = "context-menu-arrow";
+  arrow.textContent = "▸";
+  wrap.appendChild(label);
+  wrap.appendChild(arrow);
+
+  const submenu = document.createElement("div");
+  submenu.className = "context-menu context-submenu";
+  for (const opt of options) {
+    submenu.appendChild(
+      contextMenuItem(opt, () => onPick(opt))
+    );
+  }
+  wrap.appendChild(submenu);
+  return wrap;
+}
+
+function openContextMenu(nodeId, clientX, clientY) {
+  closeContextMenu();
+  const node = project.nodes[nodeId];
+  const isRoot = node.parent_id === null;
+  const CLEAR = "— Clear —";
+
+  const menu = document.createElement("div");
+  menu.className = "context-menu";
+
+  menu.appendChild(contextMenuItem("+ Add Child", () => addChild(nodeId)));
+  menu.appendChild(contextMenuItem("+ Add Sibling", () => addSiblingBelow(nodeId), { disabled: isRoot }));
+  menu.appendChild(
+    contextMenuItem("↑ Add Parent Above", async () => {
+      const label = prompt("New parent label:", "New parent");
+      if (!label || !label.trim()) return;
+      const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/add-parent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: label.trim() }),
+      });
+      const newNode = await res.json();
+      await loadProject();
+      focusNode(newNode.id);
+    }, { disabled: isRoot })
+  );
+  menu.appendChild(
+    contextMenuItem("⧉ Duplicate", async () => {
+      const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/duplicate`, { method: "POST" });
+      const newNode = await res.json();
+      await loadProject();
+      focusNode(newNode.id);
+    }, { disabled: isRoot })
+  );
+  menu.appendChild(
+    contextMenuItem("✎ Rename", () => {
+      const label = prompt("Rename node:", node.label);
+      if (label && label.trim()) patchNodeById(nodeId, { label: label.trim() });
+    })
+  );
+
+  menu.appendChild(contextMenuSeparator());
+
+  menu.appendChild(
+    contextMenuSubmenu("◆ Set Classification", [CLEAR, ...CLASSIFICATIONS], (opt) => {
+      patchNodeById(nodeId, { classification: opt === CLEAR ? "" : opt });
+    })
+  );
+  menu.appendChild(
+    contextMenuItem("🎨 Change Color", () => {
+      const colorInput = document.createElement("input");
+      colorInput.type = "color";
+      colorInput.value = node.custom_color || CLASSIFICATION_COLORS[node.classification] || "#64748b";
+      colorInput.style.position = "fixed";
+      colorInput.style.left = "-9999px";
+      document.body.appendChild(colorInput);
+      colorInput.addEventListener("change", () => {
+        patchNodeById(nodeId, { custom_color: colorInput.value });
+        colorInput.remove();
+      });
+      colorInput.click();
+    })
+  );
+  menu.appendChild(
+    contextMenuItem("Change Node Type", () => {
+      const value = prompt("Node type:", node.node_type || "");
+      if (value !== null) patchNodeById(nodeId, { node_type: value.trim() });
+    })
+  );
+  menu.appendChild(
+    contextMenuSubmenu("● Set Status", [CLEAR, "Planned", "In Development", "Done", "Blocked", "Deprecated"], (opt) => {
+      patchNodeById(nodeId, { status: opt === CLEAR ? "" : opt });
+    })
+  );
+  menu.appendChild(
+    contextMenuSubmenu("● Set Priority", [CLEAR, "Low", "Medium", "High", "Critical"], (opt) => {
+      patchNodeById(nodeId, { priority: opt === CLEAR ? "" : opt });
+    })
+  );
+  menu.appendChild(
+    contextMenuSubmenu("● Set Risk Level", [CLEAR, "Low", "Medium", "High", "Critical"], (opt) => {
+      patchNodeById(nodeId, { risk_level: opt === CLEAR ? "" : opt });
+    })
+  );
+  menu.appendChild(
+    contextMenuItem("+ Add Tag", () => {
+      const tag = prompt("Tag to add:");
+      if (tag && tag.trim() && !node.tags.includes(tag.trim())) {
+        patchNodeById(nodeId, { tags: [...node.tags, tag.trim()] });
+      }
+    })
+  );
+  menu.appendChild(
+    contextMenuItem("Assign Owner", () => {
+      const owner = prompt("Owner:", node.owner || "");
+      if (owner !== null) patchNodeById(nodeId, { owner: owner.trim() });
+    })
+  );
+  menu.appendChild(
+    contextMenuItem("Add / Edit Notes", () => {
+      focusedNodeId = nodeId;
+      inspectorActiveTab = "inspector";
+      render();
+      const textarea = inspectorContent.querySelector("textarea");
+      if (textarea) textarea.focus();
+    })
+  );
+
+  menu.appendChild(contextMenuSeparator());
+
+  menu.appendChild(
+    contextMenuItem("⇢ Add Reference Link", () => {
+      refMode = true;
+      pendingRefFrom = nodeId;
+      addRefModeBtn.classList.add("active");
+      refModeBanner.hidden = false;
+      renderCanvas();
+    })
+  );
+  menu.appendChild(
+    contextMenuItem(node.collapsed ? "▸ Expand Branch" : "▾ Collapse Branch", () => toggleCollapse(nodeId, !node.collapsed), {
+      disabled: node.children.length === 0,
+    })
+  );
+  menu.appendChild(
+    contextMenuItem("Copy Subtree", async () => {
+      const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/subtree`);
+      clipboardSubtree = await res.json();
+    })
+  );
+  menu.appendChild(
+    contextMenuItem("Paste Subtree Here", async () => {
+      const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/paste-subtree`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ root: clipboardSubtree }),
+      });
+      const newNode = await res.json();
+      await loadProject();
+      focusNode(newNode.id);
+    }, { disabled: !clipboardSubtree })
+  );
+  menu.appendChild(
+    contextMenuItem("⇩ Export Subtree", async () => {
+      const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/subtree`);
+      const subtree = await res.json();
+      downloadBlob(JSON.stringify(subtree, null, 2), `${safeFilename(node.label)}_subtree.json`, "application/json");
+    })
+  );
+
+  menu.appendChild(contextMenuSeparator());
+
+  menu.appendChild(
+    contextMenuItem("🗑 Delete", () => deleteNodeFlow(nodeId), { disabled: isRoot, danger: true })
+  );
+
+  menu.style.left = `${clientX}px`;
+  menu.style.top = `${clientY}px`;
+  document.body.appendChild(menu);
+  openContextMenuEl = menu;
+
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) menu.style.left = `${Math.max(4, window.innerWidth - rect.width - 4)}px`;
+  if (rect.bottom > window.innerHeight) menu.style.top = `${Math.max(4, window.innerHeight - rect.height - 4)}px`;
 }
 
 window.addEventListener("resize", () => {
