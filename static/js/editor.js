@@ -73,6 +73,15 @@ const PLANNING_STATUS_COLORS = {
   Blocked: "#dc2626",
 };
 
+// A subtle, cycling tint per hierarchy level (NOT per node type — that's what
+// classification color is for) so the Explorer and canvas communicate depth by more than
+// indentation and the L-badge alone. Muted on purpose: this is structural context, not a
+// primary signal, so it must never compete with classification color when one is set.
+const LEVEL_TINT_COLORS = ["#2563eb", "#0891b2", "#16a34a", "#ca8a04", "#dc2626", "#ea580c"];
+function levelTintColor(level) {
+  return LEVEL_TINT_COLORS[(Math.max(1, level) - 1) % LEVEL_TINT_COLORS.length];
+}
+
 const outlineTree = document.getElementById("outlineTree");
 const projectNameEl = document.getElementById("projectName");
 const breadcrumbEl = document.getElementById("breadcrumb");
@@ -327,6 +336,7 @@ function renderNode(nodeId) {
   row.className = "outline-row" + (nodeId === focusedNodeId ? " focused" : "");
   row.dataset.id = nodeId;
   row.style.paddingLeft = `${8 + (node.level - 1) * 20}px`;
+  if (!node.is_group) row.style.borderLeftColor = levelTintColor(node.level);
 
   const toggle = document.createElement("span");
   toggle.className = "toggle";
@@ -342,7 +352,8 @@ function renderNode(nodeId) {
 
   const label = document.createElement("span");
   label.className = "label";
-  label.textContent = node.is_group ? `▤ ${node.label}` : node.label;
+  const typeIcon = !node.is_group && node.classification ? `${CLASSIFICATION_ICONS[node.classification]} ` : "";
+  label.textContent = node.is_group ? `▤ ${node.label}` : `${typeIcon}${node.label}`;
   label.addEventListener("dblclick", (e) => {
     e.stopPropagation();
     startRename(nodeId, row, label);

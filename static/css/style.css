@@ -941,6 +941,7 @@ button {
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 14px;
+  border-left: 3px solid transparent;
 }
 
 .outline-row:hover {
