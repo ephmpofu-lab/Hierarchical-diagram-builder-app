@@ -16,6 +16,7 @@ const refModeBanner = document.getElementById("refModeBanner");
 const zoomInBtn = document.getElementById("zoomInBtn");
 const zoomOutBtn = document.getElementById("zoomOutBtn");
 const zoomLevelEl = document.getElementById("zoomLevel");
+const fitViewBtn = document.getElementById("fitViewBtn");
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const NODE_W = 150;
@@ -32,6 +33,8 @@ let dragState = null;
 let zoomScale = 1;
 let refMode = false;
 let pendingRefFrom = null;
+let panCenterX = null;
+let panCenterY = null;
 
 if (!projectId) {
   projectNameEl.textContent = "No project specified";
@@ -77,6 +80,10 @@ function render() {
 
 async function focusNode(nodeId) {
   focusedNodeId = nodeId;
+  panCenterX = null;
+  panCenterY = null;
+  zoomScale = 1;
+  zoomLevelEl.textContent = "100%";
   await expandAncestors(nodeId);
   await loadProject();
 }
@@ -408,8 +415,8 @@ function renderCanvas() {
   const rect = canvasSvg.getBoundingClientRect();
   const viewW = rect.width || 800;
   const viewH = rect.height || 500;
-  const centerX = focus.canvas_x;
-  const centerY = focus.canvas_y;
+  const centerX = panCenterX !== null ? panCenterX : focus.canvas_x;
+  const centerY = panCenterY !== null ? panCenterY : focus.canvas_y;
 
   const toScreen = (node) => ({
     x: viewW / 2 + (node.canvas_x - centerX),
@@ -427,9 +434,11 @@ function renderCanvas() {
   const refGroup = document.createElementNS(SVG_NS, "g");
   const nodesGroup = document.createElementNS(SVG_NS, "g");
 
-  if (parent) edgesGroup.appendChild(drawEdge(positions.get(parent.id), positions.get(focus.id)));
+  if (parent) {
+    edgesGroup.appendChild(drawEdge(positions.get(parent.id), positions.get(focus.id), parent.id, focus.id));
+  }
   for (const child of children) {
-    edgesGroup.appendChild(drawEdge(positions.get(focus.id), positions.get(child.id)));
+    edgesGroup.appendChild(drawEdge(positions.get(focus.id), positions.get(child.id), focus.id, child.id));
   }
 
   const tagCounters = new Map();
@@ -437,7 +446,7 @@ function renderCanvas() {
     const fromVisible = visibleIds.has(ref.from);
     const toVisible = visibleIds.has(ref.to);
     if (fromVisible && toVisible) {
-      refGroup.appendChild(drawRefEdge(positions.get(ref.from), positions.get(ref.to)));
+      refGroup.appendChild(drawRefEdge(positions.get(ref.from), positions.get(ref.to), ref.from, ref.to));
     } else if (fromVisible || toVisible) {
       const visibleId = fromVisible ? ref.from : ref.to;
       const otherId = fromVisible ? ref.to : ref.from;
@@ -447,7 +456,7 @@ function renderCanvas() {
       tagCounters.set(visibleId, index + 1);
       const arrow = fromVisible ? "→" : "←";
       refGroup.appendChild(
-        drawRefTag(positions.get(visibleId), `${arrow} ${otherNode.label}`, otherId, index)
+        drawRefTag(positions.get(visibleId), `${arrow} ${otherNode.label}`, otherId, index, visibleId)
       );
     }
   }
@@ -469,13 +478,15 @@ function renderCanvas() {
   };
 }
 
-function drawEdge(from, to) {
+function drawEdge(from, to, fromId, toId) {
   const line = document.createElementNS(SVG_NS, "line");
   line.setAttribute("class", "edge");
   line.setAttribute("x1", from.x);
   line.setAttribute("y1", from.y);
   line.setAttribute("x2", to.x);
   line.setAttribute("y2", to.y);
+  line.dataset.fromId = fromId;
+  line.dataset.toId = toId;
   return line;
 }
 
@@ -497,7 +508,7 @@ function buildRefArrowDefs() {
   return defs;
 }
 
-function drawRefEdge(from, to) {
+function drawRefEdge(from, to, fromId, toId) {
   const line = document.createElementNS(SVG_NS, "line");
   line.setAttribute("class", "ref-edge");
   line.setAttribute("x1", from.x);
@@ -505,12 +516,17 @@ function drawRefEdge(from, to) {
   line.setAttribute("x2", to.x);
   line.setAttribute("y2", to.y);
   line.setAttribute("marker-end", "url(#refArrow)");
+  line.dataset.fromId = fromId;
+  line.dataset.toId = toId;
   return line;
 }
 
-function drawRefTag(nodePos, text, targetId, index) {
+function drawRefTag(nodePos, text, targetId, index, anchorId) {
   const group = document.createElementNS(SVG_NS, "g");
   group.setAttribute("class", "ref-tag");
+  group.dataset.anchorId = anchorId;
+  group.dataset.anchorX = nodePos.x;
+  group.dataset.anchorY = nodePos.y;
   const tagW = Math.min(140, 16 + text.length * 6.2);
   const tagX = nodePos.x + NODE_W / 2 + 10;
   const tagY = nodePos.y - NODE_H / 2 + index * 24;
@@ -590,6 +606,14 @@ function startDrag(e, node, group) {
   e.preventDefault();
   const startX = e.clientX;
   const startY = e.clientY;
+
+  const relatedEdges = Array.from(canvasSvg.querySelectorAll(".edge, .ref-edge")).filter(
+    (el) => el.dataset.fromId === node.id || el.dataset.toId === node.id
+  );
+  const relatedTags = Array.from(canvasSvg.querySelectorAll(".ref-tag")).filter(
+    (el) => el.dataset.anchorId === node.id
+  );
+
   dragState = {
     nodeId: node.id,
     group,
@@ -597,6 +621,10 @@ function startDrag(e, node, group) {
     startY,
     origX: node.canvas_x,
     origY: node.canvas_y,
+    origScreenX: parseFloat(group.querySelector(".node-box").getAttribute("x")) + NODE_W / 2,
+    origScreenY: parseFloat(group.querySelector(".node-box").getAttribute("y")) + NODE_H / 2,
+    relatedEdges,
+    relatedTags,
     moved: false,
   };
 
@@ -611,12 +639,32 @@ function startDrag(e, node, group) {
     dragState.group.classList.add("dragging");
     const box = dragState.group.querySelector(".node-box");
     const label = dragState.group.querySelector(".node-label");
+    const dot = dragState.group.querySelector(".warning-dot");
     const newCenterX = parseFloat(box.getAttribute("x")) + NODE_W / 2 + dx - (dragState.appliedDx || 0);
     const newCenterY = parseFloat(box.getAttribute("y")) + NODE_H / 2 + dy - (dragState.appliedDy || 0);
     box.setAttribute("x", newCenterX - NODE_W / 2);
     box.setAttribute("y", newCenterY - NODE_H / 2);
     label.setAttribute("x", newCenterX);
     label.setAttribute("y", newCenterY);
+    if (dot) {
+      dot.setAttribute("cx", newCenterX + NODE_W / 2 - 6);
+      dot.setAttribute("cy", newCenterY - NODE_H / 2 + 6);
+    }
+    for (const edge of dragState.relatedEdges) {
+      if (edge.dataset.fromId === node.id) {
+        edge.setAttribute("x1", newCenterX);
+        edge.setAttribute("y1", newCenterY);
+      }
+      if (edge.dataset.toId === node.id) {
+        edge.setAttribute("x2", newCenterX);
+        edge.setAttribute("y2", newCenterY);
+      }
+    }
+    const totalDx = newCenterX - dragState.origScreenX;
+    const totalDy = newCenterY - dragState.origScreenY;
+    for (const tag of dragState.relatedTags) {
+      tag.setAttribute("transform", `translate(${totalDx} ${totalDy})`);
+    }
     dragState.appliedDx = dx;
     dragState.appliedDy = dy;
     dragState.finalDx = dx;
@@ -745,6 +793,37 @@ canvasSvg.addEventListener(
   },
   { passive: false }
 );
+
+function fitToView() {
+  if (!project || !focusedNodeId) return;
+  const focus = project.nodes[focusedNodeId];
+  const parent = focus.parent_id ? project.nodes[focus.parent_id] : null;
+  const children = focus.children.map((id) => project.nodes[id]);
+  const visible = [focus, ...(parent ? [parent] : []), ...children];
+
+  const xs = visible.map((n) => n.canvas_x);
+  const ys = visible.map((n) => n.canvas_y);
+  const minX = Math.min(...xs) - NODE_W / 2;
+  const maxX = Math.max(...xs) + NODE_W / 2;
+  const minY = Math.min(...ys) - NODE_H / 2;
+  const maxY = Math.max(...ys) + NODE_H / 2;
+  const boxW = Math.max(maxX - minX, 1);
+  const boxH = Math.max(maxY - minY, 1);
+
+  const rect = canvasSvg.getBoundingClientRect();
+  const viewW = rect.width || 800;
+  const viewH = rect.height || 500;
+  const padding = 70;
+
+  const scale = Math.min((viewW - padding * 2) / boxW, (viewH - padding * 2) / boxH, ZOOM_MAX);
+  zoomScale = Math.max(0.05, scale);
+  panCenterX = (minX + maxX) / 2;
+  panCenterY = (minY + maxY) / 2;
+  zoomLevelEl.textContent = `${Math.round(zoomScale * 100)}%`;
+  renderCanvas();
+}
+
+fitViewBtn.addEventListener("click", fitToView);
 
 // ---------- Search ----------
 
