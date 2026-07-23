@@ -611,6 +611,14 @@ button {
   cursor: default;
 }
 
+.canvas-svg.panning {
+  cursor: grabbing;
+}
+
+.canvas-svg .viewport-group.smooth {
+  transition: transform 0.25s ease-out;
+}
+
 .canvas-svg .edge {
   stroke: var(--border);
   stroke-width: 2;

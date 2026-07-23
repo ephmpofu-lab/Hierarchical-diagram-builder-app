@@ -93,6 +93,7 @@ const zoomInBtn = document.getElementById("zoomInBtn");
 const zoomOutBtn = document.getElementById("zoomOutBtn");
 const zoomLevelEl = document.getElementById("zoomLevel");
 const fitViewBtn = document.getElementById("fitViewBtn");
+const fitAllBtn = document.getElementById("fitAllBtn");
 const addGroupBtn = document.getElementById("addGroupBtn");
 const showDepsBtn = document.getElementById("showDepsBtn");
 const focusModeBtn = document.getElementById("focusModeBtn");
@@ -772,6 +773,7 @@ function renderCanvas() {
   } else {
     renderFocusCanvas(viewW, viewH);
   }
+  smoothZoomNextRender = false;
 }
 
 function renderFocusCanvas(viewW, viewH) {
@@ -780,6 +782,7 @@ function renderFocusCanvas(viewW, viewH) {
   const visibleIds = new Set(positions.keys());
 
   const viewport = document.createElementNS(SVG_NS, "g");
+  viewport.setAttribute("class", "viewport-group" + (smoothZoomNextRender ? " smooth" : ""));
   viewport.setAttribute(
     "transform",
     `translate(${viewW / 2 + panOffsetX} ${viewH / 2 + panOffsetY}) scale(${zoomScale}) translate(${-viewW / 2} ${-viewH / 2})`
@@ -938,6 +941,7 @@ function renderFullArchitectureCanvas(viewW, viewH) {
   const { positions, edges, overflowByParent, bounds } = computeFullArchitectureLayout(viewW, viewH);
 
   const viewport = document.createElementNS(SVG_NS, "g");
+  viewport.setAttribute("class", "viewport-group" + (smoothZoomNextRender ? " smooth" : ""));
   viewport.setAttribute(
     "transform",
     `translate(${viewW / 2 + panOffsetX} ${viewH / 2 + panOffsetY}) scale(${zoomScale}) translate(${-viewW / 2} ${-viewH / 2})`
@@ -1234,8 +1238,8 @@ function startEdgeEndpointDrag(e, fixedPos, excludeId, onDrop) {
   if (viewportEl) viewportEl.appendChild(tempLine);
 
   const toPretransform = (clientX, clientY) => ({
-    x: lastViewW / 2 + (clientX - rect.left - lastViewW / 2) / zoomScale,
-    y: lastViewH / 2 + (clientY - rect.top - lastViewH / 2) / zoomScale,
+    x: lastViewW / 2 + (clientX - rect.left - lastViewW / 2 - panOffsetX) / zoomScale,
+    y: lastViewH / 2 + (clientY - rect.top - lastViewH / 2 - panOffsetY) / zoomScale,
   });
 
   const onMove = (moveEvent) => {
@@ -1439,6 +1443,12 @@ function drawNode(node, pos, faded = false) {
     positionHoverTooltip(e.clientX, e.clientY);
   });
   group.addEventListener("mouseleave", hideNodeHoverTooltip);
+
+  group.addEventListener("dblclick", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    zoomToNode(node.id);
+  });
 
   return group;
 }
@@ -1818,34 +1828,96 @@ async function handleRefModeClick(nodeId) {
   await loadProject();
 }
 
-// ---------- Zoom ----------
+// ---------- Zoom / pan navigation ----------
+// Professional-editor feel (Figma/Mural/Miro/CAD): plain mouse wheel always zooms toward
+// the cursor (not the viewport center), middle-mouse-button drag pans, double-click a node
+// zooms in on it, and discrete zoom changes (buttons, fit, double-click) animate smoothly
+// via a CSS transition toggled on the viewport <g> — continuous interactions (wheel ticks,
+// live panning) stay instant so they don't feel laggy.
+let smoothZoomNextRender = false;
 
-function setZoom(scale) {
-  zoomScale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, scale));
+function zoomAtPoint(newScaleRaw, clientX, clientY, smooth) {
+  const newScale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, newScaleRaw));
+  const rect = canvasSvg.getBoundingClientRect();
+  const viewW = rect.width || 800;
+  const viewH = rect.height || 500;
+  const screenX = clientX - rect.left;
+  const screenY = clientY - rect.top;
+  const contentX = viewW / 2 + (screenX - viewW / 2 - panOffsetX) / zoomScale;
+  const contentY = viewH / 2 + (screenY - viewH / 2 - panOffsetY) / zoomScale;
+  panOffsetX = screenX - viewW / 2 - newScale * (contentX - viewW / 2);
+  panOffsetY = screenY - viewH / 2 - newScale * (contentY - viewH / 2);
+  zoomScale = newScale;
   zoomLevelEl.textContent = `${Math.round(zoomScale * 100)}%`;
+  smoothZoomNextRender = !!smooth;
   renderCanvas();
 }
 
-zoomInBtn.addEventListener("click", () => setZoom(zoomScale + ZOOM_STEP));
-zoomOutBtn.addEventListener("click", () => setZoom(zoomScale - ZOOM_STEP));
+function viewportCenterClient() {
+  const rect = canvasSvg.getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+}
+
+zoomInBtn.addEventListener("click", () => {
+  const c = viewportCenterClient();
+  zoomAtPoint(zoomScale + ZOOM_STEP, c.x, c.y, true);
+});
+zoomOutBtn.addEventListener("click", () => {
+  const c = viewportCenterClient();
+  zoomAtPoint(zoomScale - ZOOM_STEP, c.x, c.y, true);
+});
 
 canvasSvg.addEventListener(
   "wheel",
   (e) => {
     if (!project || !focusedNodeId) return;
     e.preventDefault();
-    if (e.ctrlKey || e.metaKey) {
-      setZoom(zoomScale + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
-      return;
-    }
-    panOffsetX -= e.deltaX;
-    panOffsetY -= e.deltaY;
-    renderCanvas();
+    zoomAtPoint(zoomScale + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP), e.clientX, e.clientY, false);
   },
   { passive: false }
 );
 
-function fitToView() {
+let isPanning = false;
+let panDragStart = null;
+
+canvasSvg.addEventListener("mousedown", (e) => {
+  if (e.button !== 1) return; // middle mouse button only
+  e.preventDefault();
+  isPanning = true;
+  panDragStart = { clientX: e.clientX, clientY: e.clientY, startX: panOffsetX, startY: panOffsetY };
+  canvasSvg.classList.add("panning");
+});
+window.addEventListener("mousemove", (e) => {
+  if (!isPanning || !panDragStart) return;
+  panOffsetX = panDragStart.startX + (e.clientX - panDragStart.clientX);
+  panOffsetY = panDragStart.startY + (e.clientY - panDragStart.clientY);
+  renderCanvas();
+});
+window.addEventListener("mouseup", (e) => {
+  if (e.button !== 1 || !isPanning) return;
+  isPanning = false;
+  panDragStart = null;
+  canvasSvg.classList.remove("panning");
+});
+canvasSvg.addEventListener("auxclick", (e) => {
+  if (e.button === 1) e.preventDefault();
+});
+
+function zoomToNode(nodeId) {
+  focusedNodeId = nodeId;
+  renderOutline();
+  renderBreadcrumb();
+  renderInspector();
+  renderMinimap();
+  panOffsetX = 0;
+  panOffsetY = 0;
+  zoomScale = Math.min(ZOOM_MAX, 1.6);
+  zoomLevelEl.textContent = `${Math.round(zoomScale * 100)}%`;
+  smoothZoomNextRender = true;
+  renderCanvas();
+}
+
+function fitToView(smooth = true) {
   if (!project || !focusedNodeId) return;
   panOffsetX = 0;
   panOffsetY = 0;
@@ -1860,10 +1932,18 @@ function fitToView() {
   const scale = Math.min((viewW - padding * 2) / boxW, (viewH - padding * 2) / boxH, ZOOM_MAX);
   zoomScale = Math.max(0.1, scale);
   zoomLevelEl.textContent = `${Math.round(zoomScale * 100)}%`;
+  smoothZoomNextRender = smooth;
   renderCanvas();
 }
 
-fitViewBtn.addEventListener("click", fitToView);
+fitAllBtn.addEventListener("click", () => {
+  viewMode = "full";
+  focusModeBtn.classList.remove("active");
+  fullArchModeBtn.classList.add("active");
+  fitToView();
+});
+
+fitViewBtn.addEventListener("click", () => fitToView());
 
 function setViewMode(mode) {
   if (viewMode === mode) return;
