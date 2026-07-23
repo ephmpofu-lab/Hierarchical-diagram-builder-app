@@ -61,6 +61,7 @@ const healthToggleBtn = document.getElementById("healthToggleBtn");
 const healthPanel = document.getElementById("healthPanel");
 const healthCloseBtn = document.getElementById("healthCloseBtn");
 const healthScoreEl = document.getElementById("healthScore");
+const viewFullReportBtn = document.getElementById("viewFullReportBtn");
 const validationSummaryEl = document.getElementById("validationSummary");
 const runValidationBtn = document.getElementById("runValidationBtn");
 const activityListEl = document.getElementById("activityList");
@@ -1439,6 +1440,21 @@ healthCloseBtn.addEventListener("click", () => {
   healthPanel.hidden = true;
 });
 runValidationBtn.addEventListener("click", refreshHealthPanel);
+viewFullReportBtn.addEventListener("click", async () => {
+  if (!lastValidationReport) await refreshHealthPanel();
+  const categoryLabels = [
+    "Duplicate labels",
+    "Circular references",
+    "Large modules (>10 children)",
+    "Single-child nodes",
+    "Missing notes",
+    "Missing owners",
+    "Orphaned nodes",
+    "Broken references",
+  ];
+  for (const label of categoryLabels) expandedValidationRows.add(label);
+  renderValidationSummary(lastValidationReport);
+});
 
 async function refreshHealthPanel() {
   if (!project) return;
@@ -1456,36 +1472,128 @@ function renderHealthScore(report) {
   const ratingClass = "rating-" + report.rating.toLowerCase().replace(/\s+/g, "-");
   healthScoreEl.className = "health-score " + ratingClass;
   healthScoreEl.innerHTML = "";
-  const scoreEl = document.createElement("div");
-  scoreEl.className = "score-number";
-  scoreEl.textContent = `${report.score}%`;
+
+  const size = 92;
+  const stroke = 9;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - report.score / 100);
+
+  const gaugeWrap = document.createElement("div");
+  gaugeWrap.className = "health-gauge-wrap";
+
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("width", size);
+  svg.setAttribute("height", size);
+  svg.setAttribute("class", "health-gauge");
+
+  const track = document.createElementNS(SVG_NS, "circle");
+  track.setAttribute("cx", size / 2);
+  track.setAttribute("cy", size / 2);
+  track.setAttribute("r", radius);
+  track.setAttribute("class", "gauge-track");
+  track.setAttribute("stroke-width", stroke);
+
+  const fill = document.createElementNS(SVG_NS, "circle");
+  fill.setAttribute("cx", size / 2);
+  fill.setAttribute("cy", size / 2);
+  fill.setAttribute("r", radius);
+  fill.setAttribute("class", "gauge-fill");
+  fill.setAttribute("stroke-width", stroke);
+  fill.setAttribute("stroke-dasharray", circumference);
+  fill.setAttribute("stroke-dashoffset", offset);
+  fill.setAttribute("transform", `rotate(-90 ${size / 2} ${size / 2})`);
+
+  svg.appendChild(track);
+  svg.appendChild(fill);
+
+  const scoreText = document.createElement("div");
+  scoreText.className = "score-number";
+  scoreText.textContent = `${report.score}`;
+
+  gaugeWrap.appendChild(svg);
+  gaugeWrap.appendChild(scoreText);
+
   const ratingEl = document.createElement("div");
   ratingEl.className = "score-rating";
   ratingEl.textContent = report.rating;
-  healthScoreEl.appendChild(scoreEl);
+
+  healthScoreEl.appendChild(gaugeWrap);
   healthScoreEl.appendChild(ratingEl);
+}
+
+let expandedValidationRows = new Set();
+
+function validationIssueRow(label, issues) {
+  const row = document.createElement("div");
+  row.className = "validation-row" + (issues.length > 0 ? " flagged clickable" : "");
+  const l = document.createElement("span");
+  l.textContent = label;
+  const v = document.createElement("strong");
+  v.textContent = issues.length;
+  row.appendChild(l);
+  row.appendChild(v);
+  if (issues.length > 0) {
+    row.title = "Click to see and jump to affected nodes";
+    row.addEventListener("click", () => {
+      if (expandedValidationRows.has(label)) expandedValidationRows.delete(label);
+      else expandedValidationRows.add(label);
+      renderValidationSummary(lastValidationReport);
+    });
+  }
+  validationSummaryEl.appendChild(row);
+
+  if (issues.length > 0 && expandedValidationRows.has(label)) {
+    const list = document.createElement("div");
+    list.className = "validation-issue-list";
+    for (const issue of issues) {
+      const item = document.createElement("button");
+      item.className = "validation-issue-item";
+      item.textContent = issue.label || issue;
+      item.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (issue.id) focusNode(issue.id);
+      });
+      list.appendChild(item);
+    }
+    validationSummaryEl.appendChild(list);
+  }
 }
 
 function renderValidationSummary(report) {
   validationSummaryEl.innerHTML = "";
-  const rows = [
-    ["Duplicate labels", report.duplicate_labels.length],
-    ["Circular references", report.circular_references.length],
-    ["Large modules (>10 children)", report.large_modules.length],
-    ["Single-child nodes", report.single_child_nodes.length],
-    ["Missing notes", report.missing_notes_count],
-  ];
-  for (const [label, count] of rows) {
-    const row = document.createElement("div");
-    row.className = "validation-row" + (count > 0 ? " flagged" : "");
-    const l = document.createElement("span");
-    l.textContent = label;
-    const v = document.createElement("strong");
-    v.textContent = count;
-    row.appendChild(l);
-    row.appendChild(v);
-    validationSummaryEl.appendChild(row);
+
+  validationIssueRow("Duplicate labels", report.duplicate_labels);
+  validationIssueRow("Circular references", report.circular_references.map((chain) => ({ label: chain.join(" → ") })));
+  validationIssueRow("Large modules (>10 children)", report.large_modules);
+  validationIssueRow("Single-child nodes", report.single_child_nodes);
+  validationIssueRow("Missing notes", report.missing_notes);
+  validationIssueRow("Missing owners", report.missing_owners);
+  validationIssueRow("Orphaned nodes", report.orphan_nodes);
+  validationIssueRow("Broken references", report.broken_references.map((msg) => ({ label: msg })));
+
+  validationSummaryEl.appendChild(document.createElement("hr")).className = "inspector-divider";
+
+  const depthRow = document.createElement("div");
+  depthRow.className = "validation-row";
+  const dl = document.createElement("span");
+  dl.textContent = "Avg / max depth";
+  const dv = document.createElement("strong");
+  dv.textContent = `${report.avg_depth} / ${report.max_depth}`;
+  depthRow.appendChild(dl);
+  depthRow.appendChild(dv);
+  validationSummaryEl.appendChild(depthRow);
+
+  const riskWrap = document.createElement("div");
+  riskWrap.className = "risk-distribution";
+  for (const [level, count] of Object.entries(report.risk_distribution)) {
+    if (count === 0) continue;
+    const pill = document.createElement("span");
+    pill.className = `risk-pill risk-${level.toLowerCase()}`;
+    pill.textContent = `${level}: ${count}`;
+    riskWrap.appendChild(pill);
   }
+  validationSummaryEl.appendChild(riskWrap);
 }
 
 function renderActivityLog() {
@@ -2324,10 +2432,13 @@ function renderValidationTab(container, node) {
   }
 
   const report = lastValidationReport;
+  const hasIssue = (issues) => issues.some((issue) => issue.id === node.id);
   const flags = [];
-  if (report.duplicate_labels.includes(node.label)) flags.push("Duplicate label — another node shares this exact label.");
-  if (report.large_modules.includes(node.label)) flags.push("Large module — more than 10 direct children.");
-  if (report.single_child_nodes.includes(node.label)) flags.push("Single-child node — consider whether it needs its own level.");
+  if (hasIssue(report.duplicate_labels)) flags.push("Duplicate label — another node shares this exact label.");
+  if (hasIssue(report.large_modules)) flags.push("Large module — more than 10 direct children.");
+  if (hasIssue(report.single_child_nodes)) flags.push("Single-child node — consider whether it needs its own level.");
+  if (hasIssue(report.orphan_nodes)) flags.push("Orphaned — unreachable from the root node.");
+  if (hasIssue(report.missing_owners)) flags.push("No owner assigned.");
   if (report.circular_references.some((cycle) => cycle.includes(node.label))) {
     flags.push("Part of a circular reference chain.");
   }

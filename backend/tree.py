@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from fastapi import HTTPException
 
-from .models import Comment, Project, Reference, TemplateNode, ValidationReport
+from .models import Comment, Project, Reference, TemplateNode, ValidationIssue, ValidationReport
 
 
 def find_root_id(project: Project) -> str:
@@ -458,28 +458,66 @@ def find_reference_cycles(project: Project) -> List[List[str]]:
 
 def build_validation_report(project: Project) -> ValidationReport:
     label_counts: dict = {}
-    single_child = []
-    large_modules = []
-    missing_notes = 0
+    single_child: list = []
+    large_modules: list = []
+    missing_notes: list = []
+    missing_owners: list = []
+    risk_distribution: dict = {"Low": 0, "Medium": 0, "High": 0, "Critical": 0, "Unset": 0}
+    depths: list = []
+
+    root_id = find_root_id(project)
+    reachable: set = set()
+    stack = [root_id]
+    while stack:
+        current_id = stack.pop()
+        if current_id in reachable or current_id not in project.nodes:
+            continue
+        reachable.add(current_id)
+        stack.extend(project.nodes[current_id].children)
+    orphan_nodes = [
+        ValidationIssue(id=n.id, label=n.label) for n in project.nodes.values() if n.id not in reachable
+    ]
 
     for node in project.nodes.values():
         label_counts[node.label] = label_counts.get(node.label, 0) + 1
         if len(node.children) == 1:
-            single_child.append(node.label)
+            single_child.append(ValidationIssue(id=node.id, label=node.label))
         if len(node.children) > 10:
-            large_modules.append(node.label)
+            large_modules.append(ValidationIssue(id=node.id, label=node.label))
         if not node.notes.strip():
-            missing_notes += 1
+            missing_notes.append(ValidationIssue(id=node.id, label=node.label))
+        if not node.is_group and not (node.owner or "").strip():
+            missing_owners.append(ValidationIssue(id=node.id, label=node.label))
+        risk_distribution[node.risk_level or "Unset"] = risk_distribution.get(node.risk_level or "Unset", 0) + 1
+        if node.id in reachable:
+            depths.append(compute_level(project, node.id))
 
-    duplicate_labels = [label for label, count in label_counts.items() if count > 1]
+    duplicate_labels = [
+        ValidationIssue(id=n.id, label=n.label)
+        for n in project.nodes.values()
+        if label_counts[n.label] > 1
+    ]
     circular_references = find_reference_cycles(project)
+
+    node_ids = set(project.nodes.keys())
+    broken_references = [
+        f"Reference '{r.label or r.id}' points to a node that no longer exists"
+        for r in project.references
+        if r.from_ not in node_ids or r.to not in node_ids
+    ]
+
+    avg_depth = round(sum(depths) / len(depths), 2) if depths else 0.0
+    max_depth = max(depths) if depths else 0
 
     penalty = (
         5 * len(duplicate_labels)
         + 15 * len(circular_references)
         + 3 * len(large_modules)
         + 2 * len(single_child)
-        + 1 * missing_notes
+        + 1 * len(missing_notes)
+        + 2 * len(missing_owners)
+        + 10 * len(orphan_nodes)
+        + 10 * len(broken_references)
     )
     score = max(0, min(100, 100 - penalty))
     if score >= 90:
@@ -487,9 +525,11 @@ def build_validation_report(project: Project) -> ValidationReport:
     elif score >= 75:
         rating = "Good"
     elif score >= 50:
-        rating = "Needs attention"
-    else:
+        rating = "Fair"
+    elif score >= 25:
         rating = "Poor"
+    else:
+        rating = "Critical"
 
     return ValidationReport(
         score=score,
@@ -498,7 +538,13 @@ def build_validation_report(project: Project) -> ValidationReport:
         circular_references=circular_references,
         large_modules=large_modules,
         single_child_nodes=single_child,
-        missing_notes_count=missing_notes,
+        missing_notes=missing_notes,
+        missing_owners=missing_owners,
+        orphan_nodes=orphan_nodes,
+        broken_references=broken_references,
+        avg_depth=avg_depth,
+        max_depth=max_depth,
+        risk_distribution=risk_distribution,
     )
 
 

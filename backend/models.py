@@ -174,11 +174,22 @@ class PasteSubtreeRequest(BaseModel):
     root: TemplateNode
 
 
+class ValidationIssue(BaseModel):
+    id: str
+    label: str
+
+
 class ValidationReport(BaseModel):
     score: int
     rating: str
-    duplicate_labels: List[str]
+    duplicate_labels: List[ValidationIssue]
     circular_references: List[List[str]]
-    large_modules: List[str]
-    single_child_nodes: List[str]
-    missing_notes_count: int
+    large_modules: List[ValidationIssue]
+    single_child_nodes: List[ValidationIssue]
+    missing_notes: List[ValidationIssue]
+    missing_owners: List[ValidationIssue]
+    orphan_nodes: List[ValidationIssue]
+    broken_references: List[str]
+    avg_depth: float
+    max_depth: int
+    risk_distribution: Dict[str, int]
