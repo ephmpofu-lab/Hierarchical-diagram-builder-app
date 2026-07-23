@@ -4,3 +4,4 @@ __pycache__/
 server_out.log
 server_err.log
 projects/*.json
+templates.json

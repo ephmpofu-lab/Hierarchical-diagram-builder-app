@@ -14,6 +14,15 @@ class Node(BaseModel):
 
 
 class Reference(BaseModel):
+    id: str
+    from_: str = Field(alias="from")
+    to: str
+    label: Optional[str] = None
+
+    model_config = {"populate_by_name": True}
+
+
+class ReferenceCreate(BaseModel):
     from_: str = Field(alias="from")
     to: str
     label: Optional[str] = None
@@ -64,3 +73,30 @@ class NodePosition(BaseModel):
 
 class NodeWithLevel(Node):
     level: int
+
+
+class TemplateNode(BaseModel):
+    label: str
+    notes: str = ""
+    children: List["TemplateNode"] = Field(default_factory=list)
+
+
+TemplateNode.model_rebuild()
+
+
+class Template(BaseModel):
+    id: str
+    name: str
+    created_at: str
+    root: TemplateNode
+
+
+class TemplateSummary(BaseModel):
+    id: str
+    name: str
+    created_at: str
+    node_count: int
+
+
+class TemplateCreate(BaseModel):
+    name: str

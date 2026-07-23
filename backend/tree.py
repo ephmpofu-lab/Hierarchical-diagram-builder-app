@@ -1,8 +1,9 @@
+import uuid
 from typing import Optional
 
 from fastapi import HTTPException
 
-from .models import Project
+from .models import Project, Reference, TemplateNode
 
 
 def find_root_id(project: Project) -> str:
@@ -47,7 +48,9 @@ def add_node(
     from .models import Node
 
     parent = get_node_or_404(project, parent_id)
-    new_node = Node(id=node_id, label=label, parent_id=parent_id, canvas_x=0, canvas_y=0)
+    default_x = parent.canvas_x + len(parent.children) * 170
+    default_y = parent.canvas_y + 150
+    new_node = Node(id=node_id, label=label, parent_id=parent_id, canvas_x=default_x, canvas_y=default_y)
     project.nodes[node_id] = new_node
     if insert_after is not None:
         if insert_after not in parent.children:
@@ -84,6 +87,7 @@ def delete_node(project: Project, node_id: str, promote_children: bool) -> None:
             project.nodes[child_id].parent_id = node.parent_id
         parent.children[index:index + 1] = node.children
         del project.nodes[node_id]
+        removed_ids = {node_id}
     else:
         # delete entire subtree
         to_delete = []
@@ -95,6 +99,11 @@ def delete_node(project: Project, node_id: str, promote_children: bool) -> None:
         parent.children.remove(node_id)
         for nid in to_delete:
             del project.nodes[nid]
+        removed_ids = set(to_delete)
+
+    project.references = [
+        r for r in project.references if r.from_ not in removed_ids and r.to not in removed_ids
+    ]
 
 
 def rename_node(
@@ -148,3 +157,48 @@ def outdent_node(project: Project, node_id: str) -> None:
     node.parent_id = grandparent.id
     parent_index = grandparent.children.index(old_parent.id)
     grandparent.children.insert(parent_index + 1, node_id)
+
+
+def add_reference(project: Project, from_id: str, to_id: str, label: Optional[str]) -> Reference:
+    get_node_or_404(project, from_id)
+    get_node_or_404(project, to_id)
+    if from_id == to_id:
+        raise HTTPException(status_code=400, detail="Cannot reference a node to itself")
+    ref = Reference(id=str(uuid.uuid4()), **{"from": from_id}, to=to_id, label=label)
+    project.references.append(ref)
+    return ref
+
+
+def delete_reference(project: Project, reference_id: str) -> None:
+    before = len(project.references)
+    project.references = [r for r in project.references if r.id != reference_id]
+    if len(project.references) == before:
+        raise HTTPException(status_code=404, detail="Reference not found")
+
+
+def subtree_depth(project: Project, node_id: str) -> int:
+    """Deepest level (absolute, root=1) reached anywhere in node_id's subtree."""
+    node = project.nodes[node_id]
+    deepest = compute_level(project, node_id)
+    for child_id in node.children:
+        deepest = max(deepest, subtree_depth(project, child_id))
+    return deepest
+
+
+def capture_template(project: Project, node_id: str) -> TemplateNode:
+    node = get_node_or_404(project, node_id)
+    return TemplateNode(
+        label=node.label,
+        notes=node.notes,
+        children=[capture_template(project, child_id) for child_id in node.children],
+    )
+
+
+def apply_template(project: Project, parent_id: str, template_node: TemplateNode) -> str:
+    """Instantiate a TemplateNode tree as new children under parent_id. Returns new root node id."""
+    new_id = str(uuid.uuid4())
+    add_node(project, parent_id, template_node.label, new_id)
+    project.nodes[new_id].notes = template_node.notes
+    for child_template in template_node.children:
+        apply_template(project, new_id, child_template)
+    return new_id

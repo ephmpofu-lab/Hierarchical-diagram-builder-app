@@ -6,9 +6,10 @@ from typing import List
 
 from fastapi import HTTPException
 
-from .models import Node, Project, ProjectSummary
+from .models import Node, Project, ProjectSummary, Template, TemplateSummary
 
 PROJECTS_DIR = Path(__file__).resolve().parent.parent / "projects"
+TEMPLATES_PATH = Path(__file__).resolve().parent.parent / "templates.json"
 
 
 def _now() -> str:
@@ -93,3 +94,61 @@ def rename_project(project_id: str, name: str) -> Project:
     project.name = name
     save_project(project)
     return project
+
+
+def _count_template_nodes(node) -> int:
+    return 1 + sum(_count_template_nodes(c) for c in node.children)
+
+
+def _load_templates_raw() -> list:
+    if not TEMPLATES_PATH.exists():
+        return []
+    try:
+        return json.loads(TEMPLATES_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+
+
+def _save_templates_raw(templates: list) -> None:
+    TEMPLATES_PATH.write_text(json.dumps(templates, indent=2), encoding="utf-8")
+
+
+def list_templates() -> List[TemplateSummary]:
+    raw = _load_templates_raw()
+    summaries = []
+    for t in raw:
+        template = Template.model_validate(t)
+        summaries.append(
+            TemplateSummary(
+                id=template.id,
+                name=template.name,
+                created_at=template.created_at,
+                node_count=_count_template_nodes(template.root),
+            )
+        )
+    summaries.sort(key=lambda s: s.created_at, reverse=True)
+    return summaries
+
+
+def load_template(template_id: str) -> Template:
+    raw = _load_templates_raw()
+    for t in raw:
+        if t.get("id") == template_id:
+            return Template.model_validate(t)
+    raise HTTPException(status_code=404, detail="Template not found")
+
+
+def save_new_template(name: str, root) -> Template:
+    template = Template(id=str(uuid.uuid4()), name=name, created_at=_now(), root=root)
+    raw = _load_templates_raw()
+    raw.append(template.model_dump())
+    _save_templates_raw(raw)
+    return template
+
+
+def delete_template(template_id: str) -> None:
+    raw = _load_templates_raw()
+    filtered = [t for t in raw if t.get("id") != template_id]
+    if len(filtered) == len(raw):
+        raise HTTPException(status_code=404, detail="Template not found")
+    _save_templates_raw(filtered)
