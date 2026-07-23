@@ -113,9 +113,13 @@ const showDepsBtn = document.getElementById("showDepsBtn");
 const focusModeBtn = document.getElementById("focusModeBtn");
 const fullArchModeBtn = document.getElementById("fullArchModeBtn");
 const minimapSvg = document.getElementById("minimapSvg");
-const healthToggleBtn = document.getElementById("healthToggleBtn");
-const healthPanel = document.getElementById("healthPanel");
-const healthCloseBtn = document.getElementById("healthCloseBtn");
+const outlinePane = document.getElementById("outlinePane");
+const outlineCollapseBtn = document.getElementById("outlineCollapseBtn");
+const inspectorPane = document.getElementById("inspectorPane");
+const inspectorCollapseBtn = document.getElementById("inspectorCollapseBtn");
+const inspectorModeBtn = document.getElementById("inspectorModeBtn");
+const healthModeBtn = document.getElementById("healthModeBtn");
+const healthContent = document.getElementById("healthContent");
 const healthScoreEl = document.getElementById("healthScore");
 const viewFullReportBtn = document.getElementById("viewFullReportBtn");
 const validationSummaryEl = document.getElementById("validationSummary");
@@ -152,6 +156,7 @@ let showDependencies = false;
 let expandedGroupOverflow = false; // "show all" for progressive disclosure of many ungrouped children
 let lastValidationReport = null;
 let viewMode = "focus"; // "focus" | "full"
+let inspectorPanelMode = "inspector"; // "inspector" | "health" — the right panel's top-level mode
 let activeStatusFilters = new Set(PLANNING_STATUSES);
 
 // Nodes with no planning_status set are never filtered out — only nodes that HAVE an
@@ -275,7 +280,7 @@ function render() {
   renderCanvas();
   renderMinimap();
   renderInspector();
-  if (!healthPanel.hidden) refreshHealthPanel();
+  if (inspectorPanelMode === "health") refreshHealthPanel();
 }
 
 async function focusNode(nodeId) {
@@ -2338,15 +2343,36 @@ function renderMinimap() {
   });
 }
 
+// ---------- Right panel: Inspector / Health mode + collapsible side panels ----------
+
+function setInspectorPanelMode(mode) {
+  inspectorPanelMode = mode;
+  inspectorModeBtn.classList.toggle("active", mode === "inspector");
+  healthModeBtn.classList.toggle("active", mode === "health");
+  inspectorContent.hidden = mode !== "inspector";
+  healthContent.hidden = mode !== "health";
+  if (mode === "health") refreshHealthPanel();
+}
+inspectorModeBtn.addEventListener("click", () => setInspectorPanelMode("inspector"));
+healthModeBtn.addEventListener("click", () => setInspectorPanelMode("health"));
+
+const editorPanesEl = document.querySelector(".editor-panes");
+
+outlineCollapseBtn.addEventListener("click", () => {
+  const collapsed = outlinePane.classList.toggle("collapsed");
+  editorPanesEl.classList.toggle("outline-collapsed", collapsed);
+  outlineCollapseBtn.textContent = collapsed ? "»" : "«";
+  outlineCollapseBtn.title = collapsed ? "Expand Outline panel" : "Collapse this panel for a distraction-free canvas";
+});
+inspectorCollapseBtn.addEventListener("click", () => {
+  const collapsed = inspectorPane.classList.toggle("collapsed");
+  editorPanesEl.classList.toggle("inspector-collapsed", collapsed);
+  inspectorCollapseBtn.textContent = collapsed ? "«" : "»";
+  inspectorCollapseBtn.title = collapsed ? "Expand Inspector panel" : "Collapse this panel for a distraction-free canvas";
+});
+
 // ---------- Health / validation / activity ----------
 
-healthToggleBtn.addEventListener("click", () => {
-  healthPanel.hidden = !healthPanel.hidden;
-  if (!healthPanel.hidden) refreshHealthPanel();
-});
-healthCloseBtn.addEventListener("click", () => {
-  healthPanel.hidden = true;
-});
 runValidationBtn.addEventListener("click", refreshHealthPanel);
 viewFullReportBtn.addEventListener("click", async () => {
   if (!lastValidationReport) await refreshHealthPanel();
