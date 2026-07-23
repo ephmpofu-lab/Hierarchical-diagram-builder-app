@@ -678,15 +678,15 @@ button {
 }
 
 .canvas-svg .edge {
-  stroke: var(--border);
+  stroke: var(--accent);
   stroke-width: 2;
   fill: none;
   pointer-events: none;
 }
 
 .canvas-svg .edge.selected {
-  stroke: var(--accent);
-  stroke-width: 2.5;
+  stroke: var(--accent-hover);
+  stroke-width: 3;
 }
 
 .canvas-svg .edge-hit {
@@ -722,15 +722,32 @@ button {
 }
 
 .canvas-svg .ref-edge {
-  stroke: var(--accent);
+  stroke: var(--text-muted);
   stroke-width: 1.5;
   stroke-dasharray: 5 4;
   fill: none;
   pointer-events: none;
 }
 
+.canvas-svg .ref-edge.type-dependency {
+  stroke: var(--success-text);
+}
+
+.canvas-svg .ref-edge.type-warning {
+  stroke: var(--warning-text);
+}
+
+.canvas-svg .ref-edge.type-broken {
+  stroke: var(--danger-text);
+}
+
 .canvas-svg .ref-edge.selected {
+  stroke: var(--accent);
   stroke-width: 2.5;
+}
+
+.canvas-svg .flow-particle {
+  pointer-events: none;
 }
 
 .canvas-svg .ref-handle {
@@ -745,7 +762,7 @@ button {
 }
 
 .canvas-svg .ref-arrow-fill {
-  fill: var(--accent);
+  fill: var(--text-muted);
 }
 
 .canvas-svg .ref-tag {
@@ -1280,6 +1297,16 @@ button {
 
 .ref-list-item .dot {
   flex-shrink: 0;
+}
+
+.ref-type-select {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
 }
 
 .template-list {

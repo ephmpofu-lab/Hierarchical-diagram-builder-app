@@ -296,12 +296,14 @@ def promote_to_root(project: Project, node_id: str) -> None:
     node.parent_id = None
 
 
-def add_reference(project: Project, from_id: str, to_id: str, label: Optional[str]) -> Reference:
+def add_reference(
+    project: Project, from_id: str, to_id: str, label: Optional[str], reference_type: Optional[str] = None
+) -> Reference:
     get_node_or_404(project, from_id)
     get_node_or_404(project, to_id)
     if from_id == to_id:
         raise HTTPException(status_code=400, detail="Cannot reference a node to itself")
-    ref = Reference(id=str(uuid.uuid4()), **{"from": from_id}, to=to_id, label=label)
+    ref = Reference(id=str(uuid.uuid4()), **{"from": from_id}, to=to_id, label=label, reference_type=reference_type)
     project.references.append(ref)
     return ref
 
@@ -319,6 +321,7 @@ def update_reference(
     from_id: Optional[str],
     to_id: Optional[str],
     label: Optional[str],
+    reference_type: Optional[str] = None,
 ) -> Reference:
     ref = next((r for r in project.references if r.id == reference_id), None)
     if ref is None:
@@ -333,6 +336,8 @@ def update_reference(
     ref.to = new_to
     if label is not None:
         ref.label = label
+    if reference_type is not None:
+        ref.reference_type = reference_type or None
     return ref
 
 

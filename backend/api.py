@@ -277,7 +277,7 @@ def api_outdent_node(project_id: str, node_id: str):
 @router.post("/projects/{project_id}/references", response_model=Reference, status_code=201)
 def api_add_reference(project_id: str, body: ReferenceCreate):
     project = storage.load_project(project_id)
-    ref = tree.add_reference(project, body.from_, body.to, body.label)
+    ref = tree.add_reference(project, body.from_, body.to, body.label, body.reference_type)
     tree.log_activity(
         project, f"Linked '{project.nodes[body.from_].label}' -> '{project.nodes[body.to].label}'"
     )
@@ -288,7 +288,7 @@ def api_add_reference(project_id: str, body: ReferenceCreate):
 @router.put("/projects/{project_id}/references/{reference_id}", response_model=Reference)
 def api_update_reference(project_id: str, reference_id: str, body: ReferenceUpdate):
     project = storage.load_project(project_id)
-    ref = tree.update_reference(project, reference_id, body.from_, body.to, body.label)
+    ref = tree.update_reference(project, reference_id, body.from_, body.to, body.label, body.reference_type)
     tree.log_activity(
         project, f"Relinked reference to '{project.nodes[ref.from_].label}' -> '{project.nodes[ref.to].label}'"
     )

@@ -95,6 +95,7 @@ const exportMenu = document.getElementById("exportMenu");
 const statusFilterBtn = document.getElementById("statusFilterBtn");
 const statusFilterMenu = document.getElementById("statusFilterMenu");
 const showDepsCheckbox = document.getElementById("showDepsCheckbox");
+const animateFlowCheckbox = document.getElementById("animateFlowCheckbox");
 const collapseExpandBtn = document.getElementById("collapseExpandBtn");
 const collapseExpandMenu = document.getElementById("collapseExpandMenu");
 const collapseAllBtn = document.getElementById("collapseAllBtn");
@@ -904,7 +905,7 @@ function renderFocusCanvas(viewW, viewH) {
       if (fromVisible && toVisible) {
         const fromPos = positions.get(ref.from);
         const toPos = positions.get(ref.to);
-        refGroup.appendChild(drawRefEdge(fromPos, toPos, ref.from, ref.to, ref.id));
+        refGroup.appendChild(drawRefEdge(fromPos, toPos, ref.from, ref.to, ref.id, ref.reference_type));
         if (selectedEdgeKey === edgeKey("ref", ref.id)) {
           refGroup.appendChild(drawRefHandle(fromPos, ref, "from"));
           refGroup.appendChild(drawRefHandle(toPos, ref, "to"));
@@ -1249,7 +1250,9 @@ function buildRefArrowDefs() {
   return defs;
 }
 
-function drawRefEdge(from, to, fromId, toId, refId) {
+const REF_TYPE_CLASS = { Dependency: "type-dependency", Warning: "type-warning", Broken: "type-broken" };
+
+function drawRefEdge(from, to, fromId, toId, refId, referenceType) {
   const group = document.createElementNS(SVG_NS, "g");
   const key = edgeKey("ref", refId);
 
@@ -1257,8 +1260,12 @@ function drawRefEdge(from, to, fromId, toId, refId) {
   hitPath.setAttribute("class", "edge-hit");
   hitPath.setAttribute("d", curvePath(from, to));
 
+  const typeClass = REF_TYPE_CLASS[referenceType] || "";
   const line = document.createElementNS(SVG_NS, "path");
-  line.setAttribute("class", "ref-edge" + (selectedEdgeKey === key ? " selected" : ""));
+  line.setAttribute(
+    "class",
+    "ref-edge" + (typeClass ? ` ${typeClass}` : "") + (selectedEdgeKey === key ? " selected" : "")
+  );
   line.setAttribute("d", curvePath(from, to));
   line.setAttribute("marker-end", "url(#refArrow)");
   group.dataset.fromId = fromId;
@@ -1270,6 +1277,28 @@ function drawRefEdge(from, to, fromId, toId, refId) {
 
   group.appendChild(hitPath);
   group.appendChild(line);
+
+  if (animateDataFlow) {
+    const particleColor =
+      referenceType === "Dependency"
+        ? "var(--success-text)"
+        : referenceType === "Warning"
+        ? "var(--warning-text)"
+        : referenceType === "Broken"
+        ? "var(--danger-text)"
+        : "var(--text-muted)";
+    const particle = document.createElementNS(SVG_NS, "circle");
+    particle.setAttribute("class", "flow-particle");
+    particle.setAttribute("r", 2.5);
+    particle.style.fill = particleColor;
+    const anim = document.createElementNS(SVG_NS, "animateMotion");
+    anim.setAttribute("dur", "2.4s");
+    anim.setAttribute("repeatCount", "indefinite");
+    anim.setAttribute("path", curvePath(from, to));
+    particle.appendChild(anim);
+    group.appendChild(particle);
+  }
+
   group.addEventListener("click", (e) => {
     e.stopPropagation();
     selectedEdgeKey = selectedEdgeKey === key ? null : key;
@@ -2313,6 +2342,12 @@ async function addGroupUnder(parentId) {
 
 showDepsCheckbox.addEventListener("change", () => {
   showDependencies = showDepsCheckbox.checked;
+  renderCanvas();
+});
+
+let animateDataFlow = false;
+animateFlowCheckbox.addEventListener("change", () => {
+  animateDataFlow = animateFlowCheckbox.checked;
   renderCanvas();
 });
 
@@ -3421,6 +3456,24 @@ function renderReferencesTab(container, node) {
       const text = document.createElement("span");
       text.className = "ref-text";
       text.textContent = `${direction} ${otherNode ? otherNode.label : "(unknown)"}${ref.label ? " · " + ref.label : ""}`;
+      const typeSelect = document.createElement("select");
+      typeSelect.className = "ref-type-select";
+      typeSelect.title = "Relationship type — colors the connector on the canvas (Dependency=emerald, Warning=amber, Broken=red)";
+      for (const opt of ["", "Dependency", "Warning", "Broken"]) {
+        const o = document.createElement("option");
+        o.value = opt;
+        o.textContent = opt || "Reference";
+        if ((ref.reference_type || "") === opt) o.selected = true;
+        typeSelect.appendChild(o);
+      }
+      typeSelect.addEventListener("change", async () => {
+        await fetch(`/api/projects/${projectId}/references/${ref.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reference_type: typeSelect.value || "" }),
+        });
+        await loadProject();
+      });
       const delBtn = document.createElement("button");
       delBtn.className = "row-btn delete-node";
       delBtn.textContent = "×";
@@ -3431,6 +3484,7 @@ function renderReferencesTab(container, node) {
       });
       item.appendChild(dot);
       item.appendChild(text);
+      item.appendChild(typeSelect);
       item.appendChild(delBtn);
       refsField.appendChild(item);
     }

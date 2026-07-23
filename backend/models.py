@@ -39,6 +39,7 @@ class Reference(BaseModel):
     from_: str = Field(alias="from")
     to: str
     label: Optional[str] = None
+    reference_type: Optional[str] = None  # None | "Dependency" | "Warning" | "Broken"
 
     model_config = {"populate_by_name": True}
 
@@ -47,6 +48,7 @@ class ReferenceCreate(BaseModel):
     from_: str = Field(alias="from")
     to: str
     label: Optional[str] = None
+    reference_type: Optional[str] = None
 
     model_config = {"populate_by_name": True}
 
@@ -55,6 +57,7 @@ class ReferenceUpdate(BaseModel):
     from_: Optional[str] = Field(default=None, alias="from")
     to: Optional[str] = None
     label: Optional[str] = None
+    reference_type: Optional[str] = None
 
     model_config = {"populate_by_name": True}
 
