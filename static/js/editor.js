@@ -1410,6 +1410,15 @@ function drawNode(node, pos, faded = false) {
   group.appendChild(box);
   group.appendChild(label);
 
+  if (!node.is_group && typeof node.level === "number") {
+    const levelBadge = document.createElementNS(SVG_NS, "text");
+    levelBadge.setAttribute("class", "node-level-badge");
+    levelBadge.setAttribute("x", pos.x - NODE_W / 2);
+    levelBadge.setAttribute("y", pos.y - NODE_H / 2 - 6);
+    levelBadge.textContent = `L${node.level}`;
+    group.appendChild(levelBadge);
+  }
+
   if (!node.is_group && node.classification) {
     const badgeText = CLASSIFICATION_BADGES[node.classification] || node.classification.slice(0, 3).toUpperCase();
     const badgeW = 10 + badgeText.length * 6;
@@ -1440,7 +1449,22 @@ function drawNode(node, pos, faded = false) {
     group.appendChild(priBadge);
   }
 
-  if (!node.is_group && computeWarnings(node).length > 0) {
+  if (!node.is_group && node.planning_status === "Completed") {
+    const tick = document.createElementNS(SVG_NS, "g");
+    tick.setAttribute("class", "completion-tick");
+    const tickCircle = document.createElementNS(SVG_NS, "circle");
+    tickCircle.setAttribute("cx", pos.x + NODE_W / 2 - 7);
+    tickCircle.setAttribute("cy", pos.y - NODE_H / 2 + 7);
+    tickCircle.setAttribute("r", 7);
+    const tickMark = document.createElementNS(SVG_NS, "text");
+    tickMark.setAttribute("class", "completion-tick-mark");
+    tickMark.setAttribute("x", pos.x + NODE_W / 2 - 7);
+    tickMark.setAttribute("y", pos.y - NODE_H / 2 + 7);
+    tickMark.textContent = "✓";
+    tick.appendChild(tickCircle);
+    tick.appendChild(tickMark);
+    group.appendChild(tick);
+  } else if (!node.is_group && computeWarnings(node).length > 0) {
     const dot = document.createElementNS(SVG_NS, "circle");
     dot.setAttribute("class", "warning-dot");
     dot.setAttribute("cx", pos.x + NODE_W / 2 - 6);
@@ -1449,7 +1473,7 @@ function drawNode(node, pos, faded = false) {
     group.appendChild(dot);
   }
 
-  if (!node.is_group && node.planning_status) {
+  if (!node.is_group && node.planning_status && node.planning_status !== "Completed") {
     const planBadge = document.createElementNS(SVG_NS, "g");
     planBadge.setAttribute("class", "planning-badge");
     const planCircle = document.createElementNS(SVG_NS, "circle");

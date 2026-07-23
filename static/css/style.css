@@ -826,6 +826,31 @@ button {
   stroke-width: 1.5;
 }
 
+.canvas-svg .node-level-badge {
+  font-size: 9px;
+  font-weight: 600;
+  fill: var(--text-muted);
+  text-anchor: start;
+  pointer-events: none;
+  user-select: none;
+}
+
+.canvas-svg .completion-tick circle {
+  fill: var(--success-text);
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+
+.canvas-svg .completion-tick-mark {
+  font-size: 9px;
+  font-weight: 700;
+  fill: #ffffff;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
 .canvas-svg .priority-dot {
   fill: var(--danger);
   stroke: var(--surface);
