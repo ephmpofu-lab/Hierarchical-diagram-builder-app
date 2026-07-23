@@ -1556,8 +1556,10 @@ function drawTreeBranches(focusPos, children, positions, faded = false) {
 
   const trunk = document.createElementNS(SVG_NS, "path");
   trunk.setAttribute("class", edgeClass);
-  trunk.setAttribute("d", `M ${focusPos.x} ${focusPos.y} L ${focusPos.x} ${busY}`);
+  const trunkD = `M ${focusPos.x} ${focusPos.y} L ${focusPos.x} ${busY}`;
+  trunk.setAttribute("d", trunkD);
   group.appendChild(trunk);
+  if (animateDataFlow && !faded) group.appendChild(drawFlowParticle(trunkD, "var(--accent)"));
 
   const bus = document.createElementNS(SVG_NS, "line");
   bus.setAttribute("class", edgeClass);
@@ -1576,8 +1578,9 @@ function drawTreeBranches(focusPos, children, positions, faded = false) {
     hit.setAttribute("class", "edge-hit");
     hit.setAttribute("d", `M ${childPos.x} ${busY} L ${childPos.x} ${childPos.y}`);
     const branch = document.createElementNS(SVG_NS, "path");
+    const branchD = `M ${childPos.x} ${busY} L ${childPos.x} ${childPos.y}`;
     branch.setAttribute("class", edgeClass + (selectedEdgeKey === key ? " selected" : ""));
-    branch.setAttribute("d", `M ${childPos.x} ${busY} L ${childPos.x} ${childPos.y}`);
+    branch.setAttribute("d", branchD);
     branchGroup.dataset.toId = child.id;
     branchGroup.dataset.x1 = childPos.x;
     branchGroup.dataset.y1 = busY;
@@ -1585,6 +1588,7 @@ function drawTreeBranches(focusPos, children, positions, faded = false) {
     branchGroup.dataset.y2 = childPos.y;
     branchGroup.appendChild(hit);
     branchGroup.appendChild(branch);
+    if (animateDataFlow && !faded) branchGroup.appendChild(drawFlowParticle(branchD, "var(--accent)"));
     branchGroup.addEventListener("click", (e) => {
       e.stopPropagation();
       selectedEdgeKey = selectedEdgeKey === key ? null : key;
@@ -1623,6 +1627,9 @@ function drawTreeEdge(from, to, fromId, toId, faded = false) {
 
   group.appendChild(hit);
   group.appendChild(line);
+  if (animateDataFlow && !faded) {
+    group.appendChild(drawFlowParticle(curvePath(from, to), "var(--accent)"));
+  }
   if (key) {
     group.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -1631,6 +1638,19 @@ function drawTreeEdge(from, to, fromId, toId, faded = false) {
     });
   }
   return group;
+}
+
+function drawFlowParticle(pathD, color) {
+  const particle = document.createElementNS(SVG_NS, "circle");
+  particle.setAttribute("class", "flow-particle");
+  particle.setAttribute("r", 2.5);
+  particle.style.fill = color;
+  const anim = document.createElementNS(SVG_NS, "animateMotion");
+  anim.setAttribute("dur", "2.4s");
+  anim.setAttribute("repeatCount", "indefinite");
+  anim.setAttribute("path", pathD);
+  particle.appendChild(anim);
+  return particle;
 }
 
 function drawTreeHandle(pos, childId, fixedPos) {
@@ -1726,16 +1746,7 @@ function drawRefEdge(from, to, ref) {
         : ref.reference_type === "Broken"
         ? "var(--danger-text)"
         : "var(--text-muted)");
-    const particle = document.createElementNS(SVG_NS, "circle");
-    particle.setAttribute("class", "flow-particle");
-    particle.setAttribute("r", 2.5);
-    particle.style.fill = particleColor;
-    const anim = document.createElementNS(SVG_NS, "animateMotion");
-    anim.setAttribute("dur", "2.4s");
-    anim.setAttribute("repeatCount", "indefinite");
-    anim.setAttribute("path", curvePath(from, to));
-    particle.appendChild(anim);
-    group.appendChild(particle);
+    group.appendChild(drawFlowParticle(curvePath(from, to), particleColor));
   }
 
   group.addEventListener("click", (e) => {

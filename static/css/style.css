@@ -497,6 +497,12 @@ button {
   font-size: 13px;
 }
 
+.btn.icon-only {
+  padding: 4px 9px;
+  font-size: 13px;
+  line-height: 1;
+}
+
 /* ---------- Library screen ---------- */
 
 .library-wrap {
