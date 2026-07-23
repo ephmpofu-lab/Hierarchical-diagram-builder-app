@@ -399,7 +399,7 @@ function renderNode(nodeId) {
   const addBtn = document.createElement("button");
   addBtn.className = "row-btn add-child";
   addBtn.textContent = "+";
-  addBtn.title = "Add child";
+  addBtn.title = "Add Component";
   addBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     addChild(nodeId);
@@ -488,11 +488,11 @@ function startRename(nodeId, row, labelSpan) {
 }
 
 async function addChild(parentId) {
-  pushUndoSnapshot("Add child");
+  pushUndoSnapshot("Add Component");
   const res = await fetch(`/api/projects/${projectId}/nodes`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ parent_id: parentId, label: "New node" }),
+    body: JSON.stringify({ parent_id: parentId, label: "New Component" }),
   });
   const newNode = await res.json();
   if (project.nodes[parentId].collapsed) {
@@ -510,11 +510,11 @@ async function addSiblingBelow(nodeId) {
   if (node.parent_id === null) {
     return addChild(nodeId);
   }
-  pushUndoSnapshot("Add sibling");
+  pushUndoSnapshot("Add Parallel Component");
   const res = await fetch(`/api/projects/${projectId}/nodes`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ parent_id: node.parent_id, label: "New node", insert_after: nodeId }),
+    body: JSON.stringify({ parent_id: node.parent_id, label: "New Component", insert_after: nodeId }),
   });
   const newNode = await res.json();
   await loadProject();
@@ -644,7 +644,7 @@ document.addEventListener("keydown", async (e) => {
   if (e.key === "Tab") {
     e.preventDefault();
     const endpoint = e.shiftKey ? "outdent" : "indent";
-    pushUndoSnapshot(e.shiftKey ? "Outdent" : "Indent");
+    pushUndoSnapshot(e.shiftKey ? "Move Up One Level" : "Move Under Selected");
     const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/${endpoint}`, {
       method: "POST",
     });
@@ -1794,8 +1794,8 @@ function openContextMenu(nodeId, clientX, clientY) {
   const menu = document.createElement("div");
   menu.className = "context-menu";
 
-  menu.appendChild(contextMenuItem("+ Add Child", () => addChild(nodeId)));
-  menu.appendChild(contextMenuItem("+ Add Sibling", () => addSiblingBelow(nodeId), { disabled: isRoot }));
+  menu.appendChild(contextMenuItem("+ Add Component", () => addChild(nodeId)));
+  menu.appendChild(contextMenuItem("+ Add Parallel Component", () => addSiblingBelow(nodeId), { disabled: isRoot }));
   menu.appendChild(
     contextMenuItem("↑ Add Parent Above", async () => {
       const label = prompt("New parent label:", "New parent");
@@ -2229,7 +2229,7 @@ function openCanvasContextMenu(clientX, clientY) {
   const menu = document.createElement("div");
   menu.className = "context-menu";
 
-  menu.appendChild(contextMenuItem("+ Add Child Here", () => addChild(focusedNodeId)));
+  menu.appendChild(contextMenuItem("+ Add Component Here", () => addChild(focusedNodeId)));
   menu.appendChild(
     contextMenuItem("Paste Subtree Here", async () => {
       const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/paste-subtree`, {
@@ -3424,31 +3424,35 @@ function renderOverviewTab(container, node) {
     return b;
   };
   btnRow.appendChild(
-    mkBtn("⇥ Indent", "Make this a child of the node above", async () => {
-      pushUndoSnapshot("Indent");
+    mkBtn("⇥ Move Under Selected", "Nest this component beneath the component above it", async () => {
+      pushUndoSnapshot("Move Under Selected");
       const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/indent`, { method: "POST" });
       if (!res.ok) {
         undoStack.pop();
         updateUndoRedoButtons();
-        alert("Can't indent: no preceding sibling.");
+        alert("Can't move under selected: no preceding component at this level.");
       }
       await loadProject();
     })
   );
   btnRow.appendChild(
-    mkBtn("⇤ Outdent", "Move this up one level", async () => {
-      pushUndoSnapshot("Outdent");
+    mkBtn("⇤ Move Up One Level", "Move this component up to its parent's level", async () => {
+      pushUndoSnapshot("Move Up One Level");
       const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/outdent`, { method: "POST" });
       if (!res.ok) {
         undoStack.pop();
         updateUndoRedoButtons();
-        alert("Can't outdent past the root.");
+        alert("Can't move up one level: already at the top.");
       }
       await loadProject();
     })
   );
-  btnRow.appendChild(mkBtn("+ Child", "Add a child node", () => addChild(focusedNodeId)));
-  btnRow.appendChild(mkBtn("+ Sibling", "Add a sibling node below", () => addSiblingBelow(focusedNodeId)));
+  btnRow.appendChild(mkBtn("+ Add Component", "Add a component beneath this one", () => addChild(focusedNodeId)));
+  btnRow.appendChild(
+    mkBtn("+ Add Parallel Component", "Add a component alongside this one, at the same level", () =>
+      addSiblingBelow(focusedNodeId)
+    )
+  );
   if (node.parent_id !== null) {
     btnRow.appendChild(
       mkBtn("↑ Move up", "Move earlier among its siblings", async () => {
