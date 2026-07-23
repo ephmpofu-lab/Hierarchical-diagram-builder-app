@@ -30,6 +30,7 @@ const importModal = document.getElementById("importModal");
 const importText = document.getElementById("importText");
 const importCancelBtn = document.getElementById("importCancelBtn");
 const importConfirmBtn = document.getElementById("importConfirmBtn");
+const importXBtn = document.getElementById("importXBtn");
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const NODE_W = 150;
@@ -367,6 +368,14 @@ document.addEventListener("keydown", async (e) => {
   if (e.key === "Escape" && selectedRefId) {
     selectedRefId = null;
     renderCanvas();
+    return;
+  }
+  if (e.key === "Escape" && !importModal.hidden) {
+    closeImportModal();
+    return;
+  }
+  if (e.key === "Escape" && !exportMenu.hidden) {
+    exportMenu.hidden = true;
     return;
   }
   if (!focusedNodeId || editingNodeId) return;
@@ -1102,35 +1111,46 @@ function renderActivityLog() {
 
 // ---------- Outline import ----------
 
+function closeImportModal() {
+  importModal.hidden = true;
+}
+
 importOutlineBtn.addEventListener("click", () => {
   if (!focusedNodeId) return;
+  exportMenu.hidden = true;
   importText.value = "";
   importModal.hidden = false;
   importText.focus();
 });
-importCancelBtn.addEventListener("click", () => {
-  importModal.hidden = true;
-});
+importCancelBtn.addEventListener("click", closeImportModal);
+importXBtn.addEventListener("click", closeImportModal);
 importModal.addEventListener("click", (e) => {
-  if (e.target === importModal) importModal.hidden = true;
+  if (e.target === importModal) closeImportModal();
 });
 importConfirmBtn.addEventListener("click", async () => {
   const text = importText.value.trim();
   if (!text) return;
-  const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/import-outline`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    alert(err.detail || "Import failed.");
-    return;
+  importConfirmBtn.disabled = true;
+  try {
+    const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/import-outline`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.detail || "Import failed. Check the outline format and try again.");
+      return;
+    }
+    const newNode = await res.json();
+    closeImportModal();
+    focusedNodeId = newNode.id;
+    await loadProject();
+  } catch (err) {
+    alert("Import failed: could not reach the server.");
+  } finally {
+    importConfirmBtn.disabled = false;
   }
-  const newNode = await res.json();
-  importModal.hidden = true;
-  focusedNodeId = newNode.id;
-  await loadProject();
 });
 
 // ---------- Search ----------
@@ -1189,6 +1209,7 @@ function buildPathString(nodeId) {
 // ---------- Export ----------
 
 exportBtn.addEventListener("click", () => {
+  if (exportMenu.hidden) closeImportModal();
   exportMenu.hidden = !exportMenu.hidden;
 });
 

@@ -987,6 +987,19 @@ hr.inspector-divider {
   max-width: 520px;
 }
 
+.modal-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.modal-header-row button {
+  width: 26px;
+  height: 26px;
+  font-size: 16px;
+}
+
 .import-modal textarea {
   width: 100%;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

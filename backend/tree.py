@@ -358,6 +358,19 @@ def build_validation_report(project: Project) -> ValidationReport:
 
 _BULLET_STRIP_RE = re.compile(r"^[\s│├└─\-•*|]+")
 _LEVEL_TAG_RE = re.compile(r"\(\s*level\s*(\d+)\s*\)", re.IGNORECASE)
+_LONE_LEVEL_TAG_RE = re.compile(r"^[\s│├└─\-•*|]*\(\s*level\s*\d+\s*\)[\s│├└─\-•*|]*$", re.IGNORECASE)
+
+
+def _merge_orphan_level_tags(lines: list) -> list:
+    """If a '(Level N)' tag lands alone on its own line (e.g. from a copy-pasted
+    multi-column ASCII diagram), merge it onto the previous line instead of dropping it."""
+    merged: list = []
+    for line in lines:
+        if _LONE_LEVEL_TAG_RE.match(line) and merged:
+            merged[-1] = merged[-1].rstrip() + " " + line.strip()
+        else:
+            merged.append(line)
+    return merged
 
 
 def parse_outline_text(text: str) -> TemplateNode:
@@ -367,24 +380,33 @@ def parse_outline_text(text: str) -> TemplateNode:
     raw_lines = [line for line in text.splitlines() if line.strip()]
     if not raw_lines:
         raise HTTPException(status_code=400, detail="No parseable lines found in outline text")
+    raw_lines = _merge_orphan_level_tags(raw_lines)
 
-    uses_level_tags = any(_LEVEL_TAG_RE.search(line) for line in raw_lines)
     entries = []  # list of (level, label)
+    # Dynamic indentation stack: (raw_indent, level) pairs for the currently-open path.
+    # Lines with an explicit '(Level N)' tag are authoritative anchors; lines without one
+    # are placed relative to the nearest open ancestor by raw indentation. This handles a
+    # mix of tagged and untagged lines (e.g. pasted ASCII trees that only annotate some
+    # nodes), not just an all-tagged or all-untagged file.
+    indent_stack: list = []
 
     for line in raw_lines:
-        if uses_level_tags:
-            match = _LEVEL_TAG_RE.search(line)
-            if not match:
-                continue
-            level = int(match.group(1))
-            label = _LEVEL_TAG_RE.sub("", line)
-            label = _BULLET_STRIP_RE.sub("", label).strip()
+        tag_match = _LEVEL_TAG_RE.search(line)
+        working = _LEVEL_TAG_RE.sub("", line) if tag_match else line
+        raw_indent = len(working) - len(working.lstrip(" \t"))
+        label = _BULLET_STRIP_RE.sub("", working).strip()
+        if not label:
+            continue
+
+        if tag_match:
+            level = int(tag_match.group(1))
+            indent_stack = [(i, lv) for (i, lv) in indent_stack if lv < level]
         else:
-            indent = len(line) - len(line.lstrip(" "))
-            label = _BULLET_STRIP_RE.sub("", line).strip()
-            level = indent // 2 + 1
-        if label:
-            entries.append((level, label))
+            while indent_stack and raw_indent <= indent_stack[-1][0]:
+                indent_stack.pop()
+            level = indent_stack[-1][1] + 1 if indent_stack else 1
+        indent_stack.append((raw_indent, level))
+        entries.append((level, label))
 
     if not entries:
         raise HTTPException(status_code=400, detail="No parseable lines found in outline text")

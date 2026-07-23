@@ -6,6 +6,7 @@ const importModal = document.getElementById("importModal");
 const importText = document.getElementById("importText");
 const importCancelBtn = document.getElementById("importCancelBtn");
 const importConfirmBtn = document.getElementById("importConfirmBtn");
+const importXBtn = document.getElementById("importXBtn");
 
 function formatDate(iso) {
   const d = new Date(iso);
@@ -125,21 +126,33 @@ async function deleteProject(project) {
   loadAndRender();
 }
 
+function closeImportModal() {
+  importModal.hidden = true;
+}
+
 async function createProjectFromOutline() {
   const text = importText.value.trim();
   if (!text) return;
-  const res = await fetch("/api/projects/from-outline", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    alert(err.detail || "Import failed. Check the outline format.");
-    return;
+  importConfirmBtn.disabled = true;
+  try {
+    const res = await fetch("/api/projects/from-outline", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.detail || "Import failed. Check the outline format and try again.");
+      return;
+    }
+    const project = await res.json();
+    closeImportModal();
+    window.location.href = `editor.html?project=${project.id}`;
+  } catch (err) {
+    alert("Import failed: could not reach the server.");
+  } finally {
+    importConfirmBtn.disabled = false;
   }
-  const project = await res.json();
-  window.location.href = `editor.html?project=${project.id}`;
 }
 
 newProjectBtn.addEventListener("click", createProject);
@@ -148,12 +161,14 @@ importOutlineBtn.addEventListener("click", () => {
   importModal.hidden = false;
   importText.focus();
 });
-importCancelBtn.addEventListener("click", () => {
-  importModal.hidden = true;
-});
+importCancelBtn.addEventListener("click", closeImportModal);
+importXBtn.addEventListener("click", closeImportModal);
 importModal.addEventListener("click", (e) => {
-  if (e.target === importModal) importModal.hidden = true;
+  if (e.target === importModal) closeImportModal();
 });
 importConfirmBtn.addEventListener("click", createProjectFromOutline);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !importModal.hidden) closeImportModal();
+});
 
 loadAndRender();

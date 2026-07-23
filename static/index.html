@@ -28,6 +28,10 @@
 
   <div id="importModal" class="modal-backdrop" hidden>
     <div class="modal import-modal">
+      <div class="modal-header-row">
+        <strong>New project from outline</strong>
+        <button id="importXBtn" class="theme-toggle" title="Close">×</button>
+      </div>
       <p>Paste an outline to create a new project from it. Lines can use explicit <code>(Level N)</code> tags, or plain nested <code>- bullets</code> (2 spaces per level).</p>
       <textarea id="importText" rows="12" placeholder="Root item (Level 1)&#10;    Child item (Level 2)"></textarea>
       <div class="modal-actions">

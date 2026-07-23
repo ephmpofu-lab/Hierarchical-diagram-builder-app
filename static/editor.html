@@ -88,6 +88,10 @@
 
   <div id="importModal" class="modal-backdrop" hidden>
     <div class="modal import-modal">
+      <div class="modal-header-row">
+        <strong>Import outline</strong>
+        <button id="importXBtn" class="theme-toggle" title="Close">×</button>
+      </div>
       <p>Paste an outline. Lines can use explicit <code>(Level N)</code> tags, or plain nested <code>- bullets</code> (2 spaces per level) like this app's own Markdown export.</p>
       <textarea id="importText" rows="12" placeholder="Root item (Level 1)&#10;    Child item (Level 2)"></textarea>
       <div class="modal-actions">
