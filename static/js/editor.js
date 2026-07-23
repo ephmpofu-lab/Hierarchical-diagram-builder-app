@@ -500,15 +500,7 @@ function renderCanvas() {
     groupBox = drawGroupedChildrenBox(focus, positions.get(focus.id), children);
     edgesGroup.appendChild(drawTreeEdge(positions.get(focus.id), groupBox.anchor, focus.id, null));
   } else {
-    for (const child of children) {
-      const focusPos = positions.get(focus.id);
-      const childPos = positions.get(child.id);
-      edgesGroup.appendChild(drawTreeEdge(focusPos, childPos, focus.id, child.id));
-      if (selectedEdgeKey === edgeKey("tree", child.id)) {
-        edgesGroup.appendChild(drawTreeHandle(focusPos, child.id, childPos));
-        edgesGroup.appendChild(drawTreeHandle(childPos, child.id, focusPos));
-      }
-    }
+    edgesGroup.appendChild(drawTreeBranches(positions.get(focus.id), children, positions));
   }
 
   const tagCounters = new Map();
@@ -573,6 +565,83 @@ function renderCanvas() {
 
 function edgeKey(kind, id) {
   return `${kind}:${id}`;
+}
+
+function drawTreeBranches(focusPos, children, positions) {
+  const group = document.createElementNS(SVG_NS, "g");
+  if (children.length === 0) return group;
+
+  const childPositions = children.map((c) => positions.get(c.id));
+  const ys = childPositions.map((p) => p.y);
+  const sameRow = Math.max(...ys) - Math.min(...ys) < 20;
+
+  if (children.length === 1 || !sameRow) {
+    // Irregular layout (dragged around, or split across rows) — a shared trunk/bus
+    // wouldn't line up cleanly, so fall back to a direct curve per child.
+    children.forEach((child, i) => {
+      const childPos = childPositions[i];
+      group.appendChild(drawTreeEdge(focusPos, childPos, null, child.id));
+      const key = edgeKey("tree", child.id);
+      if (selectedEdgeKey === key) {
+        group.appendChild(drawTreeHandle(focusPos, child.id, childPos));
+        group.appendChild(drawTreeHandle(childPos, child.id, focusPos));
+      }
+    });
+    return group;
+  }
+
+  // Classic org-chart connector: one trunk from the parent down to a shared horizontal
+  // bus, then one short branch per child — much clearer than N lines fanning from a
+  // single point once there are more than a couple of children.
+  const busY = focusPos.y + (ys[0] - focusPos.y) / 2;
+  const xs = childPositions.map((p) => p.x);
+  const minX = Math.min(...xs, focusPos.x);
+  const maxX = Math.max(...xs, focusPos.x);
+
+  const trunk = document.createElementNS(SVG_NS, "path");
+  trunk.setAttribute("class", "edge");
+  trunk.setAttribute("d", `M ${focusPos.x} ${focusPos.y} L ${focusPos.x} ${busY}`);
+  group.appendChild(trunk);
+
+  const bus = document.createElementNS(SVG_NS, "line");
+  bus.setAttribute("class", "edge");
+  bus.setAttribute("x1", minX);
+  bus.setAttribute("y1", busY);
+  bus.setAttribute("x2", maxX);
+  bus.setAttribute("y2", busY);
+  group.appendChild(bus);
+
+  children.forEach((child, i) => {
+    const childPos = childPositions[i];
+    const key = edgeKey("tree", child.id);
+
+    const branchGroup = document.createElementNS(SVG_NS, "g");
+    const hit = document.createElementNS(SVG_NS, "path");
+    hit.setAttribute("class", "edge-hit");
+    hit.setAttribute("d", `M ${childPos.x} ${busY} L ${childPos.x} ${childPos.y}`);
+    const branch = document.createElementNS(SVG_NS, "path");
+    branch.setAttribute("class", "edge" + (selectedEdgeKey === key ? " selected" : ""));
+    branch.setAttribute("d", `M ${childPos.x} ${busY} L ${childPos.x} ${childPos.y}`);
+    branchGroup.dataset.toId = child.id;
+    branchGroup.dataset.x1 = childPos.x;
+    branchGroup.dataset.y1 = busY;
+    branchGroup.dataset.x2 = childPos.x;
+    branchGroup.dataset.y2 = childPos.y;
+    branchGroup.appendChild(hit);
+    branchGroup.appendChild(branch);
+    branchGroup.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectedEdgeKey = selectedEdgeKey === key ? null : key;
+      renderCanvas();
+    });
+    group.appendChild(branchGroup);
+
+    if (selectedEdgeKey === key) {
+      group.appendChild(drawTreeHandle(childPos, child.id, { x: childPos.x, y: busY }));
+    }
+  });
+
+  return group;
 }
 
 function drawTreeEdge(from, to, fromId, toId) {
@@ -1555,47 +1624,38 @@ function field(labelText) {
   return wrap;
 }
 
-function metaRow(labelText, value) {
+function infoRow(labelText, valueEl) {
   const row = document.createElement("div");
-  row.className = "meta-row";
+  row.className = "info-row";
   const l = document.createElement("span");
+  l.className = "info-row-label";
   l.textContent = labelText;
-  const v = document.createElement("strong");
-  v.textContent = value;
+  const v = document.createElement("div");
+  v.className = "info-row-value";
+  v.appendChild(valueEl);
   row.appendChild(l);
   row.appendChild(v);
   return row;
 }
 
-const inspectorCollapseState = { metadata: true, comments: true, templates: true };
+function infoStaticValue(text) {
+  const span = document.createElement("span");
+  span.textContent = text;
+  return span;
+}
 
-function collapsibleSection(key, title, buildFn) {
-  const section = document.createElement("div");
-  section.className = "insp-section";
-
-  const collapsed = !!inspectorCollapseState[key];
-  const header = document.createElement("div");
-  header.className = "insp-section-header";
-  const arrow = document.createElement("span");
-  arrow.className = "insp-section-arrow";
-  arrow.textContent = collapsed ? "▸" : "▾";
-  const titleEl = document.createElement("span");
-  titleEl.textContent = title;
-  header.appendChild(arrow);
-  header.appendChild(titleEl);
-  header.addEventListener("click", () => {
-    inspectorCollapseState[key] = !collapsed;
-    renderInspector();
+function infoTextValue(value, placeholder, onCommit) {
+  const input = document.createElement("input");
+  input.className = "info-input";
+  input.placeholder = placeholder || "";
+  input.value = value || "";
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") input.blur();
   });
-  section.appendChild(header);
-
-  if (!collapsed) {
-    const body = document.createElement("div");
-    body.className = "insp-section-body";
-    buildFn(body);
-    section.appendChild(body);
-  }
-  return section;
+  input.addEventListener("blur", () => {
+    if (input.value !== (value || "")) onCommit(input.value);
+  });
+  return input;
 }
 
 function formatDateTime(iso) {
@@ -1628,14 +1688,13 @@ function dotClassFor(fieldKey, value) {
   return (META_DOT_CLASSES[fieldKey] && META_DOT_CLASSES[fieldKey][value]) || "dot-neutral";
 }
 
-function metaSelectField(fieldKey, labelText, options, node) {
-  const wrap = field(labelText);
-  const row = document.createElement("div");
-  row.className = "meta-select-row";
+function infoSelectValue(fieldKey, options, node) {
+  const wrap = document.createElement("div");
+  wrap.className = "info-value-with-dot";
   const dot = document.createElement("span");
   dot.className = `dot ${dotClassFor(fieldKey, node[fieldKey])}`;
   const select = document.createElement("select");
-  select.className = "label-input";
+  select.className = "info-select";
   const noneOpt = document.createElement("option");
   noneOpt.value = "";
   noneOpt.textContent = "—";
@@ -1648,47 +1707,82 @@ function metaSelectField(fieldKey, labelText, options, node) {
     select.appendChild(o);
   }
   select.addEventListener("change", () => patchNode({ [fieldKey]: select.value }));
-  row.appendChild(dot);
-  row.appendChild(select);
-  wrap.appendChild(row);
+  wrap.appendChild(dot);
+  wrap.appendChild(select);
   return wrap;
 }
+
+let inspectorActiveTab = "inspector"; // "inspector" | "properties" | "comments"
 
 function renderInspector() {
   inspectorContent.innerHTML = "";
   if (!project || !focusedNodeId) return;
   const node = project.nodes[focusedNodeId];
 
-  // ---- Sticky header: always visible while scrolling, so Notes/Comments/etc never
-  // lose their "which node is this?" context. ----
+  // ---- Sticky header: title + level badge + tabs. Always visible while scrolling, so
+  // Notes/Comments/etc never lose their "which node is this?" context. ----
   const header = document.createElement("div");
   header.className = "inspector-sticky-header";
 
-  const labelField = field("Label");
+  const titleRow = document.createElement("div");
+  titleRow.className = "inspector-title-row";
+  const titleIcon = document.createElement("span");
+  titleIcon.className = "inspector-title-icon";
+  titleIcon.textContent = "⚙";
   const labelInput = document.createElement("input");
-  labelInput.className = "label-input";
+  labelInput.className = "inspector-title-input";
   labelInput.value = node.label;
   labelInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") labelInput.blur();
   });
   labelInput.addEventListener("blur", async () => {
     const trimmed = labelInput.value.trim();
-    if (trimmed && trimmed !== node.label) {
-      await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: trimmed }),
-      });
-      await loadProject();
-    }
+    if (trimmed && trimmed !== node.label) await patchNode({ label: trimmed });
   });
-  labelField.appendChild(labelInput);
-  header.appendChild(labelField);
+  const levelPill = document.createElement("span");
+  levelPill.className = "level-pill";
+  levelPill.textContent = `Level ${node.level}`;
+  titleRow.appendChild(titleIcon);
+  titleRow.appendChild(labelInput);
+  titleRow.appendChild(levelPill);
+  header.appendChild(titleRow);
 
+  const tabBar = document.createElement("div");
+  tabBar.className = "inspector-tabs";
+  const tabDefs = [
+    ["inspector", "Inspector"],
+    ["properties", "Properties"],
+    ["comments", `Comments${node.comments.length ? ` (${node.comments.length})` : ""}`],
+  ];
+  for (const [key, label] of tabDefs) {
+    const tabBtn = document.createElement("button");
+    tabBtn.className = "inspector-tab" + (inspectorActiveTab === key ? " active" : "");
+    tabBtn.textContent = label;
+    tabBtn.addEventListener("click", () => {
+      inspectorActiveTab = key;
+      renderInspector();
+    });
+    tabBar.appendChild(tabBtn);
+  }
+  header.appendChild(tabBar);
+  inspectorContent.appendChild(header);
+
+  const tabContent = document.createElement("div");
+  tabContent.className = "inspector-tab-content";
+  inspectorContent.appendChild(tabContent);
+
+  if (inspectorActiveTab === "inspector") renderInspectorTab(tabContent, node);
+  else if (inspectorActiveTab === "properties") renderPropertiesTab(tabContent, node);
+  else renderCommentsTab(tabContent, node);
+}
+
+function renderInspectorTab(container, node) {
   const parentNode = node.parent_id ? project.nodes[node.parent_id] : null;
-  header.appendChild(metaRow("Level", node.level));
-  header.appendChild(metaRow("Parent", parentNode ? parentNode.label : "— (root)"));
-  header.appendChild(metaRow("Children", node.children.length));
+  const infoTable = document.createElement("div");
+  infoTable.className = "info-table";
+  infoTable.appendChild(infoRow("Parent", infoStaticValue(parentNode ? parentNode.label : "— (root)")));
+  infoTable.appendChild(infoRow("Children", infoStaticValue(String(node.children.length))));
+  container.appendChild(infoTable);
 
   const btnRow = document.createElement("div");
   btnRow.className = "btn-row";
@@ -1731,11 +1825,14 @@ function renderInspector() {
     delBtn.classList.add("btn-danger");
     btnRow.appendChild(delBtn);
   }
-  header.appendChild(btnRow);
-  inspectorContent.appendChild(header);
+  container.appendChild(btnRow);
+  container.appendChild(document.createElement("hr")).className = "inspector-divider";
 
-  // ---- Notes (always visible — most-used field) ----
-  const notesField = field("Notes");
+  const notesField = document.createElement("div");
+  notesField.className = "field";
+  const notesLabel = document.createElement("label");
+  notesLabel.textContent = "Description / Notes";
+  notesField.appendChild(notesLabel);
   const textarea = document.createElement("textarea");
   textarea.rows = 4;
   textarea.placeholder = "Add notes…";
@@ -1753,90 +1850,70 @@ function renderInspector() {
     }, 500);
   });
   notesField.appendChild(textarea);
-  inspectorContent.appendChild(notesField);
+  container.appendChild(notesField);
 
-  // Warnings (always visible when present — they're alerts, not reference material)
   for (const warning of computeWarnings(node)) {
     const box = document.createElement("div");
     box.className = "warning-box";
     box.textContent = warning;
-    inspectorContent.appendChild(box);
+    container.appendChild(box);
   }
+}
 
-  // ---- Metadata (collapsible) ----
-  inspectorContent.appendChild(
-    collapsibleSection("metadata", "Metadata", (body) => {
-      const typeField = field("Node type");
-      const typeInput = document.createElement("input");
-      typeInput.className = "label-input";
-      typeInput.placeholder = "e.g. Decision Engine";
-      typeInput.value = node.node_type || "";
-      typeInput.addEventListener("blur", async () => {
-        if (typeInput.value !== (node.node_type || "")) {
-          await patchNode({ node_type: typeInput.value });
-        }
-      });
-      typeField.appendChild(typeInput);
-      body.appendChild(typeField);
-
-      body.appendChild(
-        metaSelectField("status", "Status", ["Planned", "In Development", "Done", "Blocked", "Deprecated"], node)
-      );
-      body.appendChild(metaSelectField("priority", "Priority", ["Low", "Medium", "High", "Critical"], node));
-      body.appendChild(metaSelectField("complexity", "Complexity", ["Low", "Medium", "High"], node));
-      body.appendChild(metaSelectField("risk_level", "Risk level", ["Low", "Medium", "High", "Critical"], node));
-
-      const ownerField = field("Owner");
-      const ownerInput = document.createElement("input");
-      ownerInput.className = "label-input";
-      ownerInput.placeholder = "e.g. your name or team";
-      ownerInput.value = node.owner || "";
-      ownerInput.addEventListener("blur", async () => {
-        if (ownerInput.value !== (node.owner || "")) {
-          await patchNode({ owner: ownerInput.value });
-        }
-      });
-      ownerField.appendChild(ownerInput);
-      body.appendChild(ownerField);
-
-      const tagsField = field("Tags");
-      const tagsWrap = document.createElement("div");
-      tagsWrap.className = "tag-list";
-      for (const tag of node.tags) {
-        const pill = document.createElement("span");
-        pill.className = "tag-pill";
-        const text = document.createElement("span");
-        text.textContent = tag;
-        const remove = document.createElement("button");
-        remove.textContent = "×";
-        remove.addEventListener("click", async () => {
-          await patchNode({ tags: node.tags.filter((t) => t !== tag) });
-        });
-        pill.appendChild(text);
-        pill.appendChild(remove);
-        tagsWrap.appendChild(pill);
-      }
-      const tagInput = document.createElement("input");
-      tagInput.className = "label-input";
-      tagInput.placeholder = "Add tag, press Enter";
-      tagInput.addEventListener("keydown", async (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          const value = tagInput.value.trim();
-          if (value && !node.tags.includes(value)) {
-            await patchNode({ tags: [...node.tags, value] });
-          } else {
-            tagInput.value = "";
-          }
-        }
-      });
-      tagsField.appendChild(tagsWrap);
-      tagsField.appendChild(tagInput);
-      body.appendChild(tagsField);
-    })
+function renderPropertiesTab(container, node) {
+  const infoTable = document.createElement("div");
+  infoTable.className = "info-table";
+  infoTable.appendChild(
+    infoRow("Node Type", infoTextValue(node.node_type, "e.g. Decision Engine", (v) => patchNode({ node_type: v })))
   );
+  infoTable.appendChild(
+    infoRow("Status", infoSelectValue("status", ["Planned", "In Development", "Done", "Blocked", "Deprecated"], node))
+  );
+  infoTable.appendChild(infoRow("Owner", infoTextValue(node.owner, "e.g. your name or team", (v) => patchNode({ owner: v }))));
+  infoTable.appendChild(infoRow("Priority", infoSelectValue("priority", ["Low", "Medium", "High", "Critical"], node)));
+  infoTable.appendChild(infoRow("Complexity", infoSelectValue("complexity", ["Low", "Medium", "High"], node)));
+  infoTable.appendChild(infoRow("Risk Level", infoSelectValue("risk_level", ["Low", "Medium", "High", "Critical"], node)));
+  container.appendChild(infoTable);
 
-  // ---- References (collapsible) ----
+  container.appendChild(document.createElement("hr")).className = "inspector-divider";
+
+  const tagsField = field("Tags");
+  const tagsWrap = document.createElement("div");
+  tagsWrap.className = "tag-list";
+  for (const tag of node.tags) {
+    const pill = document.createElement("span");
+    pill.className = "tag-pill";
+    const text = document.createElement("span");
+    text.textContent = tag;
+    const remove = document.createElement("button");
+    remove.textContent = "×";
+    remove.addEventListener("click", async () => {
+      await patchNode({ tags: node.tags.filter((t) => t !== tag) });
+    });
+    pill.appendChild(text);
+    pill.appendChild(remove);
+    tagsWrap.appendChild(pill);
+  }
+  const tagInput = document.createElement("input");
+  tagInput.className = "label-input";
+  tagInput.placeholder = "Add tag, press Enter";
+  tagInput.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const value = tagInput.value.trim();
+      if (value && !node.tags.includes(value)) {
+        await patchNode({ tags: [...node.tags, value] });
+      } else {
+        tagInput.value = "";
+      }
+    }
+  });
+  tagsField.appendChild(tagsWrap);
+  tagsField.appendChild(tagInput);
+  container.appendChild(tagsField);
+
+  container.appendChild(document.createElement("hr")).className = "inspector-divider";
+
   const touchingRefs = project.references.filter((r) => r.from === node.id || r.to === node.id);
   const subtreeIds = new Set(collectSubtreeIds(node.id));
   const outsideCount = touchingRefs.filter((r) => {
@@ -1848,145 +1925,141 @@ function renderInspector() {
     const badge = document.createElement("div");
     badge.className = "ref-badge";
     badge.textContent = `${outsideCount} reference link${outsideCount === 1 ? "" : "s"} outside this subtree`;
-    inspectorContent.appendChild(badge);
+    container.appendChild(badge);
   }
 
   if (touchingRefs.length > 0) {
-    inspectorContent.appendChild(
-      collapsibleSection(`references-${node.id}`, `References (${touchingRefs.length})`, (body) => {
-        for (const ref of touchingRefs) {
-          const otherId = ref.from === node.id ? ref.to : ref.from;
-          const otherNode = project.nodes[otherId];
-          const direction = ref.from === node.id ? "→" : "←";
-          const item = document.createElement("div");
-          item.className = "ref-list-item";
-          const text = document.createElement("span");
-          text.className = "ref-text";
-          text.textContent = `${direction} ${otherNode ? otherNode.label : "(unknown)"}${ref.label ? " · " + ref.label : ""}`;
-          const delBtn = document.createElement("button");
-          delBtn.className = "row-btn delete-node";
-          delBtn.textContent = "×";
-          delBtn.title = "Remove reference";
-          delBtn.addEventListener("click", async () => {
-            await fetch(`/api/projects/${projectId}/references/${ref.id}`, { method: "DELETE" });
-            await loadProject();
-          });
-          item.appendChild(text);
-          item.appendChild(delBtn);
-          body.appendChild(item);
-        }
-      })
-    );
-  }
-
-  // ---- Comments (collapsible) ----
-  inspectorContent.appendChild(
-    collapsibleSection("comments", `Comments${node.comments.length ? ` (${node.comments.length})` : ""}`, (body) => {
-      for (const comment of node.comments) {
-        const item = document.createElement("div");
-        item.className = "comment-item";
-        const meta = document.createElement("div");
-        meta.className = "comment-meta";
-        meta.textContent = formatDateTime(comment.created_at);
-        const text = document.createElement("div");
-        text.className = "comment-text";
-        text.textContent = comment.text;
-        const delBtn = document.createElement("button");
-        delBtn.className = "row-btn delete-node comment-delete";
-        delBtn.textContent = "×";
-        delBtn.title = "Delete comment";
-        delBtn.addEventListener("click", async () => {
-          await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/comments/${comment.id}`, {
-            method: "DELETE",
-          });
-          await loadProject();
-        });
-        const row = document.createElement("div");
-        row.className = "comment-row";
-        const commentBody = document.createElement("div");
-        commentBody.appendChild(meta);
-        commentBody.appendChild(text);
-        row.appendChild(commentBody);
-        row.appendChild(delBtn);
-        item.appendChild(row);
-        body.appendChild(item);
-      }
-      const commentInput = document.createElement("textarea");
-      commentInput.rows = 2;
-      commentInput.placeholder = "Add a comment…";
-      commentInput.addEventListener("keydown", async (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          const value = commentInput.value.trim();
-          if (!value) return;
-          await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/comments`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: value }),
-          });
-          await loadProject();
-        }
-      });
-      body.appendChild(commentInput);
-    })
-  );
-
-  // ---- Templates (collapsible) ----
-  inspectorContent.appendChild(
-    collapsibleSection("templates", "Templates", (body) => {
-      const saveTplBtn = document.createElement("button");
-      saveTplBtn.className = "btn btn-small";
-      saveTplBtn.textContent = "Save this subtree as template";
-      saveTplBtn.addEventListener("click", async () => {
-        const name = prompt("Template name:", node.label);
-        if (!name || !name.trim()) return;
-        await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/save-as-template`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: name.trim() }),
-        });
-        renderInspector();
-      });
-      body.appendChild(saveTplBtn);
-
-      const applyRow = document.createElement("div");
-      applyRow.className = "btn-row";
-      const select = document.createElement("select");
-      select.className = "label-input";
-      const applyBtn = document.createElement("button");
-      applyBtn.className = "btn btn-small";
-      applyBtn.textContent = "Apply under this node";
-      applyBtn.addEventListener("click", async () => {
-        if (!select.value) return;
-        await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/apply-template/${select.value}`, {
-          method: "POST",
-        });
+    const refsField = field(`Reference Links (${touchingRefs.length})`);
+    for (const ref of touchingRefs) {
+      const otherId = ref.from === node.id ? ref.to : ref.from;
+      const otherNode = project.nodes[otherId];
+      const direction = ref.from === node.id ? "→" : "←";
+      const item = document.createElement("div");
+      item.className = "ref-list-item";
+      const dot = document.createElement("span");
+      dot.className = "dot dot-accent";
+      const text = document.createElement("span");
+      text.className = "ref-text";
+      text.textContent = `${direction} ${otherNode ? otherNode.label : "(unknown)"}${ref.label ? " · " + ref.label : ""}`;
+      const delBtn = document.createElement("button");
+      delBtn.className = "row-btn delete-node";
+      delBtn.textContent = "×";
+      delBtn.title = "Remove reference";
+      delBtn.addEventListener("click", async () => {
+        await fetch(`/api/projects/${projectId}/references/${ref.id}`, { method: "DELETE" });
         await loadProject();
       });
-      applyRow.appendChild(select);
-      applyRow.appendChild(applyBtn);
-      body.appendChild(applyRow);
+      item.appendChild(dot);
+      item.appendChild(text);
+      item.appendChild(delBtn);
+      refsField.appendChild(item);
+    }
+    container.appendChild(refsField);
+    container.appendChild(document.createElement("hr")).className = "inspector-divider";
+  }
 
-      fetch("/api/templates")
-        .then((res) => (res.ok ? res.json() : []))
-        .then((templates) => {
-          select.innerHTML = "";
-          if (templates.length === 0) {
-            const opt = document.createElement("option");
-            opt.textContent = "No templates saved yet";
-            opt.value = "";
-            select.appendChild(opt);
-            applyBtn.disabled = true;
-            return;
-          }
-          applyBtn.disabled = false;
-          for (const t of templates) {
-            const opt = document.createElement("option");
-            opt.value = t.id;
-            opt.textContent = `${t.name} (${t.node_count} nodes)`;
-            select.appendChild(opt);
-          }
-        });
-    })
-  );
+  const templateField = field("Templates");
+  const saveTplBtn = document.createElement("button");
+  saveTplBtn.className = "btn btn-small";
+  saveTplBtn.textContent = "Save this subtree as template";
+  saveTplBtn.addEventListener("click", async () => {
+    const name = prompt("Template name:", node.label);
+    if (!name || !name.trim()) return;
+    await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/save-as-template`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    renderInspector();
+  });
+  templateField.appendChild(saveTplBtn);
+
+  const applyRow = document.createElement("div");
+  applyRow.className = "btn-row";
+  const select = document.createElement("select");
+  select.className = "label-input";
+  const applyBtn = document.createElement("button");
+  applyBtn.className = "btn btn-small";
+  applyBtn.textContent = "Apply under this node";
+  applyBtn.addEventListener("click", async () => {
+    if (!select.value) return;
+    await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/apply-template/${select.value}`, {
+      method: "POST",
+    });
+    await loadProject();
+  });
+  applyRow.appendChild(select);
+  applyRow.appendChild(applyBtn);
+  templateField.appendChild(applyRow);
+  container.appendChild(templateField);
+
+  fetch("/api/templates")
+    .then((res) => (res.ok ? res.json() : []))
+    .then((templates) => {
+      select.innerHTML = "";
+      if (templates.length === 0) {
+        const opt = document.createElement("option");
+        opt.textContent = "No templates saved yet";
+        opt.value = "";
+        select.appendChild(opt);
+        applyBtn.disabled = true;
+        return;
+      }
+      applyBtn.disabled = false;
+      for (const t of templates) {
+        const opt = document.createElement("option");
+        opt.value = t.id;
+        opt.textContent = `${t.name} (${t.node_count} nodes)`;
+        select.appendChild(opt);
+      }
+    });
+}
+
+function renderCommentsTab(container, node) {
+  for (const comment of node.comments) {
+    const item = document.createElement("div");
+    item.className = "comment-item";
+    const meta = document.createElement("div");
+    meta.className = "comment-meta";
+    meta.textContent = formatDateTime(comment.created_at);
+    const text = document.createElement("div");
+    text.className = "comment-text";
+    text.textContent = comment.text;
+    const delBtn = document.createElement("button");
+    delBtn.className = "row-btn delete-node comment-delete";
+    delBtn.textContent = "×";
+    delBtn.title = "Delete comment";
+    delBtn.addEventListener("click", async () => {
+      await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/comments/${comment.id}`, {
+        method: "DELETE",
+      });
+      await loadProject();
+    });
+    const row = document.createElement("div");
+    row.className = "comment-row";
+    const commentBody = document.createElement("div");
+    commentBody.appendChild(meta);
+    commentBody.appendChild(text);
+    row.appendChild(commentBody);
+    row.appendChild(delBtn);
+    item.appendChild(row);
+    container.appendChild(item);
+  }
+  const commentInput = document.createElement("textarea");
+  commentInput.rows = 2;
+  commentInput.placeholder = "Add a comment…";
+  commentInput.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      const value = commentInput.value.trim();
+      if (!value) return;
+      await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: value }),
+      });
+      await loadProject();
+    }
+  });
+  container.appendChild(commentInput);
 }
