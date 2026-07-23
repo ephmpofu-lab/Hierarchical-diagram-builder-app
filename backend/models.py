@@ -79,6 +79,51 @@ class ActivityEntry(BaseModel):
     message: str
 
 
+# ---------- Concept Mode: freeform planning objects ----------
+# Deliberately a separate, additive model from Node — planning objects use free x/y
+# positioning (dragged, resized, rotated) rather than the deterministic grid the
+# architecture tree uses, so they cannot share Node's layout assumptions.
+
+class ConceptObject(BaseModel):
+    id: str
+    type: str  # rectangle | rounded-rectangle | circle | diamond | sticky-note | arrow | divider | text | icon
+    x: float
+    y: float
+    width: float = 160
+    height: float = 90
+    rotation: float = 0
+    text: str = ""
+    color: Optional[str] = None
+    border_style: str = "solid"  # solid | dashed | none
+    z_index: int = 0
+
+
+class ConceptObjectCreate(BaseModel):
+    type: str
+    x: float
+    y: float
+    width: Optional[float] = None
+    height: Optional[float] = None
+    text: str = ""
+    color: Optional[str] = None
+
+
+class ConceptObjectUpdate(BaseModel):
+    x: Optional[float] = None
+    y: Optional[float] = None
+    width: Optional[float] = None
+    height: Optional[float] = None
+    rotation: Optional[float] = None
+    text: Optional[str] = None
+    color: Optional[str] = None
+    border_style: Optional[str] = None
+    z_index: Optional[int] = None
+
+
+class ConvertToNodeRequest(BaseModel):
+    parent_id: str
+
+
 class Project(BaseModel):
     id: str
     name: str
@@ -87,6 +132,7 @@ class Project(BaseModel):
     nodes: Dict[str, Node] = Field(default_factory=dict)
     references: List[Reference] = Field(default_factory=list)
     activity_log: List[ActivityEntry] = Field(default_factory=list)
+    concept_objects: List[ConceptObject] = Field(default_factory=list)
 
 
 class ProjectSummary(BaseModel):

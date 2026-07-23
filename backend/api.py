@@ -3,11 +3,15 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from . import storage, tree
+from . import concept, storage, tree
 from .models import (
     AddParentRequest,
     Comment,
     CommentCreate,
+    ConceptObject,
+    ConceptObjectCreate,
+    ConceptObjectUpdate,
+    ConvertToNodeRequest,
     MoveSiblingRequest,
     NodeCreate,
     NodePosition,
@@ -380,3 +384,83 @@ def api_import_outline_under_node(project_id: str, node_id: str, body: OutlineIm
     storage.save_project(project)
     node = project.nodes[new_id]
     return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, new_id))
+
+
+# ---------- Concept Mode: freeform planning objects ----------
+
+
+@router.post("/projects/{project_id}/concept-objects", response_model=ConceptObject, status_code=201)
+def api_add_concept_object(project_id: str, body: ConceptObjectCreate):
+    project = storage.load_project(project_id)
+    obj = concept.add_object(project, body.type, body.x, body.y, body.width, body.height, body.text, body.color)
+    storage.save_project(project)
+    return obj
+
+
+@router.put("/projects/{project_id}/concept-objects/{object_id}", response_model=ConceptObject)
+def api_update_concept_object(project_id: str, object_id: str, body: ConceptObjectUpdate):
+    project = storage.load_project(project_id)
+    obj = concept.update_object(
+        project,
+        object_id,
+        body.x,
+        body.y,
+        body.width,
+        body.height,
+        body.rotation,
+        body.text,
+        body.color,
+        body.border_style,
+        body.z_index,
+    )
+    storage.save_project(project)
+    return obj
+
+
+@router.delete("/projects/{project_id}/concept-objects/{object_id}", status_code=204)
+def api_delete_concept_object(project_id: str, object_id: str):
+    project = storage.load_project(project_id)
+    concept.delete_object(project, object_id)
+    storage.save_project(project)
+
+
+@router.post("/projects/{project_id}/concept-objects/{object_id}/duplicate", response_model=ConceptObject, status_code=201)
+def api_duplicate_concept_object(project_id: str, object_id: str):
+    project = storage.load_project(project_id)
+    obj = concept.duplicate_object(project, object_id)
+    storage.save_project(project)
+    return obj
+
+
+@router.post("/projects/{project_id}/concept-objects/{object_id}/bring-to-front", response_model=ConceptObject)
+def api_bring_concept_object_to_front(project_id: str, object_id: str):
+    project = storage.load_project(project_id)
+    obj = concept.bring_to_front(project, object_id)
+    storage.save_project(project)
+    return obj
+
+
+@router.post("/projects/{project_id}/concept-objects/{object_id}/send-to-back", response_model=ConceptObject)
+def api_send_concept_object_to_back(project_id: str, object_id: str):
+    project = storage.load_project(project_id)
+    obj = concept.send_to_back(project, object_id)
+    storage.save_project(project)
+    return obj
+
+
+@router.post("/projects/{project_id}/concept-objects/{object_id}/convert-to-node", response_model=NodeWithLevel, status_code=201)
+def api_convert_object_to_node(project_id: str, object_id: str, body: ConvertToNodeRequest):
+    project = storage.load_project(project_id)
+    node = concept.convert_object_to_node(project, object_id, body.parent_id)
+    tree.log_activity(project, f"Converted planning object '{node.label}' into an architecture component")
+    storage.save_project(project)
+    return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node.id))
+
+
+@router.post("/projects/{project_id}/nodes/{node_id}/convert-to-object", response_model=ConceptObject, status_code=201)
+def api_convert_node_to_object(project_id: str, node_id: str):
+    project = storage.load_project(project_id)
+    obj = concept.convert_node_to_object(project, node_id)
+    tree.log_activity(project, f"Converted '{project.nodes[node_id].label}' into a planning object")
+    storage.save_project(project)
+    return obj
