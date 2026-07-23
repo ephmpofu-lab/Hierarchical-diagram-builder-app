@@ -17,6 +17,19 @@ const zoomInBtn = document.getElementById("zoomInBtn");
 const zoomOutBtn = document.getElementById("zoomOutBtn");
 const zoomLevelEl = document.getElementById("zoomLevel");
 const fitViewBtn = document.getElementById("fitViewBtn");
+const minimapSvg = document.getElementById("minimapSvg");
+const healthToggleBtn = document.getElementById("healthToggleBtn");
+const healthPanel = document.getElementById("healthPanel");
+const healthCloseBtn = document.getElementById("healthCloseBtn");
+const healthScoreEl = document.getElementById("healthScore");
+const validationSummaryEl = document.getElementById("validationSummary");
+const runValidationBtn = document.getElementById("runValidationBtn");
+const activityListEl = document.getElementById("activityList");
+const importOutlineBtn = document.getElementById("importOutlineBtn");
+const importModal = document.getElementById("importModal");
+const importText = document.getElementById("importText");
+const importCancelBtn = document.getElementById("importCancelBtn");
+const importConfirmBtn = document.getElementById("importConfirmBtn");
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const NODE_W = 150;
@@ -35,6 +48,10 @@ let refMode = false;
 let pendingRefFrom = null;
 let panCenterX = null;
 let panCenterY = null;
+let selectedRefId = null;
+let lastVisiblePositions = new Map();
+let lastViewW = 800;
+let lastViewH = 500;
 
 if (!projectId) {
   projectNameEl.textContent = "No project specified";
@@ -75,7 +92,9 @@ function render() {
   renderOutline();
   renderBreadcrumb();
   renderCanvas();
+  renderMinimap();
   renderInspector();
+  if (!healthPanel.hidden) refreshHealthPanel();
 }
 
 async function focusNode(nodeId) {
@@ -345,6 +364,11 @@ document.addEventListener("keydown", async (e) => {
     exitRefMode();
     return;
   }
+  if (e.key === "Escape" && selectedRefId) {
+    selectedRefId = null;
+    renderCanvas();
+    return;
+  }
   if (!focusedNodeId || editingNodeId) return;
   const activeTag = document.activeElement.tagName;
   if (activeTag === "INPUT" || activeTag === "TEXTAREA") return;
@@ -446,7 +470,13 @@ function renderCanvas() {
     const fromVisible = visibleIds.has(ref.from);
     const toVisible = visibleIds.has(ref.to);
     if (fromVisible && toVisible) {
-      refGroup.appendChild(drawRefEdge(positions.get(ref.from), positions.get(ref.to), ref.from, ref.to));
+      const fromPos = positions.get(ref.from);
+      const toPos = positions.get(ref.to);
+      refGroup.appendChild(drawRefEdge(fromPos, toPos, ref.from, ref.to, ref.id));
+      if (selectedRefId === ref.id) {
+        refGroup.appendChild(drawRefHandle(fromPos, ref, "from"));
+        refGroup.appendChild(drawRefHandle(toPos, ref, "to"));
+      }
     } else if (fromVisible || toVisible) {
       const visibleId = fromVisible ? ref.from : ref.to;
       const otherId = fromVisible ? ref.to : ref.from;
@@ -472,6 +502,16 @@ function renderCanvas() {
   viewport.appendChild(nodesGroup);
   canvasSvg.appendChild(viewport);
 
+  lastVisiblePositions = positions;
+  lastViewW = viewW;
+  lastViewH = viewH;
+
+  canvasSvg.onclick = (e) => {
+    if (e.target === canvasSvg && selectedRefId) {
+      selectedRefId = null;
+      renderCanvas();
+    }
+  };
   canvasSvg.ondblclick = (e) => {
     if (e.target !== canvasSvg || refMode) return;
     handleCanvasDblClick(e, centerX, centerY, viewW, viewH);
@@ -508,9 +548,18 @@ function buildRefArrowDefs() {
   return defs;
 }
 
-function drawRefEdge(from, to, fromId, toId) {
+function drawRefEdge(from, to, fromId, toId, refId) {
+  const group = document.createElementNS(SVG_NS, "g");
+
+  const hitLine = document.createElementNS(SVG_NS, "line");
+  hitLine.setAttribute("class", "ref-edge-hit");
+  hitLine.setAttribute("x1", from.x);
+  hitLine.setAttribute("y1", from.y);
+  hitLine.setAttribute("x2", to.x);
+  hitLine.setAttribute("y2", to.y);
+
   const line = document.createElementNS(SVG_NS, "line");
-  line.setAttribute("class", "ref-edge");
+  line.setAttribute("class", "ref-edge" + (selectedRefId === refId ? " selected" : ""));
   line.setAttribute("x1", from.x);
   line.setAttribute("y1", from.y);
   line.setAttribute("x2", to.x);
@@ -518,7 +567,85 @@ function drawRefEdge(from, to, fromId, toId) {
   line.setAttribute("marker-end", "url(#refArrow)");
   line.dataset.fromId = fromId;
   line.dataset.toId = toId;
-  return line;
+
+  group.appendChild(hitLine);
+  group.appendChild(line);
+  group.addEventListener("click", (e) => {
+    e.stopPropagation();
+    selectedRefId = selectedRefId === refId ? null : refId;
+    renderCanvas();
+  });
+
+  return group;
+}
+
+function drawRefHandle(pos, ref, endpoint) {
+  const circle = document.createElementNS(SVG_NS, "circle");
+  circle.setAttribute("class", "ref-handle");
+  circle.setAttribute("cx", pos.x);
+  circle.setAttribute("cy", pos.y);
+  circle.setAttribute("r", 6);
+  circle.addEventListener("mousedown", (e) => startReattachDrag(e, ref, endpoint));
+  return circle;
+}
+
+function startReattachDrag(e, ref, endpoint) {
+  e.preventDefault();
+  e.stopPropagation();
+  const rect = canvasSvg.getBoundingClientRect();
+  const fixedEndId = endpoint === "from" ? ref.to : ref.from;
+  const fixedPos = lastVisiblePositions.get(fixedEndId);
+  if (!fixedPos) return;
+
+  const tempLine = document.createElementNS(SVG_NS, "line");
+  tempLine.setAttribute("class", "ref-edge");
+  tempLine.setAttribute("x1", fixedPos.x);
+  tempLine.setAttribute("y1", fixedPos.y);
+  tempLine.setAttribute("x2", fixedPos.x);
+  tempLine.setAttribute("y2", fixedPos.y);
+  const viewportEl = canvasSvg.querySelector(":scope > g");
+  if (viewportEl) viewportEl.appendChild(tempLine);
+
+  const toPretransform = (clientX, clientY) => ({
+    x: lastViewW / 2 + (clientX - rect.left - lastViewW / 2) / zoomScale,
+    y: lastViewH / 2 + (clientY - rect.top - lastViewH / 2) / zoomScale,
+  });
+
+  const onMove = (moveEvent) => {
+    const p = toPretransform(moveEvent.clientX, moveEvent.clientY);
+    tempLine.setAttribute("x2", p.x);
+    tempLine.setAttribute("y2", p.y);
+  };
+
+  const onUp = async (upEvent) => {
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+    tempLine.remove();
+    const p = toPretransform(upEvent.clientX, upEvent.clientY);
+    let targetId = null;
+    for (const [nodeId, nodePos] of lastVisiblePositions.entries()) {
+      if (nodeId === fixedEndId) continue;
+      if (Math.abs(p.x - nodePos.x) <= NODE_W / 2 && Math.abs(p.y - nodePos.y) <= NODE_H / 2) {
+        targetId = nodeId;
+        break;
+      }
+    }
+    if (targetId) {
+      const payload = endpoint === "from" ? { from: targetId } : { to: targetId };
+      await fetch(`/api/projects/${projectId}/references/${ref.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      selectedRefId = ref.id;
+      await loadProject();
+    } else {
+      renderCanvas();
+    }
+  };
+
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
 }
 
 function drawRefTag(nodePos, text, targetId, index, anchorId) {
@@ -825,6 +952,187 @@ function fitToView() {
 
 fitViewBtn.addEventListener("click", fitToView);
 
+// ---------- Minimap ----------
+
+function renderMinimap() {
+  minimapSvg.innerHTML = "";
+  if (!project || !focusedNodeId) return;
+
+  const allNodes = Object.values(project.nodes);
+  const xs = allNodes.map((n) => n.canvas_x);
+  const ys = allNodes.map((n) => n.canvas_y);
+  const minX = Math.min(...xs) - NODE_W / 2;
+  const maxX = Math.max(...xs) + NODE_W / 2;
+  const minY = Math.min(...ys) - NODE_H / 2;
+  const maxY = Math.max(...ys) + NODE_H / 2;
+  const treeW = Math.max(maxX - minX, 1);
+  const treeH = Math.max(maxY - minY, 1);
+
+  const mapW = 160;
+  const mapH = 100;
+  const pad = 8;
+  const scale = Math.min((mapW - pad * 2) / treeW, (mapH - pad * 2) / treeH);
+
+  const toMini = (x, y) => ({
+    x: pad + (x - minX) * scale,
+    y: pad + (y - minY) * scale,
+  });
+
+  const focus = project.nodes[focusedNodeId];
+  const rect = canvasSvg.getBoundingClientRect();
+  const viewW = rect.width || 800;
+  const viewH = rect.height || 500;
+  const centerX = panCenterX !== null ? panCenterX : focus.canvas_x;
+  const centerY = panCenterY !== null ? panCenterY : focus.canvas_y;
+  const viewportWorldW = viewW / zoomScale;
+  const viewportWorldH = viewH / zoomScale;
+  const vpTopLeft = toMini(centerX - viewportWorldW / 2, centerY - viewportWorldH / 2);
+  const vpBottomRight = toMini(centerX + viewportWorldW / 2, centerY + viewportWorldH / 2);
+
+  const viewportRect = document.createElementNS(SVG_NS, "rect");
+  viewportRect.setAttribute("class", "mini-viewport");
+  viewportRect.setAttribute("x", vpTopLeft.x);
+  viewportRect.setAttribute("y", vpTopLeft.y);
+  viewportRect.setAttribute("width", Math.max(2, vpBottomRight.x - vpTopLeft.x));
+  viewportRect.setAttribute("height", Math.max(2, vpBottomRight.y - vpTopLeft.y));
+  viewportRect.addEventListener("click", (e) => {
+    const svgRect = minimapSvg.getBoundingClientRect();
+    const clickX = e.clientX - svgRect.left;
+    const clickY = e.clientY - svgRect.top;
+    const worldX = minX + (clickX - pad) / scale;
+    const worldY = minY + (clickY - pad) / scale;
+    panCenterX = worldX;
+    panCenterY = worldY;
+    renderCanvas();
+    renderMinimap();
+  });
+
+  for (const node of allNodes) {
+    const pos = toMini(node.canvas_x, node.canvas_y);
+    const dot = document.createElementNS(SVG_NS, "circle");
+    dot.setAttribute("class", "mini-node" + (node.id === focusedNodeId ? " focused" : ""));
+    dot.setAttribute("cx", pos.x);
+    dot.setAttribute("cy", pos.y);
+    dot.setAttribute("r", node.id === focusedNodeId ? 3 : 2);
+    minimapSvg.appendChild(dot);
+  }
+
+  minimapSvg.appendChild(viewportRect);
+}
+
+// ---------- Health / validation / activity ----------
+
+healthToggleBtn.addEventListener("click", () => {
+  healthPanel.hidden = !healthPanel.hidden;
+  if (!healthPanel.hidden) refreshHealthPanel();
+});
+healthCloseBtn.addEventListener("click", () => {
+  healthPanel.hidden = true;
+});
+runValidationBtn.addEventListener("click", refreshHealthPanel);
+
+async function refreshHealthPanel() {
+  if (!project) return;
+  const res = await fetch(`/api/projects/${projectId}/validation`);
+  if (!res.ok) return;
+  const report = await res.json();
+  renderHealthScore(report);
+  renderValidationSummary(report);
+  renderActivityLog();
+}
+
+function renderHealthScore(report) {
+  const ratingClass = "rating-" + report.rating.toLowerCase().replace(/\s+/g, "-");
+  healthScoreEl.className = "health-score " + ratingClass;
+  healthScoreEl.innerHTML = "";
+  const scoreEl = document.createElement("div");
+  scoreEl.className = "score-number";
+  scoreEl.textContent = `${report.score}%`;
+  const ratingEl = document.createElement("div");
+  ratingEl.className = "score-rating";
+  ratingEl.textContent = report.rating;
+  healthScoreEl.appendChild(scoreEl);
+  healthScoreEl.appendChild(ratingEl);
+}
+
+function renderValidationSummary(report) {
+  validationSummaryEl.innerHTML = "";
+  const rows = [
+    ["Duplicate labels", report.duplicate_labels.length],
+    ["Circular references", report.circular_references.length],
+    ["Large modules (>10 children)", report.large_modules.length],
+    ["Single-child nodes", report.single_child_nodes.length],
+    ["Missing notes", report.missing_notes_count],
+  ];
+  for (const [label, count] of rows) {
+    const row = document.createElement("div");
+    row.className = "validation-row" + (count > 0 ? " flagged" : "");
+    const l = document.createElement("span");
+    l.textContent = label;
+    const v = document.createElement("strong");
+    v.textContent = count;
+    row.appendChild(l);
+    row.appendChild(v);
+    validationSummaryEl.appendChild(row);
+  }
+}
+
+function renderActivityLog() {
+  activityListEl.innerHTML = "";
+  const entries = [...project.activity_log].reverse().slice(0, 30);
+  if (entries.length === 0) {
+    const empty = document.createElement("div");
+    empty.textContent = "No activity yet.";
+    activityListEl.appendChild(empty);
+    return;
+  }
+  for (const entry of entries) {
+    const item = document.createElement("div");
+    item.className = "activity-item";
+    const time = document.createElement("div");
+    time.className = "activity-time";
+    time.textContent = formatDateTime(entry.timestamp);
+    const msg = document.createElement("div");
+    msg.textContent = entry.message;
+    item.appendChild(time);
+    item.appendChild(msg);
+    activityListEl.appendChild(item);
+  }
+}
+
+// ---------- Outline import ----------
+
+importOutlineBtn.addEventListener("click", () => {
+  if (!focusedNodeId) return;
+  importText.value = "";
+  importModal.hidden = false;
+  importText.focus();
+});
+importCancelBtn.addEventListener("click", () => {
+  importModal.hidden = true;
+});
+importModal.addEventListener("click", (e) => {
+  if (e.target === importModal) importModal.hidden = true;
+});
+importConfirmBtn.addEventListener("click", async () => {
+  const text = importText.value.trim();
+  if (!text) return;
+  const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/import-outline`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert(err.detail || "Import failed.");
+    return;
+  }
+  const newNode = await res.json();
+  importModal.hidden = true;
+  focusedNodeId = newNode.id;
+  await loadProject();
+});
+
 // ---------- Search ----------
 
 searchBox.addEventListener("input", () => {
@@ -1004,6 +1312,62 @@ function metaRow(labelText, value) {
   return row;
 }
 
+function formatDateTime(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+async function patchNode(payload) {
+  await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await loadProject();
+}
+
+const META_DOT_CLASSES = {
+  status: { Planned: "dot-info", "In Development": "dot-accent", Done: "dot-success", Blocked: "dot-danger", Deprecated: "dot-neutral" },
+  priority: { Low: "dot-info", Medium: "dot-accent", High: "dot-warning", Critical: "dot-danger" },
+  complexity: { Low: "dot-success", Medium: "dot-warning", High: "dot-danger" },
+  risk_level: { Low: "dot-success", Medium: "dot-warning", High: "dot-danger", Critical: "dot-danger" },
+};
+
+function dotClassFor(fieldKey, value) {
+  return (META_DOT_CLASSES[fieldKey] && META_DOT_CLASSES[fieldKey][value]) || "dot-neutral";
+}
+
+function metaSelectField(fieldKey, labelText, options, node) {
+  const wrap = field(labelText);
+  const row = document.createElement("div");
+  row.className = "meta-select-row";
+  const dot = document.createElement("span");
+  dot.className = `dot ${dotClassFor(fieldKey, node[fieldKey])}`;
+  const select = document.createElement("select");
+  select.className = "label-input";
+  const noneOpt = document.createElement("option");
+  noneOpt.value = "";
+  noneOpt.textContent = "—";
+  select.appendChild(noneOpt);
+  for (const opt of options) {
+    const o = document.createElement("option");
+    o.value = opt;
+    o.textContent = opt;
+    if (node[fieldKey] === opt) o.selected = true;
+    select.appendChild(o);
+  }
+  select.addEventListener("change", () => patchNode({ [fieldKey]: select.value }));
+  row.appendChild(dot);
+  row.appendChild(select);
+  wrap.appendChild(row);
+  return wrap;
+}
+
 function renderInspector() {
   inspectorContent.innerHTML = "";
   if (!project || !focusedNodeId) return;
@@ -1036,6 +1400,81 @@ function renderInspector() {
   inspectorContent.appendChild(metaRow("Level", node.level));
   inspectorContent.appendChild(metaRow("Parent", parentNode ? parentNode.label : "— (root)"));
   inspectorContent.appendChild(metaRow("Children", node.children.length));
+
+  inspectorContent.appendChild(document.createElement("hr")).className = "inspector-divider";
+
+  // Metadata: type, status, priority, complexity, risk, tags, owner
+  const typeField = field("Node type");
+  const typeInput = document.createElement("input");
+  typeInput.className = "label-input";
+  typeInput.placeholder = "e.g. Decision Engine";
+  typeInput.value = node.node_type || "";
+  typeInput.addEventListener("blur", async () => {
+    if (typeInput.value !== (node.node_type || "")) {
+      await patchNode({ node_type: typeInput.value });
+    }
+  });
+  typeField.appendChild(typeInput);
+  inspectorContent.appendChild(typeField);
+
+  inspectorContent.appendChild(
+    metaSelectField("status", "Status", ["Planned", "In Development", "Done", "Blocked", "Deprecated"], node)
+  );
+  inspectorContent.appendChild(metaSelectField("priority", "Priority", ["Low", "Medium", "High", "Critical"], node));
+  inspectorContent.appendChild(metaSelectField("complexity", "Complexity", ["Low", "Medium", "High"], node));
+  inspectorContent.appendChild(
+    metaSelectField("risk_level", "Risk level", ["Low", "Medium", "High", "Critical"], node)
+  );
+
+  const ownerField = field("Owner");
+  const ownerInput = document.createElement("input");
+  ownerInput.className = "label-input";
+  ownerInput.placeholder = "e.g. your name or team";
+  ownerInput.value = node.owner || "";
+  ownerInput.addEventListener("blur", async () => {
+    if (ownerInput.value !== (node.owner || "")) {
+      await patchNode({ owner: ownerInput.value });
+    }
+  });
+  ownerField.appendChild(ownerInput);
+  inspectorContent.appendChild(ownerField);
+
+  const tagsField = field("Tags");
+  const tagsWrap = document.createElement("div");
+  tagsWrap.className = "tag-list";
+  for (const tag of node.tags) {
+    const pill = document.createElement("span");
+    pill.className = "tag-pill";
+    const text = document.createElement("span");
+    text.textContent = tag;
+    const remove = document.createElement("button");
+    remove.textContent = "×";
+    remove.addEventListener("click", async () => {
+      await patchNode({ tags: node.tags.filter((t) => t !== tag) });
+    });
+    pill.appendChild(text);
+    pill.appendChild(remove);
+    tagsWrap.appendChild(pill);
+  }
+  const tagInput = document.createElement("input");
+  tagInput.className = "label-input";
+  tagInput.placeholder = "Add tag, press Enter";
+  tagInput.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const value = tagInput.value.trim();
+      if (value && !node.tags.includes(value)) {
+        await patchNode({ tags: [...node.tags, value] });
+      } else {
+        tagInput.value = "";
+      }
+    }
+  });
+  tagsField.appendChild(tagsWrap);
+  tagsField.appendChild(tagInput);
+  inspectorContent.appendChild(tagsField);
+
+  inspectorContent.appendChild(document.createElement("hr")).className = "inspector-divider";
 
   // Quick structure actions
   const btnRow = document.createElement("div");
@@ -1143,6 +1582,58 @@ function renderInspector() {
     }
     inspectorContent.appendChild(refsField);
   }
+
+  inspectorContent.appendChild(document.createElement("hr")).className = "inspector-divider";
+
+  // Comments
+  const commentsField = field("Comments");
+  for (const comment of node.comments) {
+    const item = document.createElement("div");
+    item.className = "comment-item";
+    const meta = document.createElement("div");
+    meta.className = "comment-meta";
+    meta.textContent = formatDateTime(comment.created_at);
+    const text = document.createElement("div");
+    text.className = "comment-text";
+    text.textContent = comment.text;
+    const delBtn = document.createElement("button");
+    delBtn.className = "row-btn delete-node comment-delete";
+    delBtn.textContent = "×";
+    delBtn.title = "Delete comment";
+    delBtn.addEventListener("click", async () => {
+      await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/comments/${comment.id}`, {
+        method: "DELETE",
+      });
+      await loadProject();
+    });
+    const row = document.createElement("div");
+    row.className = "comment-row";
+    const body = document.createElement("div");
+    body.appendChild(meta);
+    body.appendChild(text);
+    row.appendChild(body);
+    row.appendChild(delBtn);
+    item.appendChild(row);
+    commentsField.appendChild(item);
+  }
+  const commentInput = document.createElement("textarea");
+  commentInput.rows = 2;
+  commentInput.placeholder = "Add a comment…";
+  commentInput.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      const value = commentInput.value.trim();
+      if (!value) return;
+      await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: value }),
+      });
+      await loadProject();
+    }
+  });
+  commentsField.appendChild(commentInput);
+  inspectorContent.appendChild(commentsField);
 
   inspectorContent.appendChild(document.createElement("hr")).className = "inspector-divider";
 

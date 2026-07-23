@@ -1,6 +1,11 @@
 const grid = document.getElementById("projectGrid");
 const emptyState = document.getElementById("emptyState");
 const newProjectBtn = document.getElementById("newProjectBtn");
+const importOutlineBtn = document.getElementById("importOutlineBtn");
+const importModal = document.getElementById("importModal");
+const importText = document.getElementById("importText");
+const importCancelBtn = document.getElementById("importCancelBtn");
+const importConfirmBtn = document.getElementById("importConfirmBtn");
 
 function formatDate(iso) {
   const d = new Date(iso);
@@ -120,5 +125,35 @@ async function deleteProject(project) {
   loadAndRender();
 }
 
+async function createProjectFromOutline() {
+  const text = importText.value.trim();
+  if (!text) return;
+  const res = await fetch("/api/projects/from-outline", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert(err.detail || "Import failed. Check the outline format.");
+    return;
+  }
+  const project = await res.json();
+  window.location.href = `editor.html?project=${project.id}`;
+}
+
 newProjectBtn.addEventListener("click", createProject);
+importOutlineBtn.addEventListener("click", () => {
+  importText.value = "";
+  importModal.hidden = false;
+  importText.focus();
+});
+importCancelBtn.addEventListener("click", () => {
+  importModal.hidden = true;
+});
+importModal.addEventListener("click", (e) => {
+  if (e.target === importModal) importModal.hidden = true;
+});
+importConfirmBtn.addEventListener("click", createProjectFromOutline);
+
 loadAndRender();

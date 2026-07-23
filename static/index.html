@@ -14,6 +14,7 @@
     <h1>Diagram Builder</h1>
     <div class="topbar-actions">
       <button id="themeToggleBtn" class="theme-toggle" title="Toggle light/dark theme"></button>
+      <button class="btn" id="importOutlineBtn">⇩ New from outline</button>
       <button class="btn btn-primary" id="newProjectBtn">+ New project</button>
     </div>
   </div>
@@ -22,6 +23,17 @@
     <div id="projectGrid" class="project-grid"></div>
     <div id="emptyState" class="empty-state" style="display:none;">
       No projects yet. Click "New project" to start your first tree diagram.
+    </div>
+  </div>
+
+  <div id="importModal" class="modal-backdrop" hidden>
+    <div class="modal import-modal">
+      <p>Paste an outline to create a new project from it. Lines can use explicit <code>(Level N)</code> tags, or plain nested <code>- bullets</code> (2 spaces per level).</p>
+      <textarea id="importText" rows="12" placeholder="Root item (Level 1)&#10;    Child item (Level 2)"></textarea>
+      <div class="modal-actions">
+        <button id="importCancelBtn" class="btn btn-small">Cancel</button>
+        <button id="importConfirmBtn" class="btn btn-small btn-primary">Create project</button>
+      </div>
     </div>
   </div>
 
