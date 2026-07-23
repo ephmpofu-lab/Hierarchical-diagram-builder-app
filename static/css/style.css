@@ -295,6 +295,16 @@ button {
   cursor: move;
 }
 
+.canvas-svg .concept-object.locked .concept-shape {
+  cursor: not-allowed;
+}
+
+.canvas-svg .concept-lock-badge {
+  font-size: 12px;
+  pointer-events: none;
+  user-select: none;
+}
+
 .canvas-svg .concept-object.selected .concept-shape {
   stroke: var(--accent) !important;
   stroke-width: 2.5 !important;

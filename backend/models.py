@@ -96,6 +96,7 @@ class ConceptObject(BaseModel):
     color: Optional[str] = None
     border_style: str = "solid"  # solid | dashed | none
     z_index: int = 0
+    locked: bool = False
 
 
 class ConceptObjectCreate(BaseModel):
@@ -118,6 +119,7 @@ class ConceptObjectUpdate(BaseModel):
     color: Optional[str] = None
     border_style: Optional[str] = None
     z_index: Optional[int] = None
+    locked: Optional[bool] = None
 
 
 class ConvertToNodeRequest(BaseModel):

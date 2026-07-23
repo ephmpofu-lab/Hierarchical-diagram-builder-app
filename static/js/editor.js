@@ -1214,7 +1214,10 @@ function renderConceptCanvas(viewW, viewH) {
 
 function drawConceptObject(obj) {
   const group = document.createElementNS(SVG_NS, "g");
-  group.setAttribute("class", "concept-object" + (selectedConceptObjectId === obj.id ? " selected" : ""));
+  group.setAttribute(
+    "class",
+    "concept-object" + (selectedConceptObjectId === obj.id ? " selected" : "") + (obj.locked ? " locked" : "")
+  );
   group.dataset.id = obj.id;
 
   const color = obj.color || CONCEPT_DEFAULT_COLORS[obj.type] || "#64748b";
@@ -1289,7 +1292,7 @@ function drawConceptObject(obj) {
     group.appendChild(textEl);
   }
 
-  if (selectedConceptObjectId === obj.id) {
+  if (selectedConceptObjectId === obj.id && !obj.locked) {
     const handle = document.createElementNS(SVG_NS, "rect");
     handle.setAttribute("class", "concept-resize-handle");
     handle.setAttribute("x", obj.x + obj.width - 6);
@@ -1301,6 +1304,15 @@ function drawConceptObject(obj) {
       startConceptDrag(e, obj.id, "resize");
     });
     group.appendChild(handle);
+  }
+
+  if (obj.locked) {
+    const lockBadge = document.createElementNS(SVG_NS, "text");
+    lockBadge.setAttribute("class", "concept-lock-badge");
+    lockBadge.setAttribute("x", obj.x + obj.width - 10);
+    lockBadge.setAttribute("y", obj.y + 10);
+    lockBadge.textContent = "🔒";
+    group.appendChild(lockBadge);
   }
 
   group.addEventListener("mousedown", (e) => {
@@ -1326,7 +1338,7 @@ function drawConceptObject(obj) {
 
 function startConceptDrag(e, objId, mode) {
   const obj = project.concept_objects.find((o) => o.id === objId);
-  if (!obj) return;
+  if (!obj || obj.locked) return;
   conceptDragState = {
     id: objId,
     startClientX: e.clientX,
@@ -1459,6 +1471,16 @@ function openConceptObjectContextMenu(objId, clientX, clientY) {
       await loadProject();
     })
   );
+  menu.appendChild(
+    contextMenuItem(obj.locked ? "🔓 Unlock" : "🔒 Lock", async () => {
+      await fetch(`/api/projects/${projectId}/concept-objects/${objId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locked: !obj.locked }),
+      });
+      await loadProject();
+    })
+  );
 
   menu.appendChild(contextMenuSeparator());
 
@@ -1493,12 +1515,20 @@ function openConceptObjectContextMenu(objId, clientX, clientY) {
   );
 
   menu.appendChild(
-    contextMenuItem("🗑 Delete", () => {
-      fetch(`/api/projects/${projectId}/concept-objects/${objId}`, { method: "DELETE" }).then(async () => {
+    contextMenuItem(
+      "🗑 Delete",
+      async () => {
+        const res = await fetch(`/api/projects/${projectId}/concept-objects/${objId}`, { method: "DELETE" });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          alert(err.detail || "Couldn't delete this object.");
+          return;
+        }
         if (selectedConceptObjectId === objId) selectedConceptObjectId = null;
         await loadProject();
-      });
-    }, { danger: true })
+      },
+      { danger: true, disabled: obj.locked }
+    )
   );
 
   menu.style.left = `${clientX}px`;

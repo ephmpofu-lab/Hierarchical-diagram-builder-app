@@ -65,8 +65,12 @@ def update_object(
     color: Optional[str] = None,
     border_style: Optional[str] = None,
     z_index: Optional[int] = None,
+    locked: Optional[bool] = None,
 ) -> ConceptObject:
     obj = get_object_or_404(project, object_id)
+    is_moving_or_resizing = x is not None or y is not None or width is not None or height is not None
+    if obj.locked and is_moving_or_resizing and locked is None:
+        raise HTTPException(status_code=400, detail="This object is locked")
     if x is not None:
         obj.x = x
     if y is not None:
@@ -83,16 +87,18 @@ def update_object(
         obj.color = color or None
     if border_style is not None:
         obj.border_style = border_style
+    if locked is not None:
+        obj.locked = locked
     if z_index is not None:
         obj.z_index = z_index
     return obj
 
 
 def delete_object(project: Project, object_id: str) -> None:
-    before = len(project.concept_objects)
+    obj = get_object_or_404(project, object_id)
+    if obj.locked:
+        raise HTTPException(status_code=400, detail="This object is locked — unlock it before deleting")
     project.concept_objects = [o for o in project.concept_objects if o.id != object_id]
-    if len(project.concept_objects) == before:
-        raise HTTPException(status_code=404, detail="Planning object not found")
 
 
 def duplicate_object(project: Project, object_id: str) -> ConceptObject:
