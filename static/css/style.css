@@ -700,6 +700,48 @@ button {
   color: var(--text-muted);
 }
 
+.inspector-sticky-header {
+  position: sticky;
+  top: -4px;
+  background: var(--surface);
+  padding: 4px 0 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  z-index: 5;
+}
+
+.insp-section {
+  margin-bottom: 4px;
+}
+
+.insp-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.insp-section-header:hover {
+  color: var(--text);
+}
+
+.insp-section-arrow {
+  font-size: 10px;
+  width: 10px;
+  flex-shrink: 0;
+}
+
+.insp-section-body {
+  padding-bottom: 8px;
+}
+
 .inspector-content .meta-row strong {
   color: var(--text);
   font-weight: 500;

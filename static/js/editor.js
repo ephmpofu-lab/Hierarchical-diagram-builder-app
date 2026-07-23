@@ -17,6 +17,7 @@ const zoomInBtn = document.getElementById("zoomInBtn");
 const zoomOutBtn = document.getElementById("zoomOutBtn");
 const zoomLevelEl = document.getElementById("zoomLevel");
 const fitViewBtn = document.getElementById("fitViewBtn");
+const arrangeChildrenBtn = document.getElementById("arrangeChildrenBtn");
 const minimapSvg = document.getElementById("minimapSvg");
 const healthToggleBtn = document.getElementById("healthToggleBtn");
 const healthPanel = document.getElementById("healthPanel");
@@ -106,6 +107,7 @@ async function focusNode(nodeId) {
   zoomLevelEl.textContent = "100%";
   await expandAncestors(nodeId);
   await loadProject();
+  fitToView();
 }
 
 async function expandAncestors(nodeId) {
@@ -476,6 +478,9 @@ function renderCanvas() {
 
   const tagCounters = new Map();
   for (const ref of project.references) {
+    // Only draw references touching the focused node itself — otherwise a node with many
+    // children each carrying their own unrelated reference links turns into a wall of lines.
+    if (ref.from !== focus.id && ref.to !== focus.id) continue;
     const fromVisible = visibleIds.has(ref.from);
     const toVisible = visibleIds.has(ref.to);
     if (fromVisible && toVisible) {
@@ -961,6 +966,13 @@ function fitToView() {
 
 fitViewBtn.addEventListener("click", fitToView);
 
+arrangeChildrenBtn.addEventListener("click", async () => {
+  if (!focusedNodeId) return;
+  await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/arrange-children`, { method: "POST" });
+  await loadProject();
+  fitToView();
+});
+
 // ---------- Minimap ----------
 
 function renderMinimap() {
@@ -1333,6 +1345,37 @@ function metaRow(labelText, value) {
   return row;
 }
 
+const inspectorCollapseState = { metadata: true, comments: true, templates: true };
+
+function collapsibleSection(key, title, buildFn) {
+  const section = document.createElement("div");
+  section.className = "insp-section";
+
+  const collapsed = !!inspectorCollapseState[key];
+  const header = document.createElement("div");
+  header.className = "insp-section-header";
+  const arrow = document.createElement("span");
+  arrow.className = "insp-section-arrow";
+  arrow.textContent = collapsed ? "▸" : "▾";
+  const titleEl = document.createElement("span");
+  titleEl.textContent = title;
+  header.appendChild(arrow);
+  header.appendChild(titleEl);
+  header.addEventListener("click", () => {
+    inspectorCollapseState[key] = !collapsed;
+    renderInspector();
+  });
+  section.appendChild(header);
+
+  if (!collapsed) {
+    const body = document.createElement("div");
+    body.className = "insp-section-body";
+    buildFn(body);
+    section.appendChild(body);
+  }
+  return section;
+}
+
 function formatDateTime(iso) {
   const d = new Date(iso);
   return d.toLocaleString(undefined, {
@@ -1394,7 +1437,11 @@ function renderInspector() {
   if (!project || !focusedNodeId) return;
   const node = project.nodes[focusedNodeId];
 
-  // Label
+  // ---- Sticky header: always visible while scrolling, so Notes/Comments/etc never
+  // lose their "which node is this?" context. ----
+  const header = document.createElement("div");
+  header.className = "inspector-sticky-header";
+
   const labelField = field("Label");
   const labelInput = document.createElement("input");
   labelInput.className = "label-input";
@@ -1414,93 +1461,15 @@ function renderInspector() {
     }
   });
   labelField.appendChild(labelInput);
-  inspectorContent.appendChild(labelField);
+  header.appendChild(labelField);
 
-  // Meta
   const parentNode = node.parent_id ? project.nodes[node.parent_id] : null;
-  inspectorContent.appendChild(metaRow("Level", node.level));
-  inspectorContent.appendChild(metaRow("Parent", parentNode ? parentNode.label : "— (root)"));
-  inspectorContent.appendChild(metaRow("Children", node.children.length));
+  header.appendChild(metaRow("Level", node.level));
+  header.appendChild(metaRow("Parent", parentNode ? parentNode.label : "— (root)"));
+  header.appendChild(metaRow("Children", node.children.length));
 
-  inspectorContent.appendChild(document.createElement("hr")).className = "inspector-divider";
-
-  // Metadata: type, status, priority, complexity, risk, tags, owner
-  const typeField = field("Node type");
-  const typeInput = document.createElement("input");
-  typeInput.className = "label-input";
-  typeInput.placeholder = "e.g. Decision Engine";
-  typeInput.value = node.node_type || "";
-  typeInput.addEventListener("blur", async () => {
-    if (typeInput.value !== (node.node_type || "")) {
-      await patchNode({ node_type: typeInput.value });
-    }
-  });
-  typeField.appendChild(typeInput);
-  inspectorContent.appendChild(typeField);
-
-  inspectorContent.appendChild(
-    metaSelectField("status", "Status", ["Planned", "In Development", "Done", "Blocked", "Deprecated"], node)
-  );
-  inspectorContent.appendChild(metaSelectField("priority", "Priority", ["Low", "Medium", "High", "Critical"], node));
-  inspectorContent.appendChild(metaSelectField("complexity", "Complexity", ["Low", "Medium", "High"], node));
-  inspectorContent.appendChild(
-    metaSelectField("risk_level", "Risk level", ["Low", "Medium", "High", "Critical"], node)
-  );
-
-  const ownerField = field("Owner");
-  const ownerInput = document.createElement("input");
-  ownerInput.className = "label-input";
-  ownerInput.placeholder = "e.g. your name or team";
-  ownerInput.value = node.owner || "";
-  ownerInput.addEventListener("blur", async () => {
-    if (ownerInput.value !== (node.owner || "")) {
-      await patchNode({ owner: ownerInput.value });
-    }
-  });
-  ownerField.appendChild(ownerInput);
-  inspectorContent.appendChild(ownerField);
-
-  const tagsField = field("Tags");
-  const tagsWrap = document.createElement("div");
-  tagsWrap.className = "tag-list";
-  for (const tag of node.tags) {
-    const pill = document.createElement("span");
-    pill.className = "tag-pill";
-    const text = document.createElement("span");
-    text.textContent = tag;
-    const remove = document.createElement("button");
-    remove.textContent = "×";
-    remove.addEventListener("click", async () => {
-      await patchNode({ tags: node.tags.filter((t) => t !== tag) });
-    });
-    pill.appendChild(text);
-    pill.appendChild(remove);
-    tagsWrap.appendChild(pill);
-  }
-  const tagInput = document.createElement("input");
-  tagInput.className = "label-input";
-  tagInput.placeholder = "Add tag, press Enter";
-  tagInput.addEventListener("keydown", async (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const value = tagInput.value.trim();
-      if (value && !node.tags.includes(value)) {
-        await patchNode({ tags: [...node.tags, value] });
-      } else {
-        tagInput.value = "";
-      }
-    }
-  });
-  tagsField.appendChild(tagsWrap);
-  tagsField.appendChild(tagInput);
-  inspectorContent.appendChild(tagsField);
-
-  inspectorContent.appendChild(document.createElement("hr")).className = "inspector-divider";
-
-  // Quick structure actions
   const btnRow = document.createElement("div");
   btnRow.className = "btn-row";
-
   const mkBtn = (text, title, onClick) => {
     const b = document.createElement("button");
     b.className = "btn btn-small";
@@ -1509,7 +1478,6 @@ function renderInspector() {
     b.addEventListener("click", onClick);
     return b;
   };
-
   btnRow.appendChild(
     mkBtn("⇥ Indent", "Make this a child of the node above", async () => {
       const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/indent`, { method: "POST" });
@@ -1531,10 +1499,10 @@ function renderInspector() {
     delBtn.classList.add("btn-danger");
     btnRow.appendChild(delBtn);
   }
-  inspectorContent.appendChild(btnRow);
-  inspectorContent.appendChild(document.createElement("hr")).className = "inspector-divider";
+  header.appendChild(btnRow);
+  inspectorContent.appendChild(header);
 
-  // Notes
+  // ---- Notes (always visible — most-used field) ----
   const notesField = field("Notes");
   const textarea = document.createElement("textarea");
   textarea.rows = 4;
@@ -1555,7 +1523,7 @@ function renderInspector() {
   notesField.appendChild(textarea);
   inspectorContent.appendChild(notesField);
 
-  // Warnings
+  // Warnings (always visible when present — they're alerts, not reference material)
   for (const warning of computeWarnings(node)) {
     const box = document.createElement("div");
     box.className = "warning-box";
@@ -1563,7 +1531,80 @@ function renderInspector() {
     inspectorContent.appendChild(box);
   }
 
-  // References touching this node
+  // ---- Metadata (collapsible) ----
+  inspectorContent.appendChild(
+    collapsibleSection("metadata", "Metadata", (body) => {
+      const typeField = field("Node type");
+      const typeInput = document.createElement("input");
+      typeInput.className = "label-input";
+      typeInput.placeholder = "e.g. Decision Engine";
+      typeInput.value = node.node_type || "";
+      typeInput.addEventListener("blur", async () => {
+        if (typeInput.value !== (node.node_type || "")) {
+          await patchNode({ node_type: typeInput.value });
+        }
+      });
+      typeField.appendChild(typeInput);
+      body.appendChild(typeField);
+
+      body.appendChild(
+        metaSelectField("status", "Status", ["Planned", "In Development", "Done", "Blocked", "Deprecated"], node)
+      );
+      body.appendChild(metaSelectField("priority", "Priority", ["Low", "Medium", "High", "Critical"], node));
+      body.appendChild(metaSelectField("complexity", "Complexity", ["Low", "Medium", "High"], node));
+      body.appendChild(metaSelectField("risk_level", "Risk level", ["Low", "Medium", "High", "Critical"], node));
+
+      const ownerField = field("Owner");
+      const ownerInput = document.createElement("input");
+      ownerInput.className = "label-input";
+      ownerInput.placeholder = "e.g. your name or team";
+      ownerInput.value = node.owner || "";
+      ownerInput.addEventListener("blur", async () => {
+        if (ownerInput.value !== (node.owner || "")) {
+          await patchNode({ owner: ownerInput.value });
+        }
+      });
+      ownerField.appendChild(ownerInput);
+      body.appendChild(ownerField);
+
+      const tagsField = field("Tags");
+      const tagsWrap = document.createElement("div");
+      tagsWrap.className = "tag-list";
+      for (const tag of node.tags) {
+        const pill = document.createElement("span");
+        pill.className = "tag-pill";
+        const text = document.createElement("span");
+        text.textContent = tag;
+        const remove = document.createElement("button");
+        remove.textContent = "×";
+        remove.addEventListener("click", async () => {
+          await patchNode({ tags: node.tags.filter((t) => t !== tag) });
+        });
+        pill.appendChild(text);
+        pill.appendChild(remove);
+        tagsWrap.appendChild(pill);
+      }
+      const tagInput = document.createElement("input");
+      tagInput.className = "label-input";
+      tagInput.placeholder = "Add tag, press Enter";
+      tagInput.addEventListener("keydown", async (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const value = tagInput.value.trim();
+          if (value && !node.tags.includes(value)) {
+            await patchNode({ tags: [...node.tags, value] });
+          } else {
+            tagInput.value = "";
+          }
+        }
+      });
+      tagsField.appendChild(tagsWrap);
+      tagsField.appendChild(tagInput);
+      body.appendChild(tagsField);
+    })
+  );
+
+  // ---- References (collapsible) ----
   const touchingRefs = project.references.filter((r) => r.from === node.id || r.to === node.id);
   const subtreeIds = new Set(collectSubtreeIds(node.id));
   const outsideCount = touchingRefs.filter((r) => {
@@ -1579,139 +1620,141 @@ function renderInspector() {
   }
 
   if (touchingRefs.length > 0) {
-    const refsField = field("References");
-    for (const ref of touchingRefs) {
-      const otherId = ref.from === node.id ? ref.to : ref.from;
-      const otherNode = project.nodes[otherId];
-      const direction = ref.from === node.id ? "→" : "←";
-      const item = document.createElement("div");
-      item.className = "ref-list-item";
-      const text = document.createElement("span");
-      text.className = "ref-text";
-      text.textContent = `${direction} ${otherNode ? otherNode.label : "(unknown)"}${ref.label ? " · " + ref.label : ""}`;
-      const delBtn = document.createElement("button");
-      delBtn.className = "row-btn delete-node";
-      delBtn.textContent = "×";
-      delBtn.title = "Remove reference";
-      delBtn.addEventListener("click", async () => {
-        await fetch(`/api/projects/${projectId}/references/${ref.id}`, { method: "DELETE" });
+    inspectorContent.appendChild(
+      collapsibleSection(`references-${node.id}`, `References (${touchingRefs.length})`, (body) => {
+        for (const ref of touchingRefs) {
+          const otherId = ref.from === node.id ? ref.to : ref.from;
+          const otherNode = project.nodes[otherId];
+          const direction = ref.from === node.id ? "→" : "←";
+          const item = document.createElement("div");
+          item.className = "ref-list-item";
+          const text = document.createElement("span");
+          text.className = "ref-text";
+          text.textContent = `${direction} ${otherNode ? otherNode.label : "(unknown)"}${ref.label ? " · " + ref.label : ""}`;
+          const delBtn = document.createElement("button");
+          delBtn.className = "row-btn delete-node";
+          delBtn.textContent = "×";
+          delBtn.title = "Remove reference";
+          delBtn.addEventListener("click", async () => {
+            await fetch(`/api/projects/${projectId}/references/${ref.id}`, { method: "DELETE" });
+            await loadProject();
+          });
+          item.appendChild(text);
+          item.appendChild(delBtn);
+          body.appendChild(item);
+        }
+      })
+    );
+  }
+
+  // ---- Comments (collapsible) ----
+  inspectorContent.appendChild(
+    collapsibleSection("comments", `Comments${node.comments.length ? ` (${node.comments.length})` : ""}`, (body) => {
+      for (const comment of node.comments) {
+        const item = document.createElement("div");
+        item.className = "comment-item";
+        const meta = document.createElement("div");
+        meta.className = "comment-meta";
+        meta.textContent = formatDateTime(comment.created_at);
+        const text = document.createElement("div");
+        text.className = "comment-text";
+        text.textContent = comment.text;
+        const delBtn = document.createElement("button");
+        delBtn.className = "row-btn delete-node comment-delete";
+        delBtn.textContent = "×";
+        delBtn.title = "Delete comment";
+        delBtn.addEventListener("click", async () => {
+          await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/comments/${comment.id}`, {
+            method: "DELETE",
+          });
+          await loadProject();
+        });
+        const row = document.createElement("div");
+        row.className = "comment-row";
+        const commentBody = document.createElement("div");
+        commentBody.appendChild(meta);
+        commentBody.appendChild(text);
+        row.appendChild(commentBody);
+        row.appendChild(delBtn);
+        item.appendChild(row);
+        body.appendChild(item);
+      }
+      const commentInput = document.createElement("textarea");
+      commentInput.rows = 2;
+      commentInput.placeholder = "Add a comment…";
+      commentInput.addEventListener("keydown", async (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          const value = commentInput.value.trim();
+          if (!value) return;
+          await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/comments`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: value }),
+          });
+          await loadProject();
+        }
+      });
+      body.appendChild(commentInput);
+    })
+  );
+
+  // ---- Templates (collapsible) ----
+  inspectorContent.appendChild(
+    collapsibleSection("templates", "Templates", (body) => {
+      const saveTplBtn = document.createElement("button");
+      saveTplBtn.className = "btn btn-small";
+      saveTplBtn.textContent = "Save this subtree as template";
+      saveTplBtn.addEventListener("click", async () => {
+        const name = prompt("Template name:", node.label);
+        if (!name || !name.trim()) return;
+        await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/save-as-template`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name.trim() }),
+        });
+        renderInspector();
+      });
+      body.appendChild(saveTplBtn);
+
+      const applyRow = document.createElement("div");
+      applyRow.className = "btn-row";
+      const select = document.createElement("select");
+      select.className = "label-input";
+      const applyBtn = document.createElement("button");
+      applyBtn.className = "btn btn-small";
+      applyBtn.textContent = "Apply under this node";
+      applyBtn.addEventListener("click", async () => {
+        if (!select.value) return;
+        await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/apply-template/${select.value}`, {
+          method: "POST",
+        });
         await loadProject();
       });
-      item.appendChild(text);
-      item.appendChild(delBtn);
-      refsField.appendChild(item);
-    }
-    inspectorContent.appendChild(refsField);
-  }
+      applyRow.appendChild(select);
+      applyRow.appendChild(applyBtn);
+      body.appendChild(applyRow);
 
-  inspectorContent.appendChild(document.createElement("hr")).className = "inspector-divider";
-
-  // Comments
-  const commentsField = field("Comments");
-  for (const comment of node.comments) {
-    const item = document.createElement("div");
-    item.className = "comment-item";
-    const meta = document.createElement("div");
-    meta.className = "comment-meta";
-    meta.textContent = formatDateTime(comment.created_at);
-    const text = document.createElement("div");
-    text.className = "comment-text";
-    text.textContent = comment.text;
-    const delBtn = document.createElement("button");
-    delBtn.className = "row-btn delete-node comment-delete";
-    delBtn.textContent = "×";
-    delBtn.title = "Delete comment";
-    delBtn.addEventListener("click", async () => {
-      await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/comments/${comment.id}`, {
-        method: "DELETE",
-      });
-      await loadProject();
-    });
-    const row = document.createElement("div");
-    row.className = "comment-row";
-    const body = document.createElement("div");
-    body.appendChild(meta);
-    body.appendChild(text);
-    row.appendChild(body);
-    row.appendChild(delBtn);
-    item.appendChild(row);
-    commentsField.appendChild(item);
-  }
-  const commentInput = document.createElement("textarea");
-  commentInput.rows = 2;
-  commentInput.placeholder = "Add a comment…";
-  commentInput.addEventListener("keydown", async (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      const value = commentInput.value.trim();
-      if (!value) return;
-      await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/comments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: value }),
-      });
-      await loadProject();
-    }
-  });
-  commentsField.appendChild(commentInput);
-  inspectorContent.appendChild(commentsField);
-
-  inspectorContent.appendChild(document.createElement("hr")).className = "inspector-divider";
-
-  // Templates
-  const templateField = field("Templates");
-  const saveTplBtn = document.createElement("button");
-  saveTplBtn.className = "btn btn-small";
-  saveTplBtn.textContent = "Save this subtree as template";
-  saveTplBtn.addEventListener("click", async () => {
-    const name = prompt("Template name:", node.label);
-    if (!name || !name.trim()) return;
-    await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/save-as-template`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim() }),
-    });
-    renderInspector();
-  });
-  templateField.appendChild(saveTplBtn);
-
-  const applyRow = document.createElement("div");
-  applyRow.className = "btn-row";
-  const select = document.createElement("select");
-  select.className = "label-input";
-  const applyBtn = document.createElement("button");
-  applyBtn.className = "btn btn-small";
-  applyBtn.textContent = "Apply under this node";
-  applyBtn.addEventListener("click", async () => {
-    if (!select.value) return;
-    await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/apply-template/${select.value}`, {
-      method: "POST",
-    });
-    await loadProject();
-  });
-  applyRow.appendChild(select);
-  applyRow.appendChild(applyBtn);
-  templateField.appendChild(applyRow);
-  inspectorContent.appendChild(templateField);
-
-  fetch("/api/templates")
-    .then((res) => (res.ok ? res.json() : []))
-    .then((templates) => {
-      select.innerHTML = "";
-      if (templates.length === 0) {
-        const opt = document.createElement("option");
-        opt.textContent = "No templates saved yet";
-        opt.value = "";
-        select.appendChild(opt);
-        applyBtn.disabled = true;
-        return;
-      }
-      applyBtn.disabled = false;
-      for (const t of templates) {
-        const opt = document.createElement("option");
-        opt.value = t.id;
-        opt.textContent = `${t.name} (${t.node_count} nodes)`;
-        select.appendChild(opt);
-      }
-    });
+      fetch("/api/templates")
+        .then((res) => (res.ok ? res.json() : []))
+        .then((templates) => {
+          select.innerHTML = "";
+          if (templates.length === 0) {
+            const opt = document.createElement("option");
+            opt.textContent = "No templates saved yet";
+            opt.value = "";
+            select.appendChild(opt);
+            applyBtn.disabled = true;
+            return;
+          }
+          applyBtn.disabled = false;
+          for (const t of templates) {
+            const opt = document.createElement("option");
+            opt.value = t.id;
+            opt.textContent = `${t.name} (${t.node_count} nodes)`;
+            select.appendChild(opt);
+          }
+        });
+    })
+  );
 }
