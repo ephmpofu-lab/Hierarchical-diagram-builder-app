@@ -355,6 +355,33 @@ function renderOutline() {
   outlineTree.appendChild(renderNode(rootId));
 }
 
+// Classic box-drawing tree prefix (│  , ├── , └── ) so the Explorer reads as a real ASCII
+// tree instead of just indentation — real last-child bookkeeping per ancestor level, not
+// the flat per-level color rails tried previously, since the user asked for exactly this
+// structure with a reference screenshot. Root gets no prefix at all.
+function buildTreePrefix(nodeId) {
+  const chain = [];
+  let cur = project.nodes[nodeId];
+  while (cur.parent_id) {
+    chain.unshift(cur);
+    cur = project.nodes[cur.parent_id];
+  }
+  let prefix = "";
+  for (let i = 0; i < chain.length - 1; i++) {
+    const entry = chain[i];
+    const parent = project.nodes[entry.parent_id];
+    const isLast = parent.children[parent.children.length - 1] === entry.id;
+    prefix += isLast ? "    " : "│   ";
+  }
+  if (chain.length > 0) {
+    const node = chain[chain.length - 1];
+    const parent = project.nodes[node.parent_id];
+    const isLast = parent.children[parent.children.length - 1] === node.id;
+    prefix += isLast ? "└── " : "├── ";
+  }
+  return prefix;
+}
+
 function renderNode(nodeId) {
   const node = project.nodes[nodeId];
   const wrapper = document.createElement("div");
@@ -362,15 +389,11 @@ function renderNode(nodeId) {
   const row = document.createElement("div");
   row.className = "outline-row" + (nodeId === focusedNodeId ? " focused" : "");
   row.dataset.id = nodeId;
-  // Coloured hierarchy connector guides instead of a flat left-border bar: one vertical
-  // rail per ancestor level, tinted the same way as that level's canvas nodes, so depth
-  // reads as a connected tree structure rather than a per-row accent stripe.
-  for (let lvl = 1; lvl < node.level; lvl++) {
-    const guide = document.createElement("span");
-    guide.className = "tree-guide";
-    guide.style.borderLeftColor = levelTintColor(lvl);
-    row.appendChild(guide);
-  }
+
+  const prefix = document.createElement("span");
+  prefix.className = "tree-prefix";
+  prefix.textContent = buildTreePrefix(nodeId);
+  row.appendChild(prefix);
 
   const toggle = document.createElement("span");
   toggle.className = "toggle";
