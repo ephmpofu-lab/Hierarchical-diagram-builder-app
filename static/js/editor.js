@@ -726,8 +726,11 @@ function curvePath(from, to) {
 // put), fanning outward left/right of it, and marks each as faded context — visible, but
 // dimmed, so ancestor context is never fully hidden even though it isn't the active branch.
 function layoutSiblingRow(siblings, activeId, y, positions, fadedIds) {
+  // Soft-cap even faded context rows so an ancestor with hundreds of siblings doesn't
+  // blow out the layout — this is context, not the thing being worked on.
+  const capped = siblings.length > MAX_UNGROUPED_VISIBLE ? siblings.slice(0, MAX_UNGROUPED_VISIBLE) : siblings;
   const activeX = positions.get(activeId).x;
-  siblings.forEach((sib, i) => {
+  capped.forEach((sib, i) => {
     const side = i % 2 === 0 ? 1 : -1;
     const rank = Math.floor(i / 2) + 1;
     positions.set(sib.id, { x: activeX + side * rank * (NODE_W + COL_GAP), y });
@@ -738,7 +741,17 @@ function layoutSiblingRow(siblings, activeId, y, positions, fadedIds) {
 function computeCanvasLayout(viewW, viewH) {
   const focus = project.nodes[focusedNodeId];
   const parent = focus.parent_id ? project.nodes[focus.parent_id] : null;
-  const grandparent = parent && parent.parent_id ? project.nodes[parent.parent_id] : null;
+
+  // Full ancestor chain from the immediate parent up to the root: [parent, grandparent, ...,
+  // root]. Answers "how did I get here / what's above me" at any depth, not just two levels
+  // up — architectural context must never be lost, no matter how deeply nested the focus is.
+  const ancestorChain = [];
+  let cur = focus;
+  while (cur.parent_id) {
+    cur = project.nodes[cur.parent_id];
+    ancestorChain.push(cur);
+  }
+
   const allChildren = focus.children.map((id) => project.nodes[id]);
   const visibleChildren =
     !expandedGroupOverflow && allChildren.length > MAX_UNGROUPED_VISIBLE
@@ -751,21 +764,22 @@ function computeCanvasLayout(viewW, viewH) {
   const contextEdges = []; // {fromId, toId} for faded ancestor/sibling context, drawn dimmed
 
   positions.set(focus.id, { x: viewW / 2, y: viewH / 2 });
-  if (parent) positions.set(parent.id, { x: viewW / 2, y: viewH / 2 - ROW_GAP });
-  if (grandparent) positions.set(grandparent.id, { x: viewW / 2, y: viewH / 2 - 2 * ROW_GAP });
 
-  // Never fully hide ancestor context: show the focused node's siblings, and the parent's
-  // siblings, faded rather than omitted — only the direct root→focus path and focus's own
-  // children render at full opacity.
+  // Every ancestor sits on the direct path (full opacity); every OTHER child of that
+  // ancestor (i.e. its siblings at that level) renders faded alongside it, never omitted.
+  ancestorChain.forEach((ancestor, i) => {
+    const y = viewH / 2 - (i + 1) * ROW_GAP;
+    positions.set(ancestor.id, { x: viewW / 2, y });
+    const childOnPath = i === 0 ? focus.id : ancestorChain[i - 1].id;
+    const siblings = ancestor.children.filter((id) => id !== childOnPath).map((id) => project.nodes[id]);
+    layoutSiblingRow(siblings, ancestor.id, y, positions, fadedIds);
+    for (const sib of siblings) contextEdges.push({ fromId: ancestor.id, toId: sib.id });
+  });
+
   if (parent) {
     const focusSiblings = parent.children.filter((id) => id !== focus.id).map((id) => project.nodes[id]);
     layoutSiblingRow(focusSiblings, focus.id, viewH / 2, positions, fadedIds);
     for (const sib of focusSiblings) contextEdges.push({ fromId: parent.id, toId: sib.id });
-  }
-  if (grandparent) {
-    const parentSiblings = grandparent.children.filter((id) => id !== parent.id).map((id) => project.nodes[id]);
-    layoutSiblingRow(parentSiblings, parent.id, viewH / 2 - ROW_GAP, positions, fadedIds);
-    for (const sib of parentSiblings) contextEdges.push({ fromId: grandparent.id, toId: sib.id });
   }
 
   const n = visibleChildren.length;
@@ -779,7 +793,7 @@ function computeCanvasLayout(viewW, viewH) {
 
   let minX = viewW / 2 - NODE_W / 2;
   let maxX = viewW / 2 + NODE_W / 2;
-  let minY = (grandparent ? viewH / 2 - 2 * ROW_GAP : parent ? viewH / 2 - ROW_GAP : viewH / 2) - NODE_H / 2;
+  let minY = (ancestorChain.length > 0 ? viewH / 2 - ancestorChain.length * ROW_GAP : viewH / 2) - NODE_H / 2;
   let maxY = viewH / 2 + NODE_H / 2;
   for (const pos of positions.values()) {
     minX = Math.min(minX, pos.x - NODE_W / 2);
@@ -791,7 +805,7 @@ function computeCanvasLayout(viewW, viewH) {
   return {
     focus,
     parent,
-    grandparent,
+    ancestorChain,
     visibleChildren,
     hiddenCount,
     positions,
@@ -821,7 +835,7 @@ function renderCanvas() {
 }
 
 function renderFocusCanvas(viewW, viewH) {
-  const { focus, parent, grandparent, visibleChildren, hiddenCount, positions, fadedIds, contextEdges } =
+  const { focus, parent, ancestorChain, visibleChildren, hiddenCount, positions, fadedIds, contextEdges } =
     computeCanvasLayout(viewW, viewH);
   const visibleIds = new Set(positions.keys());
 
@@ -851,8 +865,11 @@ function renderFocusCanvas(viewW, viewH) {
       edgesGroup.appendChild(drawTreeHandle(focusPos, focus.id, parentPos));
     }
   }
-  if (grandparent && parent) {
-    edgesGroup.appendChild(drawTreeEdge(positions.get(grandparent.id), positions.get(parent.id), grandparent.id, parent.id));
+  // Rest of the direct ancestor chain above the parent (grandparent, great-grandparent, ...)
+  for (let i = 1; i < ancestorChain.length; i++) {
+    const child = ancestorChain[i - 1];
+    const ancestor = ancestorChain[i];
+    edgesGroup.appendChild(drawTreeEdge(positions.get(ancestor.id), positions.get(child.id), ancestor.id, child.id));
   }
 
   if (visibleChildren.length > 0) {
@@ -890,13 +907,12 @@ function renderFocusCanvas(viewW, viewH) {
     }
   }
 
-  if (grandparent) {
-    nodesGroup.appendChild(drawNode(grandparent, positions.get(grandparent.id), !nodeMatchesStatusFilter(grandparent)));
+  for (const ancestor of ancestorChain) {
+    nodesGroup.appendChild(drawNode(ancestor, positions.get(ancestor.id), !nodeMatchesStatusFilter(ancestor)));
   }
   for (const fadedId of fadedIds) {
     nodesGroup.appendChild(drawNode(project.nodes[fadedId], positions.get(fadedId), true));
   }
-  if (parent) nodesGroup.appendChild(drawNode(parent, positions.get(parent.id), !nodeMatchesStatusFilter(parent)));
   nodesGroup.appendChild(drawNode(focus, positions.get(focus.id)));
   for (const child of visibleChildren) {
     nodesGroup.appendChild(drawNode(child, positions.get(child.id), !nodeMatchesStatusFilter(child)));
