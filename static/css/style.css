@@ -305,6 +305,10 @@ button {
   user-select: none;
 }
 
+.canvas-svg .concept-grid-dot {
+  fill: var(--border);
+}
+
 .canvas-svg .concept-object.selected .concept-shape {
   stroke: var(--accent) !important;
   stroke-width: 2.5 !important;

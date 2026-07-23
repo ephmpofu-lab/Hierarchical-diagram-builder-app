@@ -624,6 +624,30 @@ document.addEventListener("keydown", async (e) => {
     return;
   }
 
+  if (!typingGlobal && appMode === "concept" && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
+    if (selectedConceptObjectId) {
+      const obj = project.concept_objects.find((o) => o.id === selectedConceptObjectId);
+      if (obj) conceptClipboard = { ...obj };
+    }
+    return;
+  }
+  if (!typingGlobal && appMode === "concept" && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+    if (conceptClipboard) {
+      const svgRect = canvasSvg.getBoundingClientRect();
+      await pasteConceptObject(svgRect.left + svgRect.width / 2, svgRect.top + svgRect.height / 2);
+    }
+    return;
+  }
+  if (!typingGlobal && appMode === "concept" && e.key === "Delete" && selectedConceptObjectId) {
+    const objId = selectedConceptObjectId;
+    const res = await fetch(`/api/projects/${projectId}/concept-objects/${objId}`, { method: "DELETE" });
+    if (res.ok) {
+      selectedConceptObjectId = null;
+      await loadProject();
+    }
+    return;
+  }
+
   if (e.key === "Escape" && refMode) {
     exitRefMode();
     return;
@@ -1128,6 +1152,13 @@ function renderFullArchitectureCanvas(viewW, viewH) {
 let appMode = "architecture";
 let selectedConceptObjectId = null;
 let conceptDragState = null;
+let showConceptGrid = false;
+let snapToConceptGrid = false;
+const CONCEPT_GRID_SIZE = 20;
+
+function snapConceptValue(v) {
+  return snapToConceptGrid ? Math.round(v / CONCEPT_GRID_SIZE) * CONCEPT_GRID_SIZE : v;
+}
 
 const CONCEPT_DEFAULT_COLORS = {
   rectangle: "#475569",
@@ -1166,8 +1197,8 @@ async function createConceptObject(type) {
   const rect = canvasSvg.getBoundingClientRect();
   const viewW = rect.width || 800;
   const viewH = rect.height || 500;
-  const cx = viewW / 2 - panOffsetX / zoomScale;
-  const cy = viewH / 2 - panOffsetY / zoomScale;
+  const cx = snapConceptValue(viewW / 2 - panOffsetX / zoomScale);
+  const cy = snapConceptValue(viewH / 2 - panOffsetY / zoomScale);
   const needsText = type === "text" || type === "sticky-note" || type === "icon";
   const res = await fetch(`/api/projects/${projectId}/concept-objects`, {
     method: "POST",
@@ -1184,6 +1215,31 @@ async function createConceptObject(type) {
   await loadProject();
 }
 
+async function pasteConceptObject(clientX, clientY) {
+  if (!conceptClipboard) return;
+  const svgRect = canvasSvg.getBoundingClientRect();
+  const viewW = svgRect.width || 800;
+  const viewH = svgRect.height || 500;
+  const cx = snapConceptValue(viewW / 2 + (clientX - svgRect.left - viewW / 2 - panOffsetX) / zoomScale);
+  const cy = snapConceptValue(viewH / 2 + (clientY - svgRect.top - viewH / 2 - panOffsetY) / zoomScale);
+  const res = await fetch(`/api/projects/${projectId}/concept-objects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      type: conceptClipboard.type,
+      x: cx,
+      y: cy,
+      width: conceptClipboard.width,
+      height: conceptClipboard.height,
+      text: conceptClipboard.text,
+      color: conceptClipboard.color,
+    }),
+  });
+  const obj = await res.json();
+  selectedConceptObjectId = obj.id;
+  await loadProject();
+}
+
 function renderConceptCanvas(viewW, viewH) {
   const viewport = document.createElementNS(SVG_NS, "g");
   viewport.setAttribute("class", "viewport-group" + (smoothZoomNextRender ? " smooth" : ""));
@@ -1191,6 +1247,32 @@ function renderConceptCanvas(viewW, viewH) {
     "transform",
     `translate(${viewW / 2 + panOffsetX} ${viewH / 2 + panOffsetY}) scale(${zoomScale}) translate(${-viewW / 2} ${-viewH / 2})`
   );
+
+  if (showConceptGrid) {
+    const defs = document.createElementNS(SVG_NS, "defs");
+    const pattern = document.createElementNS(SVG_NS, "pattern");
+    pattern.setAttribute("id", "conceptGrid");
+    pattern.setAttribute("width", CONCEPT_GRID_SIZE);
+    pattern.setAttribute("height", CONCEPT_GRID_SIZE);
+    pattern.setAttribute("patternUnits", "userSpaceOnUse");
+    const dot = document.createElementNS(SVG_NS, "circle");
+    dot.setAttribute("cx", 1);
+    dot.setAttribute("cy", 1);
+    dot.setAttribute("r", 1);
+    dot.setAttribute("class", "concept-grid-dot");
+    pattern.appendChild(dot);
+    defs.appendChild(pattern);
+    viewport.appendChild(defs);
+
+    const bg = document.createElementNS(SVG_NS, "rect");
+    bg.setAttribute("x", -5000);
+    bg.setAttribute("y", -5000);
+    bg.setAttribute("width", 10000);
+    bg.setAttribute("height", 10000);
+    bg.setAttribute("fill", "url(#conceptGrid)");
+    bg.style.pointerEvents = "none";
+    viewport.appendChild(bg);
+  }
 
   const objectsGroup = document.createElementNS(SVG_NS, "g");
   const sorted = [...project.concept_objects].sort((a, b) => a.z_index - b.z_index);
@@ -1356,11 +1438,11 @@ function startConceptDrag(e, objId, mode) {
     const liveObj = project.concept_objects.find((o) => o.id === conceptDragState.id);
     if (!liveObj) return;
     if (mode === "move") {
-      liveObj.x = conceptDragState.startX + dx;
-      liveObj.y = conceptDragState.startY + dy;
+      liveObj.x = snapConceptValue(conceptDragState.startX + dx);
+      liveObj.y = snapConceptValue(conceptDragState.startY + dy);
     } else {
-      liveObj.width = Math.max(30, conceptDragState.startW + dx);
-      liveObj.height = Math.max(20, conceptDragState.startH + dy);
+      liveObj.width = snapConceptValue(Math.max(30, conceptDragState.startW + dx));
+      liveObj.height = snapConceptValue(Math.max(20, conceptDragState.startH + dy));
     }
     renderCanvas();
   };
@@ -1469,6 +1551,11 @@ function openConceptObjectContextMenu(objId, clientX, clientY) {
       const newObj = await res.json();
       selectedConceptObjectId = newObj.id;
       await loadProject();
+    })
+  );
+  menu.appendChild(
+    contextMenuItem("⎘ Copy", () => {
+      conceptClipboard = { ...obj };
     })
   );
   menu.appendChild(
@@ -2872,8 +2959,77 @@ canvasSvg.addEventListener("mousedown", (e) => {
 canvasSvg.addEventListener("contextmenu", (e) => {
   if (e.target !== canvasSvg) return;
   e.preventDefault();
-  openCanvasContextMenu(e.clientX, e.clientY);
+  if (appMode === "concept") {
+    openConceptCanvasContextMenu(e.clientX, e.clientY);
+  } else {
+    openCanvasContextMenu(e.clientX, e.clientY);
+  }
 });
+
+const CONCEPT_TOOLBOX_TYPES = [
+  ["Rectangle", "rectangle"],
+  ["Rounded Rectangle", "rounded-rectangle"],
+  ["Circle", "circle"],
+  ["Diamond", "diamond"],
+  ["Sticky Note", "sticky-note"],
+  ["Text", "text"],
+  ["Arrow", "arrow"],
+  ["Divider", "divider"],
+  ["Icon", "icon"],
+];
+let conceptClipboard = null;
+
+function openConceptCanvasContextMenu(clientX, clientY) {
+  closeContextMenu();
+  const menu = document.createElement("div");
+  menu.className = "context-menu";
+
+  menu.appendChild(
+    contextMenuSubmenu(
+      "+ Add Content",
+      CONCEPT_TOOLBOX_TYPES.map(([label]) => label),
+      (label) => {
+        const found = CONCEPT_TOOLBOX_TYPES.find(([l]) => l === label);
+        if (found) createConceptObject(found[1]);
+      }
+    )
+  );
+  menu.appendChild(
+    contextMenuItem("📋 Paste", () => pasteConceptObject(clientX, clientY), { disabled: !conceptClipboard })
+  );
+
+  menu.appendChild(contextMenuSeparator());
+
+  menu.appendChild(contextMenuItem("↶ Undo", performUndo, { disabled: undoStack.length === 0 }));
+  menu.appendChild(contextMenuItem("↷ Redo", performRedo, { disabled: redoStack.length === 0 }));
+
+  menu.appendChild(contextMenuSeparator());
+
+  menu.appendChild(
+    contextMenuItem(showConceptGrid ? "☑ Show Grid" : "☐ Show Grid", () => {
+      showConceptGrid = !showConceptGrid;
+      renderCanvas();
+    })
+  );
+  menu.appendChild(
+    contextMenuItem(snapToConceptGrid ? "☑ Snap to Grid" : "☐ Snap to Grid", () => {
+      snapToConceptGrid = !snapToConceptGrid;
+    })
+  );
+
+  menu.appendChild(contextMenuSeparator());
+
+  menu.appendChild(contextMenuItem("⬇ Download as SVG", () => exportCanvasSvg()));
+
+  menu.style.left = `${clientX}px`;
+  menu.style.top = `${clientY}px`;
+  document.body.appendChild(menu);
+  openContextMenuEl = menu;
+
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) menu.style.left = `${Math.max(4, window.innerWidth - rect.width - 4)}px`;
+  if (rect.bottom > window.innerHeight) menu.style.top = `${Math.max(4, window.innerHeight - rect.height - 4)}px`;
+}
 
 function openCanvasContextMenu(clientX, clientY) {
   closeContextMenu();
