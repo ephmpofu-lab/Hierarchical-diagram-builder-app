@@ -58,6 +58,14 @@
               <label><input type="checkbox" data-filter="Blocked" checked> ⛔ Blocked</label>
             </div>
           </div>
+          <div class="dropdown-wrap">
+            <button id="collapseExpandBtn" class="btn btn-small" title="Bulk collapse/expand controls for how much of the architecture is visible at once">▾/▸ Collapse/Expand</button>
+            <div id="collapseExpandMenu" class="dropdown-menu" hidden>
+              <button id="collapseAllBtn">Collapse All</button>
+              <button id="expandBranchBtn">Expand Current Branch</button>
+              <button id="expandToLevelBtn">Expand to Level…</button>
+            </div>
+          </div>
           <button id="addGroupBtn" class="btn btn-small" title="Organize this node's children into a named, collapsible group">▤ + Group</button>
           <button id="addRefModeBtn" class="btn btn-small" title="Click two nodes in sequence to link them with a reference/dependency">+ Reference</button>
           <button id="showDepsBtn" class="btn btn-small" title="Show dashed dependency/reference links for the focused node">⇢ Show Dependencies</button>

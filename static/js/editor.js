@@ -85,6 +85,11 @@ const exportBtn = document.getElementById("exportBtn");
 const exportMenu = document.getElementById("exportMenu");
 const statusFilterBtn = document.getElementById("statusFilterBtn");
 const statusFilterMenu = document.getElementById("statusFilterMenu");
+const collapseExpandBtn = document.getElementById("collapseExpandBtn");
+const collapseExpandMenu = document.getElementById("collapseExpandMenu");
+const collapseAllBtn = document.getElementById("collapseAllBtn");
+const expandBranchBtn = document.getElementById("expandBranchBtn");
+const expandToLevelBtn = document.getElementById("expandToLevelBtn");
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
 const addRefModeBtn = document.getElementById("addRefModeBtn");
@@ -2188,6 +2193,7 @@ showDepsBtn.addEventListener("click", () => {
 statusFilterBtn.addEventListener("click", () => {
   if (statusFilterMenu.hidden) {
     exportMenu.hidden = true;
+    collapseExpandMenu.hidden = true;
     closeImportModal();
   }
   statusFilterMenu.hidden = !statusFilterMenu.hidden;
@@ -2205,6 +2211,66 @@ statusFilterMenu.addEventListener("change", (e) => {
   const allChecked = activeStatusFilters.size === PLANNING_STATUSES.length;
   statusFilterBtn.classList.toggle("active", !allChecked);
   renderCanvas();
+});
+
+// ---------- Bulk collapse / expand ----------
+
+async function setCollapsedForIds(ids, collapsed) {
+  for (const id of ids) {
+    const node = project.nodes[id];
+    if (!node || node.children.length === 0) continue;
+    await fetch(`/api/projects/${projectId}/nodes/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ collapsed }),
+    });
+  }
+  await loadProject();
+}
+
+collapseExpandBtn.addEventListener("click", () => {
+  if (collapseExpandMenu.hidden) {
+    exportMenu.hidden = true;
+    statusFilterMenu.hidden = true;
+    closeImportModal();
+  }
+  collapseExpandMenu.hidden = !collapseExpandMenu.hidden;
+});
+document.addEventListener("click", (e) => {
+  if (!collapseExpandMenu.hidden && !collapseExpandMenu.contains(e.target) && e.target !== collapseExpandBtn) {
+    collapseExpandMenu.hidden = true;
+  }
+});
+
+collapseAllBtn.addEventListener("click", async () => {
+  collapseExpandMenu.hidden = true;
+  const allIds = Object.keys(project.nodes).filter((id) => id !== rootId);
+  await setCollapsedForIds(allIds, true);
+});
+
+expandBranchBtn.addEventListener("click", async () => {
+  collapseExpandMenu.hidden = true;
+  if (!focusedNodeId) return;
+  await setCollapsedForIds(collectSubtreeIds(focusedNodeId), false);
+});
+
+expandToLevelBtn.addEventListener("click", async () => {
+  collapseExpandMenu.hidden = true;
+  const raw = prompt("Show levels 1 through N (collapses everything deeper):", "3");
+  const level = parseInt(raw, 10);
+  if (!raw || isNaN(level) || level < 1) return;
+  for (const node of Object.values(project.nodes)) {
+    if (node.children.length === 0) continue;
+    const shouldCollapse = node.level >= level;
+    if (node.collapsed !== shouldCollapse) {
+      await fetch(`/api/projects/${projectId}/nodes/${node.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collapsed: shouldCollapse }),
+      });
+    }
+  }
+  await loadProject();
 });
 
 // ---------- Minimap ----------
@@ -2544,6 +2610,7 @@ function buildPathString(nodeId) {
 exportBtn.addEventListener("click", () => {
   if (exportMenu.hidden) closeImportModal();
   statusFilterMenu.hidden = true;
+  collapseExpandMenu.hidden = true;
   exportMenu.hidden = !exportMenu.hidden;
 });
 
