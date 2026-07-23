@@ -950,6 +950,15 @@ body.presentation-active .editor-panes {
   fill: var(--accent-bg);
 }
 
+.canvas-svg .tree-detach-handle {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.canvas-svg .tree-edge-group:hover .tree-detach-handle {
+  opacity: 1;
+}
+
 .canvas-svg .ref-arrow-fill {
   fill: var(--text-muted);
 }

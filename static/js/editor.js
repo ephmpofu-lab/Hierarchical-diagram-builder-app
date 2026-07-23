@@ -913,17 +913,34 @@ function renderFocusCanvas(viewW, viewH) {
   if (parent) {
     const parentPos = positions.get(parent.id);
     const focusPos = positions.get(focus.id);
-    edgesGroup.appendChild(drawTreeEdge(parentPos, focusPos, parent.id, focus.id));
+    const parentEdgeGroup = document.createElementNS(SVG_NS, "g");
+    parentEdgeGroup.setAttribute("class", "tree-edge-group");
+    parentEdgeGroup.appendChild(drawTreeEdge(parentPos, focusPos, parent.id, focus.id));
     if (selectedEdgeKey === edgeKey("tree", focus.id)) {
-      edgesGroup.appendChild(drawTreeHandle(parentPos, focus.id, focusPos));
-      edgesGroup.appendChild(drawTreeHandle(focusPos, focus.id, parentPos));
+      parentEdgeGroup.appendChild(drawTreeHandle(parentPos, focus.id, focusPos));
+      parentEdgeGroup.appendChild(drawTreeHandle(focusPos, focus.id, parentPos));
+    } else {
+      parentEdgeGroup.appendChild(drawTreeHandle(focusPos, focus.id, parentPos, true));
     }
+    edgesGroup.appendChild(parentEdgeGroup);
   }
   // Rest of the direct ancestor chain above the parent (grandparent, great-grandparent, ...)
   for (let i = 1; i < ancestorChain.length; i++) {
     const child = ancestorChain[i - 1];
     const ancestor = ancestorChain[i];
-    edgesGroup.appendChild(drawTreeEdge(positions.get(ancestor.id), positions.get(child.id), ancestor.id, child.id));
+    const ancestorPos = positions.get(ancestor.id);
+    const childPos = positions.get(child.id);
+    const key = edgeKey("tree", child.id);
+    const ancestorEdgeGroup = document.createElementNS(SVG_NS, "g");
+    ancestorEdgeGroup.setAttribute("class", "tree-edge-group");
+    ancestorEdgeGroup.appendChild(drawTreeEdge(ancestorPos, childPos, ancestor.id, child.id));
+    if (selectedEdgeKey === key) {
+      ancestorEdgeGroup.appendChild(drawTreeHandle(ancestorPos, child.id, childPos));
+      ancestorEdgeGroup.appendChild(drawTreeHandle(childPos, child.id, ancestorPos));
+    } else {
+      ancestorEdgeGroup.appendChild(drawTreeHandle(childPos, child.id, ancestorPos, true));
+    }
+    edgesGroup.appendChild(ancestorEdgeGroup);
   }
 
   if (visibleChildren.length > 0) {
@@ -1531,12 +1548,17 @@ function drawTreeBranches(focusPos, children, positions, faded = false) {
   const edgeClass = "edge" + (faded ? " faded-edge" : "");
 
   if (children.length === 1) {
+    group.setAttribute("class", "tree-edge-group");
     const childPos = positions.get(children[0].id);
     group.appendChild(drawTreeEdge(focusPos, childPos, null, children[0].id, faded));
     const key = edgeKey("tree", children[0].id);
     if (selectedEdgeKey === key) {
       group.appendChild(drawTreeHandle(focusPos, children[0].id, childPos));
       group.appendChild(drawTreeHandle(childPos, children[0].id, focusPos));
+    } else if (!faded) {
+      // Always-present but subtle (opacity 0 until hover) so dragging a connection to
+      // reparent it is discoverable without needing to select the edge first.
+      group.appendChild(drawTreeHandle(childPos, children[0].id, focusPos, true));
     }
     return group;
   }
@@ -1574,6 +1596,7 @@ function drawTreeBranches(focusPos, children, positions, faded = false) {
     const key = edgeKey("tree", child.id);
 
     const branchGroup = document.createElementNS(SVG_NS, "g");
+    branchGroup.setAttribute("class", "tree-edge-group");
     const hit = document.createElementNS(SVG_NS, "path");
     hit.setAttribute("class", "edge-hit");
     hit.setAttribute("d", `M ${childPos.x} ${busY} L ${childPos.x} ${childPos.y}`);
@@ -1589,6 +1612,9 @@ function drawTreeBranches(focusPos, children, positions, faded = false) {
     branchGroup.appendChild(hit);
     branchGroup.appendChild(branch);
     if (animateDataFlow && !faded) branchGroup.appendChild(drawFlowParticle(branchD, "var(--accent)"));
+    if (!faded && selectedEdgeKey !== key) {
+      branchGroup.appendChild(drawTreeHandle(childPos, child.id, { x: childPos.x, y: busY }, true));
+    }
     branchGroup.addEventListener("click", (e) => {
       e.stopPropagation();
       selectedEdgeKey = selectedEdgeKey === key ? null : key;
@@ -1653,9 +1679,9 @@ function drawFlowParticle(pathD, color) {
   return particle;
 }
 
-function drawTreeHandle(pos, childId, fixedPos) {
+function drawTreeHandle(pos, childId, fixedPos, subtle = false) {
   const circle = document.createElementNS(SVG_NS, "circle");
-  circle.setAttribute("class", "ref-handle");
+  circle.setAttribute("class", "ref-handle" + (subtle ? " tree-detach-handle" : ""));
   circle.setAttribute("cx", pos.x);
   circle.setAttribute("cy", pos.y);
   circle.setAttribute("r", 6);
