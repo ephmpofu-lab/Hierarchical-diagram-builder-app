@@ -12,25 +12,21 @@
     <a class="btn" href="index.html">Back to library</a>
   </div>
 
-  <div class="editor-stub">
-    Editor coming in Phase 3 (outline pane), Phase 4 (canvas), and beyond.<br>
-    Project ID: <code id="projectId"></code>
+  <div class="editor-panes">
+    <div class="pane outline-pane">
+      <div class="pane-header">Outline</div>
+      <div id="outlineTree" class="outline-tree"></div>
+    </div>
+
+    <div class="pane canvas-pane">
+      <div class="pane-placeholder">Canvas comes in Phase 4.</div>
+    </div>
+
+    <div class="pane inspector-pane">
+      <div class="pane-placeholder">Inspector comes in Phase 6.</div>
+    </div>
   </div>
 
-  <script>
-    const params = new URLSearchParams(window.location.search);
-    const projectId = params.get("project");
-    document.getElementById("projectId").textContent = projectId || "(missing)";
-    if (projectId) {
-      fetch(`/api/projects/${projectId}`)
-        .then((res) => (res.ok ? res.json() : Promise.reject()))
-        .then((project) => {
-          document.getElementById("projectName").textContent = project.name;
-        })
-        .catch(() => {
-          document.getElementById("projectName").textContent = "Project not found";
-        });
-    }
-  </script>
+  <script src="js/editor.js"></script>
 </body>
 </html>

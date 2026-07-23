@@ -37,13 +37,25 @@ def get_node_or_404(project: Project, node_id: str):
     return node
 
 
-def add_node(project: Project, parent_id: str, label: str, node_id: str) -> None:
+def add_node(
+    project: Project,
+    parent_id: str,
+    label: str,
+    node_id: str,
+    insert_after: Optional[str] = None,
+) -> None:
     from .models import Node
 
     parent = get_node_or_404(project, parent_id)
     new_node = Node(id=node_id, label=label, parent_id=parent_id, canvas_x=0, canvas_y=0)
     project.nodes[node_id] = new_node
-    parent.children.append(node_id)
+    if insert_after is not None:
+        if insert_after not in parent.children:
+            raise HTTPException(status_code=400, detail="insert_after is not a child of parent_id")
+        index = parent.children.index(insert_after)
+        parent.children.insert(index + 1, node_id)
+    else:
+        parent.children.append(node_id)
 
 
 def _is_ancestor(project: Project, candidate_id: str, of_node_id: str) -> bool:
@@ -85,12 +97,20 @@ def delete_node(project: Project, node_id: str, promote_children: bool) -> None:
             del project.nodes[nid]
 
 
-def rename_node(project: Project, node_id: str, label: Optional[str], notes: Optional[str]) -> None:
+def rename_node(
+    project: Project,
+    node_id: str,
+    label: Optional[str],
+    notes: Optional[str],
+    collapsed: Optional[bool] = None,
+) -> None:
     node = get_node_or_404(project, node_id)
     if label is not None:
         node.label = label
     if notes is not None:
         node.notes = notes
+    if collapsed is not None:
+        node.collapsed = collapsed
 
 
 def move_node_position(project: Project, node_id: str, canvas_x: float, canvas_y: float) -> None:

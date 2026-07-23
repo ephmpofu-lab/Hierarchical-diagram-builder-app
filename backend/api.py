@@ -58,7 +58,7 @@ def api_delete_project(project_id: str):
 def api_add_node(project_id: str, body: NodeCreate):
     project = storage.load_project(project_id)
     node_id = str(uuid.uuid4())
-    tree.add_node(project, body.parent_id, body.label, node_id)
+    tree.add_node(project, body.parent_id, body.label, node_id, body.insert_after)
     storage.save_project(project)
     node = project.nodes[node_id]
     return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node_id))
@@ -67,7 +67,7 @@ def api_add_node(project_id: str, body: NodeCreate):
 @router.put("/projects/{project_id}/nodes/{node_id}", response_model=NodeWithLevel)
 def api_update_node(project_id: str, node_id: str, body: NodeUpdate):
     project = storage.load_project(project_id)
-    tree.rename_node(project, node_id, body.label, body.notes)
+    tree.rename_node(project, node_id, body.label, body.notes, body.collapsed)
     storage.save_project(project)
     node = project.nodes[node_id]
     return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node_id))

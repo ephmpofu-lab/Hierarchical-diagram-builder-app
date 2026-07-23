@@ -48,11 +48,13 @@ class ProjectRename(BaseModel):
 class NodeCreate(BaseModel):
     parent_id: str
     label: str = "New node"
+    insert_after: Optional[str] = None
 
 
 class NodeUpdate(BaseModel):
     label: Optional[str] = None
     notes: Optional[str] = None
+    collapsed: Optional[bool] = None
 
 
 class NodePosition(BaseModel):
