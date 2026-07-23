@@ -1437,6 +1437,13 @@ function drawNode(node, pos, faded = false) {
   if (!node.is_group && accentColor) {
     box.style.stroke = accentColor;
     box.style.strokeWidth = "2";
+  } else if (!node.is_group) {
+    // No classification set: fall back to a subtle per-level tint so depth still reads
+    // visually on the canvas, not just via the level badge — thinner than a real
+    // classification stroke so it never competes with an actual category color.
+    box.style.stroke = levelTintColor(node.level);
+    box.style.strokeWidth = "1.5";
+    box.style.strokeOpacity = "0.45";
   }
 
   const label = document.createElementNS(SVG_NS, "text");
