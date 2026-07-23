@@ -1572,14 +1572,9 @@ function openConceptObjectContextMenu(objId, clientX, clientY) {
   menu.appendChild(contextMenuSeparator());
 
   menu.appendChild(
-    contextMenuItem("⬆ Bring to Front", async () => {
-      await fetch(`/api/projects/${projectId}/concept-objects/${objId}/bring-to-front`, { method: "POST" });
-      await loadProject();
-    })
-  );
-  menu.appendChild(
-    contextMenuItem("⬇ Send to Back", async () => {
-      await fetch(`/api/projects/${projectId}/concept-objects/${objId}/send-to-back`, { method: "POST" });
+    contextMenuSubmenu("▤ Organize", ["Bring to Front", "Send to Back"], async (opt) => {
+      const endpoint = opt === "Bring to Front" ? "bring-to-front" : "send-to-back";
+      await fetch(`/api/projects/${projectId}/concept-objects/${objId}/${endpoint}`, { method: "POST" });
       await loadProject();
     })
   );
