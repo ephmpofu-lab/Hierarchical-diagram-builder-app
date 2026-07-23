@@ -4,12 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Diagram Builder — Projects</title>
+  <script>
+    document.documentElement.dataset.theme = localStorage.getItem("diagram-builder-theme") || "dark";
+  </script>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <div class="topbar">
     <h1>Diagram Builder</h1>
-    <button class="btn btn-primary" id="newProjectBtn">+ New project</button>
+    <div class="topbar-actions">
+      <button id="themeToggleBtn" class="theme-toggle" title="Toggle light/dark theme"></button>
+      <button class="btn btn-primary" id="newProjectBtn">+ New project</button>
+    </div>
   </div>
 
   <div class="library-wrap">
@@ -19,6 +25,7 @@
     </div>
   </div>
 
+  <script src="js/theme.js"></script>
   <script src="js/library.js"></script>
 </body>
 </html>

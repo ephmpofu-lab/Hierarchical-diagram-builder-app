@@ -4,12 +4,30 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Diagram Builder — Editor</title>
+  <script>
+    document.documentElement.dataset.theme = localStorage.getItem("diagram-builder-theme") || "dark";
+  </script>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <div class="topbar">
     <h1 id="projectName">Loading…</h1>
-    <a class="btn" href="index.html">Back to library</a>
+    <div class="topbar-actions">
+      <div class="search-wrap">
+        <input id="searchBox" type="text" placeholder="Search nodes…" autocomplete="off">
+        <div id="searchResults" class="search-results" hidden></div>
+      </div>
+      <div class="dropdown-wrap">
+        <button id="exportBtn" class="btn">Export ▾</button>
+        <div id="exportMenu" class="dropdown-menu" hidden>
+          <button data-export="svg">Canvas view as SVG</button>
+          <button data-export="md">Whole tree as Markdown</button>
+          <button data-export="json">Whole tree as JSON</button>
+        </div>
+      </div>
+      <button id="themeToggleBtn" class="theme-toggle" title="Toggle light/dark theme"></button>
+      <a class="btn" href="index.html">Back to library</a>
+    </div>
   </div>
 
   <div class="editor-panes">
@@ -19,14 +37,28 @@
     </div>
 
     <div class="pane canvas-pane">
-      <div class="pane-placeholder">Canvas comes in Phase 4.</div>
+      <div class="canvas-toolbar">
+        <div id="breadcrumb" class="breadcrumb"></div>
+        <div class="canvas-controls">
+          <button id="addRefModeBtn" class="btn btn-small">+ Reference</button>
+          <button id="zoomOutBtn" class="btn btn-small" title="Zoom out">−</button>
+          <span id="zoomLevel" class="zoom-level">100%</span>
+          <button id="zoomInBtn" class="btn btn-small" title="Zoom in">+</button>
+        </div>
+      </div>
+      <div id="refModeBanner" class="ref-mode-banner" hidden>
+        Reference mode: click a node to start the link, then click the target node. Esc to cancel.
+      </div>
+      <svg id="canvasSvg" class="canvas-svg"></svg>
     </div>
 
     <div class="pane inspector-pane">
-      <div class="pane-placeholder">Inspector comes in Phase 6.</div>
+      <div class="pane-header">Inspector</div>
+      <div id="inspectorContent" class="inspector-content"></div>
     </div>
   </div>
 
+  <script src="js/theme.js"></script>
   <script src="js/editor.js"></script>
 </body>
 </html>
