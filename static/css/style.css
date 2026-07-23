@@ -573,6 +573,22 @@ button {
   stroke-width: 1.5;
 }
 
+.canvas-svg .priority-dot {
+  fill: var(--danger);
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+
+.canvas-svg .node-badge-text {
+  font-size: 9px;
+  font-weight: 600;
+  fill: #ffffff;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
 .inspector-pane {
   border-right: none;
 }
@@ -982,6 +998,24 @@ hr.inspector-divider {
 .dot-accent { background: var(--accent); }
 .dot-info { background: var(--info); }
 .dot-neutral { background: var(--text-muted); }
+
+.classification-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border);
+  flex-shrink: 0;
+}
+
+.color-swatch-input {
+  width: 28px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+}
 
 .meta-select-row {
   display: flex;

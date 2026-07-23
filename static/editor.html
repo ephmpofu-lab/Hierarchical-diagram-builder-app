@@ -18,17 +18,19 @@
         <div id="searchResults" class="search-results" hidden></div>
       </div>
       <div class="dropdown-wrap">
-        <button id="exportBtn" class="btn">Export ▾</button>
+        <button id="exportBtn" class="btn" title="Export the current view or whole tree">Export ▾</button>
         <div id="exportMenu" class="dropdown-menu" hidden>
           <button data-export="svg">Canvas view as SVG</button>
           <button data-export="md">Whole tree as Markdown</button>
           <button data-export="json">Whole tree as JSON</button>
         </div>
       </div>
+      <button id="undoBtn" class="btn btn-small" title="Undo the last change (Ctrl+Z)" disabled>↶ Undo</button>
+      <button id="redoBtn" class="btn btn-small" title="Redo the last undone change (Ctrl+Shift+Z / Ctrl+Y)" disabled>↷ Redo</button>
       <button id="importOutlineBtn" class="btn btn-small" title="Import a text outline as new children under the selected node">⇩ Import outline</button>
-      <button id="healthToggleBtn" class="btn btn-small" title="Project health, validation, and recent changes">◔ Health</button>
+      <button id="healthToggleBtn" class="btn btn-small" title="Show/hide the Project Health panel: architecture score, validation issues, and recent changes">◔ Health</button>
       <button id="themeToggleBtn" class="theme-toggle" title="Toggle light/dark theme"></button>
-      <a class="btn" href="index.html">Back to library</a>
+      <a class="btn" href="index.html" title="Back to the project library">Back to library</a>
     </div>
   </div>
 
@@ -42,13 +44,17 @@
       <div class="canvas-toolbar">
         <div id="breadcrumb" class="breadcrumb"></div>
         <div class="canvas-controls">
+          <div class="view-mode-toggle" title="Focus Mode shows the ancestor chain plus this node's children, with other branches faded. Full Architecture shows the whole tree at once.">
+            <button id="focusModeBtn" class="btn btn-small active">Focus Mode</button>
+            <button id="fullArchModeBtn" class="btn btn-small">Full Architecture</button>
+          </div>
           <button id="addGroupBtn" class="btn btn-small" title="Organize this node's children into a named, collapsible group">▤ + Group</button>
-          <button id="addRefModeBtn" class="btn btn-small">+ Reference</button>
+          <button id="addRefModeBtn" class="btn btn-small" title="Click two nodes in sequence to link them with a reference/dependency">+ Reference</button>
           <button id="showDepsBtn" class="btn btn-small" title="Show dashed dependency/reference links for the focused node">⇢ Show Dependencies</button>
           <button id="fitViewBtn" class="btn btn-small" title="Zoom to fit parent, focus, and children in view">⤢ Fit view</button>
-          <button id="zoomOutBtn" class="btn btn-small" title="Zoom out">−</button>
-          <span id="zoomLevel" class="zoom-level">100%</span>
-          <button id="zoomInBtn" class="btn btn-small" title="Zoom in">+</button>
+          <button id="zoomOutBtn" class="btn btn-small" title="Zoom out (or Ctrl+scroll)">−</button>
+          <span id="zoomLevel" class="zoom-level" title="Current zoom level">100%</span>
+          <button id="zoomInBtn" class="btn btn-small" title="Zoom in (or Ctrl+scroll)">+</button>
         </div>
       </div>
       <div id="refModeBanner" class="ref-mode-banner" hidden>
@@ -69,20 +75,21 @@
   <div id="healthPanel" class="bottom-panel">
     <div class="bottom-panel-header">
       <strong>Project Health</strong>
-      <button id="healthCloseBtn" class="btn btn-small">Collapse</button>
+      <button id="healthCloseBtn" class="btn btn-small" title="Collapse this panel (toggle again from the Health button in the toolbar)">Collapse</button>
     </div>
     <div class="bottom-panel-grid">
       <div class="health-card">
-        <div class="pane-header">Architecture Health</div>
+        <div class="pane-header" title="Measures the structural quality of the architecture using validation rules: duplicates, cycles, oversized modules, missing documentation, and more. Higher is healthier.">Architecture Health</div>
         <div id="healthScore" class="health-score"></div>
+        <button id="viewFullReportBtn" class="btn btn-small">View Full Report</button>
       </div>
       <div class="health-card">
-        <div class="pane-header">Validation Summary</div>
+        <div class="pane-header" title="Structural issues found across the whole tree. Click any row to jump to an affected node.">Validation Summary</div>
         <div id="validationSummary" class="validation-list"></div>
-        <button id="runValidationBtn" class="btn btn-small">Run Validation</button>
+        <button id="runValidationBtn" class="btn btn-small" title="Re-scan the whole tree for issues right now">Run Validation</button>
       </div>
       <div class="health-card">
-        <div class="pane-header">Recent Changes</div>
+        <div class="pane-header" title="A running log of structural changes: additions, deletions, renames, moves, and links">Recent Changes</div>
         <div id="activityList" class="activity-list"></div>
       </div>
     </div>

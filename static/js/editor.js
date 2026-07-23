@@ -1,6 +1,43 @@
 const params = new URLSearchParams(window.location.search);
 const projectId = params.get("project");
 
+const CLASSIFICATIONS = [
+  "AI Agent", "Workflow", "Database", "API", "UI", "Decision", "Configuration",
+  "Storage", "Queue", "Security", "Validation", "Service", "Monitoring", "Infrastructure",
+];
+const CLASSIFICATION_COLORS = {
+  "AI Agent": "#8b5cf6",
+  Workflow: "#2563eb",
+  Database: "#0891b2",
+  API: "#4f46e5",
+  UI: "#db2777",
+  Decision: "#f59e0b",
+  Configuration: "#64748b",
+  Storage: "#c2410c",
+  Queue: "#ca8a04",
+  Security: "#dc2626",
+  Validation: "#16a34a",
+  Service: "#0ea5e9",
+  Monitoring: "#ea580c",
+  Infrastructure: "#475569",
+};
+const CLASSIFICATION_BADGES = {
+  "AI Agent": "AI",
+  Workflow: "WF",
+  Database: "DB",
+  API: "API",
+  UI: "UI",
+  Decision: "DEC",
+  Configuration: "CFG",
+  Storage: "STO",
+  Queue: "Q",
+  Security: "SEC",
+  Validation: "VAL",
+  Service: "SVC",
+  Monitoring: "MON",
+  Infrastructure: "INF",
+};
+
 const outlineTree = document.getElementById("outlineTree");
 const projectNameEl = document.getElementById("projectName");
 const breadcrumbEl = document.getElementById("breadcrumb");
@@ -913,6 +950,12 @@ function drawNode(node, pos) {
   box.setAttribute("height", NODE_H);
   box.setAttribute("rx", node.is_group ? 6 : 10);
 
+  const accentColor = node.custom_color || CLASSIFICATION_COLORS[node.classification];
+  if (!node.is_group && accentColor) {
+    box.style.stroke = accentColor;
+    box.style.strokeWidth = "2";
+  }
+
   const label = document.createElementNS(SVG_NS, "text");
   label.setAttribute("class", "node-label");
   label.setAttribute("x", pos.x);
@@ -923,6 +966,36 @@ function drawNode(node, pos) {
 
   group.appendChild(box);
   group.appendChild(label);
+
+  if (!node.is_group && node.classification) {
+    const badgeText = CLASSIFICATION_BADGES[node.classification] || node.classification.slice(0, 3).toUpperCase();
+    const badgeW = 10 + badgeText.length * 6;
+    const badge = document.createElementNS(SVG_NS, "g");
+    const badgeRect = document.createElementNS(SVG_NS, "rect");
+    badgeRect.setAttribute("x", pos.x - NODE_W / 2 + 4);
+    badgeRect.setAttribute("y", pos.y - NODE_H / 2 + 4);
+    badgeRect.setAttribute("width", badgeW);
+    badgeRect.setAttribute("height", 14);
+    badgeRect.setAttribute("rx", 3);
+    badgeRect.setAttribute("fill", accentColor);
+    const badgeLabel = document.createElementNS(SVG_NS, "text");
+    badgeLabel.setAttribute("class", "node-badge-text");
+    badgeLabel.setAttribute("x", pos.x - NODE_W / 2 + 4 + badgeW / 2);
+    badgeLabel.setAttribute("y", pos.y - NODE_H / 2 + 11);
+    badgeLabel.textContent = badgeText;
+    badge.appendChild(badgeRect);
+    badge.appendChild(badgeLabel);
+    group.appendChild(badge);
+  }
+
+  if (!node.is_group && (node.priority === "High" || node.priority === "Critical")) {
+    const priBadge = document.createElementNS(SVG_NS, "circle");
+    priBadge.setAttribute("class", "priority-dot");
+    priBadge.setAttribute("cx", pos.x + NODE_W / 2 - 6);
+    priBadge.setAttribute("cy", pos.y + NODE_H / 2 - 6);
+    priBadge.setAttribute("r", 4);
+    group.appendChild(priBadge);
+  }
 
   if (!node.is_group && computeWarnings(node).length > 0) {
     const dot = document.createElementNS(SVG_NS, "circle");
@@ -1659,9 +1732,59 @@ function renderInspectorTab(container, node) {
   }
 }
 
+function infoClassificationValue(node) {
+  const wrap = document.createElement("div");
+  wrap.className = "info-value-with-dot";
+  const activeColor = node.custom_color || CLASSIFICATION_COLORS[node.classification];
+  const swatch = document.createElement("span");
+  swatch.className = "classification-swatch";
+  swatch.style.background = activeColor || "transparent";
+  swatch.style.borderColor = activeColor || "var(--border)";
+  const select = document.createElement("select");
+  select.className = "info-select";
+  const noneOpt = document.createElement("option");
+  noneOpt.value = "";
+  noneOpt.textContent = "—";
+  select.appendChild(noneOpt);
+  for (const opt of CLASSIFICATIONS) {
+    const o = document.createElement("option");
+    o.value = opt;
+    o.textContent = opt;
+    if (node.classification === opt) o.selected = true;
+    select.appendChild(o);
+  }
+  select.addEventListener("change", () => patchNode({ classification: select.value }));
+  wrap.appendChild(swatch);
+  wrap.appendChild(select);
+  return wrap;
+}
+
+function infoColorOverrideValue(node) {
+  const wrap = document.createElement("div");
+  wrap.className = "info-value-with-dot";
+  const colorInput = document.createElement("input");
+  colorInput.type = "color";
+  colorInput.className = "color-swatch-input";
+  colorInput.value = node.custom_color || CLASSIFICATION_COLORS[node.classification] || "#64748b";
+  colorInput.title = "Override the classification color for this node";
+  colorInput.addEventListener("change", () => patchNode({ custom_color: colorInput.value }));
+  wrap.appendChild(colorInput);
+  if (node.custom_color) {
+    const resetBtn = document.createElement("button");
+    resetBtn.className = "btn btn-small";
+    resetBtn.textContent = "Reset";
+    resetBtn.title = "Remove the color override and fall back to the classification color";
+    resetBtn.addEventListener("click", () => patchNode({ custom_color: "" }));
+    wrap.appendChild(resetBtn);
+  }
+  return wrap;
+}
+
 function renderPropertiesTab(container, node) {
   const infoTable = document.createElement("div");
   infoTable.className = "info-table";
+  infoTable.appendChild(infoRow("Classification", infoClassificationValue(node)));
+  infoTable.appendChild(infoRow("Color Override", infoColorOverrideValue(node)));
   infoTable.appendChild(
     infoRow("Node Type", infoTextValue(node.node_type, "e.g. Decision Engine", (v) => patchNode({ node_type: v })))
   );
