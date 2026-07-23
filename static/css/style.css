@@ -615,6 +615,33 @@ button {
   margin-right: 6px;
 }
 
+.presentation-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--surface);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* Presentation Mode: hide everything except the topbar title, breadcrumb, canvas, and the
+   presentation bar itself — the architecture is the story, not the surrounding chrome. */
+body.presentation-active .topbar-actions,
+body.presentation-active .outline-pane,
+body.presentation-active .inspector-pane,
+body.presentation-active .canvas-toolbar .canvas-controls,
+body.presentation-active .minimap-svg,
+body.presentation-active .selection-toolbar,
+body.presentation-active .ref-mode-banner {
+  display: none !important;
+}
+
+body.presentation-active .editor-panes {
+  grid-template-columns: 0 1fr 0 !important;
+}
+
 .selection-box {
   position: fixed;
   border: 1.5px dashed var(--accent);

@@ -124,6 +124,15 @@ const selClearBtn = document.getElementById("selClearBtn");
 const focusModeBtn = document.getElementById("focusModeBtn");
 const fullArchModeBtn = document.getElementById("fullArchModeBtn");
 const minimapSvg = document.getElementById("minimapSvg");
+const presentEnterBtn = document.getElementById("presentEnterBtn");
+const presentationBar = document.getElementById("presentationBar");
+const presentPrevLevelBtn = document.getElementById("presentPrevLevelBtn");
+const presentPrevNodeBtn = document.getElementById("presentPrevNodeBtn");
+const presentNextNodeBtn = document.getElementById("presentNextNodeBtn");
+const presentNextLevelBtn = document.getElementById("presentNextLevelBtn");
+const presentBranchBtn = document.getElementById("presentBranchBtn");
+const presentZoomTopicBtn = document.getElementById("presentZoomTopicBtn");
+const presentExitBtn = document.getElementById("presentExitBtn");
 const outlinePane = document.getElementById("outlinePane");
 const outlineCollapseBtn = document.getElementById("outlineCollapseBtn");
 const inspectorPane = document.getElementById("inspectorPane");
@@ -2220,6 +2229,8 @@ function openCanvasContextMenu(clientX, clientY) {
       importText.focus();
     })
   );
+  menu.appendChild(contextMenuSeparator());
+  menu.appendChild(contextMenuItem("▶ Presentation Mode", enterPresentationMode));
 
   menu.style.left = `${clientX}px`;
   menu.style.top = `${clientY}px`;
@@ -2562,6 +2573,110 @@ inspectorCollapseBtn.addEventListener("click", () => {
   editorPanesEl.classList.toggle("inspector-collapsed", collapsed);
   inspectorCollapseBtn.textContent = collapsed ? "«" : "»";
   inspectorCollapseBtn.title = collapsed ? "Expand Inspector panel" : "Collapse this panel for a distraction-free canvas";
+});
+
+// ---------- Presentation Mode ----------
+// Hides all interface chrome down to just the architecture canvas, breadcrumb, and a
+// minimal control bar, so the tree can be walked through as a guided story rather than
+// shown as a static diagram — reuses the same pane-collapse mechanism as the manual
+// collapse buttons rather than a separate hide/show system.
+let presentationMode = false;
+let prePresentationState = null;
+
+function storyOrder() {
+  return collectSubtreeIds(rootId);
+}
+
+function presentNextNode() {
+  const order = storyOrder();
+  const idx = order.indexOf(focusedNodeId);
+  if (idx === -1 || idx >= order.length - 1) return;
+  focusNode(order[idx + 1]);
+}
+
+function presentPrevNode() {
+  const order = storyOrder();
+  const idx = order.indexOf(focusedNodeId);
+  if (idx <= 0) return;
+  focusNode(order[idx - 1]);
+}
+
+function presentNextLevel() {
+  const node = project.nodes[focusedNodeId];
+  if (node && node.children.length > 0) focusNode(node.children[0]);
+}
+
+function presentPrevLevel() {
+  const node = project.nodes[focusedNodeId];
+  if (node && node.parent_id) focusNode(node.parent_id);
+}
+
+function enterPresentationMode() {
+  if (presentationMode || !project) return;
+  presentationMode = true;
+  prePresentationState = {
+    outlineCollapsed: outlinePane.classList.contains("collapsed"),
+    inspectorCollapsed: inspectorPane.classList.contains("collapsed"),
+  };
+  if (!prePresentationState.outlineCollapsed) {
+    outlinePane.classList.add("collapsed");
+    editorPanesEl.classList.add("outline-collapsed");
+  }
+  if (!prePresentationState.inspectorCollapsed) {
+    inspectorPane.classList.add("collapsed");
+    editorPanesEl.classList.add("inspector-collapsed");
+  }
+  if (viewMode !== "focus") setViewMode("focus");
+  document.body.classList.add("presentation-active");
+  presentationBar.hidden = false;
+}
+
+function exitPresentationMode() {
+  if (!presentationMode) return;
+  presentationMode = false;
+  if (prePresentationState && !prePresentationState.outlineCollapsed) {
+    outlinePane.classList.remove("collapsed");
+    editorPanesEl.classList.remove("outline-collapsed");
+  }
+  if (prePresentationState && !prePresentationState.inspectorCollapsed) {
+    inspectorPane.classList.remove("collapsed");
+    editorPanesEl.classList.remove("inspector-collapsed");
+  }
+  prePresentationState = null;
+  document.body.classList.remove("presentation-active");
+  presentationBar.hidden = true;
+}
+
+presentEnterBtn.addEventListener("click", enterPresentationMode);
+presentExitBtn.addEventListener("click", exitPresentationMode);
+presentPrevNodeBtn.addEventListener("click", presentPrevNode);
+presentNextNodeBtn.addEventListener("click", presentNextNode);
+presentPrevLevelBtn.addEventListener("click", presentPrevLevel);
+presentNextLevelBtn.addEventListener("click", presentNextLevel);
+presentBranchBtn.addEventListener("click", fitBranch);
+presentZoomTopicBtn.addEventListener("click", () => {
+  if (focusedNodeId) zoomToNode(focusedNodeId);
+});
+
+document.addEventListener("keydown", (e) => {
+  if (!presentationMode) return;
+  const activeTag = document.activeElement && document.activeElement.tagName;
+  if (activeTag === "INPUT" || activeTag === "TEXTAREA") return;
+  if (e.key === "Escape") {
+    exitPresentationMode();
+  } else if (e.key === "ArrowRight") {
+    e.preventDefault();
+    presentNextNode();
+  } else if (e.key === "ArrowLeft") {
+    e.preventDefault();
+    presentPrevNode();
+  } else if (e.key === "ArrowDown") {
+    e.preventDefault();
+    presentNextLevel();
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    presentPrevLevel();
+  }
 });
 
 // ---------- Health / validation / activity ----------

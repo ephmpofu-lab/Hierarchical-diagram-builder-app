@@ -28,6 +28,7 @@
       <button id="undoBtn" class="btn btn-small" title="Undo the last change (Ctrl+Z)" disabled>↶ Undo</button>
       <button id="redoBtn" class="btn btn-small" title="Redo the last undone change (Ctrl+Shift+Z / Ctrl+Y)" disabled>↷ Redo</button>
       <button id="importOutlineBtn" class="btn btn-small" title="Import a text outline as new children under the selected node">⇩ Import outline</button>
+      <button id="presentEnterBtn" class="btn btn-small" title="Presentation Mode: hide all interface chrome and walk through the architecture as a guided story">▶ Present</button>
       <button id="themeToggleBtn" class="theme-toggle" title="Toggle light/dark theme"></button>
       <a class="btn" href="index.html" title="Back to the project library">Back to library</a>
     </div>
@@ -104,6 +105,15 @@
         </div>
         <button id="selGroupBtn" class="btn btn-small" title="Wrap the selected nodes (must share a parent) in a new group">Group</button>
         <button id="selClearBtn" class="btn btn-small" title="Clear the current selection">Clear</button>
+      </div>
+      <div id="presentationBar" class="presentation-bar" hidden>
+        <button id="presentPrevLevelBtn" class="btn btn-small" title="Go up to the parent (Up arrow)">▲ Level</button>
+        <button id="presentPrevNodeBtn" class="btn btn-small" title="Previous node in story order (Left arrow)">◀ Node</button>
+        <button id="presentNextNodeBtn" class="btn btn-small" title="Next node in story order (Right arrow)">Node ▶</button>
+        <button id="presentNextLevelBtn" class="btn btn-small" title="Go down to the first child (Down arrow)">Level ▼</button>
+        <button id="presentBranchBtn" class="btn btn-small" title="Frame the focused node's whole branch">Focus Branch</button>
+        <button id="presentZoomTopicBtn" class="btn btn-small" title="Zoom in close on the focused node">Zoom to Topic</button>
+        <button id="presentExitBtn" class="btn btn-small" title="Exit Presentation Mode (Esc)">✕ Exit</button>
       </div>
       <div class="canvas-svg-wrap">
         <svg id="canvasSvg" class="canvas-svg"></svg>
