@@ -135,6 +135,8 @@ def rename_node(
     shape: Optional[str] = None,
     group_children: Optional[bool] = None,
     is_group: Optional[bool] = None,
+    classification: Optional[str] = None,
+    custom_color: Optional[str] = None,
 ) -> None:
     node = get_node_or_404(project, node_id)
     if label is not None:
@@ -163,6 +165,10 @@ def rename_node(
         node.group_children = group_children
     if is_group is not None:
         node.is_group = is_group
+    if classification is not None:
+        node.classification = classification
+    if custom_color is not None:
+        node.custom_color = custom_color
 
 
 def move_sibling(project: Project, node_id: str, direction: str) -> None:
@@ -375,6 +381,43 @@ def apply_template(project: Project, parent_id: str, template_node: TemplateNode
     project.nodes[new_id].notes = template_node.notes
     for child_template in template_node.children:
         apply_template(project, new_id, child_template)
+    return new_id
+
+
+def duplicate_node(project: Project, node_id: str) -> str:
+    """Copy node_id's whole subtree as a new sibling right after it. Returns the new node id."""
+    node = get_node_or_404(project, node_id)
+    if node.parent_id is None:
+        raise HTTPException(status_code=400, detail="Cannot duplicate the root node")
+    captured = capture_template(project, node_id)
+    new_id = str(uuid.uuid4())
+    add_node(project, node.parent_id, captured.label, new_id, insert_after=node_id)
+    project.nodes[new_id].notes = captured.notes
+    for child_template in captured.children:
+        apply_template(project, new_id, child_template)
+    return new_id
+
+
+def add_parent_above(project: Project, node_id: str, label: str) -> str:
+    """Insert a new node between node_id and its current parent, so node_id becomes a
+    child of this new node instead of its old parent. Returns the new parent's id."""
+    from .models import Node
+
+    node = get_node_or_404(project, node_id)
+    if node.parent_id is None:
+        raise HTTPException(
+            status_code=400, detail="Cannot add a parent above the root — promote a different node to root instead"
+        )
+    old_parent = project.nodes[node.parent_id]
+    idx = old_parent.children.index(node_id)
+    new_id = str(uuid.uuid4())
+    new_node = Node(
+        id=new_id, label=label, parent_id=old_parent.id, canvas_x=node.canvas_x, canvas_y=node.canvas_y - 60,
+        children=[node_id],
+    )
+    project.nodes[new_id] = new_node
+    old_parent.children[idx] = new_id
+    node.parent_id = new_id
     return new_id
 
 

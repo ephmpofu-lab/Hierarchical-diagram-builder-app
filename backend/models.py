@@ -29,6 +29,8 @@ class Node(BaseModel):
     shape: str = "rect"
     group_children: bool = False
     is_group: bool = False
+    classification: Optional[str] = None
+    custom_color: Optional[str] = None
 
 
 class Reference(BaseModel):
@@ -108,6 +110,8 @@ class NodeUpdate(BaseModel):
     shape: Optional[str] = None
     group_children: Optional[bool] = None
     is_group: Optional[bool] = None
+    classification: Optional[str] = None
+    custom_color: Optional[str] = None
 
 
 class MoveSiblingRequest(BaseModel):
@@ -160,6 +164,14 @@ class TemplateCreate(BaseModel):
 
 class OutlineImport(BaseModel):
     text: str
+
+
+class AddParentRequest(BaseModel):
+    label: str = "New parent"
+
+
+class PasteSubtreeRequest(BaseModel):
+    root: TemplateNode
 
 
 class ValidationReport(BaseModel):

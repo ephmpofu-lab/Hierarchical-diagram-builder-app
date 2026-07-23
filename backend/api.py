@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from . import storage, tree
 from .models import (
+    AddParentRequest,
     Comment,
     CommentCreate,
     MoveSiblingRequest,
@@ -13,6 +14,7 @@ from .models import (
     NodeUpdate,
     NodeWithLevel,
     OutlineImport,
+    PasteSubtreeRequest,
     Project,
     ProjectCreate,
     ProjectRename,
@@ -23,6 +25,7 @@ from .models import (
     ReparentRequest,
     Template,
     TemplateCreate,
+    TemplateNode,
     TemplateSummary,
     ValidationReport,
 )
@@ -125,6 +128,8 @@ def api_update_node(project_id: str, node_id: str, body: NodeUpdate):
         body.shape,
         body.group_children,
         body.is_group,
+        body.classification,
+        body.custom_color,
     )
     if body.label is not None and body.label != old_label:
         tree.log_activity(project, f"Renamed '{old_label}' to '{body.label}'")
@@ -202,6 +207,46 @@ def api_promote_to_root(project_id: str, node_id: str):
     storage.save_project(project)
     node = project.nodes[node_id]
     return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node_id))
+
+
+@router.post("/projects/{project_id}/nodes/{node_id}/duplicate", response_model=NodeWithLevel, status_code=201)
+def api_duplicate_node(project_id: str, node_id: str):
+    project = storage.load_project(project_id)
+    label = project.nodes[node_id].label
+    new_id = tree.duplicate_node(project, node_id)
+    tree.log_activity(project, f"Duplicated '{label}'")
+    storage.save_project(project)
+    node = project.nodes[new_id]
+    return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, new_id))
+
+
+@router.post("/projects/{project_id}/nodes/{node_id}/add-parent", response_model=NodeWithLevel, status_code=201)
+def api_add_parent(project_id: str, node_id: str, body: AddParentRequest):
+    project = storage.load_project(project_id)
+    child_label = project.nodes[node_id].label
+    new_id = tree.add_parent_above(project, node_id, body.label)
+    tree.log_activity(project, f"Inserted '{body.label}' as new parent of '{child_label}'")
+    storage.save_project(project)
+    node = project.nodes[new_id]
+    return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, new_id))
+
+
+@router.get("/projects/{project_id}/nodes/{node_id}/subtree", response_model=TemplateNode)
+def api_get_subtree(project_id: str, node_id: str):
+    """Serializes a node's subtree structure — used for both Copy (client holds it for a
+    later Paste) and Export Subtree (client downloads it as JSON)."""
+    project = storage.load_project(project_id)
+    return tree.capture_template(project, node_id)
+
+
+@router.post("/projects/{project_id}/nodes/{node_id}/paste-subtree", response_model=NodeWithLevel, status_code=201)
+def api_paste_subtree(project_id: str, node_id: str, body: PasteSubtreeRequest):
+    project = storage.load_project(project_id)
+    new_id = tree.apply_template(project, node_id, body.root)
+    tree.log_activity(project, f"Pasted '{body.root.label}' under '{project.nodes[node_id].label}'")
+    storage.save_project(project)
+    node = project.nodes[new_id]
+    return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, new_id))
 
 
 @router.post("/projects/{project_id}/nodes/{node_id}/outdent", response_model=NodeWithLevel)
