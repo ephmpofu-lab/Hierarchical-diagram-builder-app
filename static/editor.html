@@ -71,6 +71,24 @@
       <div id="refModeBanner" class="ref-mode-banner" hidden>
         Reference mode: click a node to start the link, then click the target node. Esc to cancel.
       </div>
+      <div id="selectionToolbar" class="selection-toolbar" hidden>
+        <span id="selectionCount" class="selection-count"></span>
+        <button id="selCollapseBtn" class="btn btn-small" title="Collapse every selected node">Collapse</button>
+        <button id="selExpandBtn" class="btn btn-small" title="Expand every selected node">Expand</button>
+        <button id="selColorBtn" class="btn btn-small" title="Apply a color override to every selected node">Color</button>
+        <div class="dropdown-wrap">
+          <button id="selStatusBtn" class="btn btn-small" title="Set planning status on every selected node">Status ▾</button>
+          <div id="selStatusMenu" class="dropdown-menu" hidden>
+            <button data-status="Not Started">○ Not Started</button>
+            <button data-status="In Progress">◐ In Progress</button>
+            <button data-status="Completed">✓ Completed</button>
+            <button data-status="Needs Review">⚠ Needs Review</button>
+            <button data-status="Blocked">⛔ Blocked</button>
+          </div>
+        </div>
+        <button id="selGroupBtn" class="btn btn-small" title="Wrap the selected nodes (must share a parent) in a new group">Group</button>
+        <button id="selClearBtn" class="btn btn-small" title="Clear the current selection">Clear</button>
+      </div>
       <div class="canvas-svg-wrap">
         <svg id="canvasSvg" class="canvas-svg"></svg>
         <svg id="minimapSvg" class="minimap-svg"></svg>

@@ -94,6 +94,15 @@ const zoomOutBtn = document.getElementById("zoomOutBtn");
 const zoomLevelEl = document.getElementById("zoomLevel");
 const fitViewBtn = document.getElementById("fitViewBtn");
 const fitAllBtn = document.getElementById("fitAllBtn");
+const selectionToolbar = document.getElementById("selectionToolbar");
+const selectionCountEl = document.getElementById("selectionCount");
+const selCollapseBtn = document.getElementById("selCollapseBtn");
+const selExpandBtn = document.getElementById("selExpandBtn");
+const selColorBtn = document.getElementById("selColorBtn");
+const selStatusBtn = document.getElementById("selStatusBtn");
+const selStatusMenu = document.getElementById("selStatusMenu");
+const selGroupBtn = document.getElementById("selGroupBtn");
+const selClearBtn = document.getElementById("selClearBtn");
 const addGroupBtn = document.getElementById("addGroupBtn");
 const showDepsBtn = document.getElementById("showDepsBtn");
 const focusModeBtn = document.getElementById("focusModeBtn");
@@ -146,6 +155,36 @@ let activeStatusFilters = new Set(PLANNING_STATUSES);
 function nodeMatchesStatusFilter(node) {
   if (!node.planning_status) return true;
   return activeStatusFilters.has(node.planning_status);
+}
+
+// ---------- Multi-selection ----------
+// Independent of focusedNodeId (which drives the Inspector/breadcrumb/camera): this is a
+// lightweight set of node ids the user has multi-selected on the canvas, for bulk actions.
+let selectedNodeIds = new Set();
+
+function selectOnly(nodeId) {
+  selectedNodeIds = new Set([nodeId]);
+  updateSelectionToolbar();
+}
+
+function toggleNodeSelection(nodeId) {
+  if (selectedNodeIds.has(nodeId)) selectedNodeIds.delete(nodeId);
+  else selectedNodeIds.add(nodeId);
+  updateSelectionToolbar();
+  renderCanvas();
+}
+
+function clearSelection() {
+  selectedNodeIds = new Set();
+  updateSelectionToolbar();
+}
+
+function updateSelectionToolbar() {
+  const count = selectedNodeIds.size;
+  selectionToolbar.hidden = count === 0;
+  if (count > 0) {
+    selectionCountEl.textContent = `${count} selected`;
+  }
 }
 
 const ROW_GAP = 130;
@@ -1311,6 +1350,7 @@ function drawNode(node, pos, faded = false) {
   if (node.id === focusedNodeId) classes.push("focused");
   if (node.id === pendingRefFrom) classes.push("ref-pending");
   if (node.is_group) classes.push("is-group");
+  if (selectedNodeIds.has(node.id)) classes.push("multi-selected");
   if (faded) classes.push("faded-node");
   group.setAttribute("class", classes.join(" "));
   group.dataset.id = node.id;
@@ -1423,9 +1463,15 @@ function drawNode(node, pos, faded = false) {
       e.preventDefault();
       e.stopPropagation();
       handleRefModeClick(node.id);
-    } else {
-      focusNode(node.id);
+      return;
     }
+    if (e.shiftKey || e.ctrlKey || e.metaKey) {
+      e.stopPropagation();
+      toggleNodeSelection(node.id);
+      return;
+    }
+    selectOnly(node.id);
+    focusNode(node.id);
   });
 
   group.addEventListener("contextmenu", (e) => {
@@ -1941,6 +1987,169 @@ fitAllBtn.addEventListener("click", () => {
   focusModeBtn.classList.remove("active");
   fullArchModeBtn.classList.add("active");
   fitToView();
+});
+
+// ---------- Rubber-band box select ----------
+
+let selectionBoxStart = null;
+let selectionBoxEl = null;
+
+function updateSelectionBoxRect(clientX, clientY) {
+  if (!selectionBoxEl || !selectionBoxStart) return;
+  const left = Math.min(selectionBoxStart.x, clientX);
+  const top = Math.min(selectionBoxStart.y, clientY);
+  selectionBoxEl.style.left = `${left}px`;
+  selectionBoxEl.style.top = `${top}px`;
+  selectionBoxEl.style.width = `${Math.abs(clientX - selectionBoxStart.x)}px`;
+  selectionBoxEl.style.height = `${Math.abs(clientY - selectionBoxStart.y)}px`;
+}
+
+canvasSvg.addEventListener("mousedown", (e) => {
+  if (e.button !== 0 || refMode || e.target !== canvasSvg) return;
+  selectionBoxStart = { x: e.clientX, y: e.clientY };
+  selectionBoxEl = document.createElement("div");
+  selectionBoxEl.className = "selection-box";
+  document.body.appendChild(selectionBoxEl);
+  updateSelectionBoxRect(e.clientX, e.clientY);
+});
+
+window.addEventListener("mousemove", (e) => {
+  if (!selectionBoxStart) return;
+  updateSelectionBoxRect(e.clientX, e.clientY);
+});
+
+window.addEventListener("mouseup", (e) => {
+  if (!selectionBoxStart) return;
+  const boxLeft = Math.min(selectionBoxStart.x, e.clientX);
+  const boxRight = Math.max(selectionBoxStart.x, e.clientX);
+  const boxTop = Math.min(selectionBoxStart.y, e.clientY);
+  const boxBottom = Math.max(selectionBoxStart.y, e.clientY);
+  selectionBoxStart = null;
+  if (selectionBoxEl) {
+    selectionBoxEl.remove();
+    selectionBoxEl = null;
+  }
+
+  const svgRect = canvasSvg.getBoundingClientRect();
+  const hits = [];
+  for (const [nodeId, pos] of lastVisiblePositions.entries()) {
+    const localX = lastViewW / 2 + panOffsetX + zoomScale * (pos.x - lastViewW / 2);
+    const localY = lastViewH / 2 + panOffsetY + zoomScale * (pos.y - lastViewH / 2);
+    const screenX = svgRect.left + localX;
+    const screenY = svgRect.top + localY;
+    if (screenX >= boxLeft && screenX <= boxRight && screenY >= boxTop && screenY <= boxBottom) {
+      hits.push(nodeId);
+    }
+  }
+  if (hits.length === 0) return;
+  if (!e.shiftKey) selectedNodeIds = new Set();
+  for (const id of hits) selectedNodeIds.add(id);
+  updateSelectionToolbar();
+  renderCanvas();
+});
+
+// ---------- Bulk selection actions ----------
+
+selClearBtn.addEventListener("click", () => {
+  clearSelection();
+  renderCanvas();
+});
+
+selCollapseBtn.addEventListener("click", async () => {
+  for (const id of selectedNodeIds) {
+    await fetch(`/api/projects/${projectId}/nodes/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ collapsed: true }),
+    });
+  }
+  await loadProject();
+});
+
+selExpandBtn.addEventListener("click", async () => {
+  for (const id of selectedNodeIds) {
+    await fetch(`/api/projects/${projectId}/nodes/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ collapsed: false }),
+    });
+  }
+  await loadProject();
+});
+
+selColorBtn.addEventListener("click", () => {
+  const colorInput = document.createElement("input");
+  colorInput.type = "color";
+  colorInput.value = "#2563eb";
+  colorInput.style.position = "fixed";
+  colorInput.style.left = "-9999px";
+  document.body.appendChild(colorInput);
+  colorInput.addEventListener("change", async () => {
+    for (const id of selectedNodeIds) {
+      await fetch(`/api/projects/${projectId}/nodes/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ custom_color: colorInput.value }),
+      });
+    }
+    colorInput.remove();
+    await loadProject();
+  });
+  colorInput.click();
+});
+
+selStatusBtn.addEventListener("click", () => {
+  selStatusMenu.hidden = !selStatusMenu.hidden;
+});
+document.addEventListener("click", (e) => {
+  if (!selStatusMenu.hidden && !selStatusMenu.contains(e.target) && e.target !== selStatusBtn) {
+    selStatusMenu.hidden = true;
+  }
+});
+selStatusMenu.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-status]");
+  if (!btn) return;
+  selStatusMenu.hidden = true;
+  for (const id of selectedNodeIds) {
+    await fetch(`/api/projects/${projectId}/nodes/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planning_status: btn.dataset.status }),
+    });
+  }
+  await loadProject();
+});
+
+selGroupBtn.addEventListener("click", async () => {
+  const ids = [...selectedNodeIds];
+  if (ids.length < 2) {
+    alert("Select at least two nodes that share the same parent to group them.");
+    return;
+  }
+  const nodes = ids.map((id) => project.nodes[id]);
+  const parentId = nodes[0].parent_id;
+  if (!parentId || nodes.some((n) => n.parent_id !== parentId)) {
+    alert("Grouping requires all selected nodes to share the same parent.");
+    return;
+  }
+  const name = prompt("Name for this group:");
+  if (!name || !name.trim()) return;
+  const res = await fetch(`/api/projects/${projectId}/nodes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ parent_id: parentId, label: name.trim(), is_group: true }),
+  });
+  const groupNode = await res.json();
+  for (const id of ids) {
+    await fetch(`/api/projects/${projectId}/nodes/${id}/reparent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ new_parent_id: groupNode.id }),
+    });
+  }
+  clearSelection();
+  await loadProject();
+  focusNode(groupNode.id);
 });
 
 fitViewBtn.addEventListener("click", () => fitToView());
