@@ -2186,6 +2186,51 @@ canvasSvg.addEventListener("mousedown", (e) => {
   updateSelectionBoxRect(e.clientX, e.clientY);
 });
 
+// Right-click on empty canvas background (not on a node — those have their own context
+// menu with stopPropagation) gets a smaller, canvas-scoped menu.
+canvasSvg.addEventListener("contextmenu", (e) => {
+  if (e.target !== canvasSvg) return;
+  e.preventDefault();
+  openCanvasContextMenu(e.clientX, e.clientY);
+});
+
+function openCanvasContextMenu(clientX, clientY) {
+  closeContextMenu();
+  if (!focusedNodeId) return;
+  const menu = document.createElement("div");
+  menu.className = "context-menu";
+
+  menu.appendChild(contextMenuItem("+ Add Child Here", () => addChild(focusedNodeId)));
+  menu.appendChild(
+    contextMenuItem("Paste Subtree Here", async () => {
+      const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/paste-subtree`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ root: clipboardSubtree }),
+      });
+      const newNode = await res.json();
+      await loadProject();
+      focusNode(newNode.id);
+    }, { disabled: !clipboardSubtree })
+  );
+  menu.appendChild(
+    contextMenuItem("⇩ Import Outline Here", () => {
+      importText.value = "";
+      importModal.hidden = false;
+      importText.focus();
+    })
+  );
+
+  menu.style.left = `${clientX}px`;
+  menu.style.top = `${clientY}px`;
+  document.body.appendChild(menu);
+  openContextMenuEl = menu;
+
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) menu.style.left = `${Math.max(4, window.innerWidth - rect.width - 4)}px`;
+  if (rect.bottom > window.innerHeight) menu.style.top = `${Math.max(4, window.innerHeight - rect.height - 4)}px`;
+}
+
 window.addEventListener("mousemove", (e) => {
   if (!selectionBoxStart) return;
   updateSelectionBoxRect(e.clientX, e.clientY);
