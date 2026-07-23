@@ -42,19 +42,9 @@
       <div class="canvas-toolbar">
         <div id="breadcrumb" class="breadcrumb"></div>
         <div class="canvas-controls">
+          <button id="addGroupBtn" class="btn btn-small" title="Organize this node's children into a named, collapsible group">▤ + Group</button>
           <button id="addRefModeBtn" class="btn btn-small">+ Reference</button>
-          <button id="arrangeChildrenBtn" class="btn btn-small" title="Tidy up this node's children into a clean grid">⊞ Arrange children</button>
-          <button id="groupChildrenBtn" class="btn btn-small" title="Cluster this node's children into one bordered box instead of separate connected boxes">▤ Group children</button>
-          <div class="dropdown-wrap">
-            <button id="shapeBtn" class="btn btn-small" title="Change the focused node's shape">◆ Shape</button>
-            <div id="shapePicker" class="dropdown-menu shape-picker" hidden>
-              <button data-shape="rect" title="Rectangle">▭</button>
-              <button data-shape="pill" title="Pill">⬭</button>
-              <button data-shape="diamond" title="Diamond">◆</button>
-              <button data-shape="hexagon" title="Hexagon">⬡</button>
-              <button data-shape="ellipse" title="Ellipse">⬬</button>
-            </div>
-          </div>
+          <button id="showDepsBtn" class="btn btn-small" title="Show dashed dependency/reference links for the focused node">⇢ Show Dependencies</button>
           <button id="fitViewBtn" class="btn btn-small" title="Zoom to fit parent, focus, and children in view">⤢ Fit view</button>
           <button id="zoomOutBtn" class="btn btn-small" title="Zoom out">−</button>
           <span id="zoomLevel" class="zoom-level">100%</span>

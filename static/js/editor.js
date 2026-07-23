@@ -17,10 +17,8 @@ const zoomInBtn = document.getElementById("zoomInBtn");
 const zoomOutBtn = document.getElementById("zoomOutBtn");
 const zoomLevelEl = document.getElementById("zoomLevel");
 const fitViewBtn = document.getElementById("fitViewBtn");
-const arrangeChildrenBtn = document.getElementById("arrangeChildrenBtn");
-const groupChildrenBtn = document.getElementById("groupChildrenBtn");
-const shapeBtn = document.getElementById("shapeBtn");
-const shapePicker = document.getElementById("shapePicker");
+const addGroupBtn = document.getElementById("addGroupBtn");
+const showDepsBtn = document.getElementById("showDepsBtn");
 const minimapSvg = document.getElementById("minimapSvg");
 const healthToggleBtn = document.getElementById("healthToggleBtn");
 const healthPanel = document.getElementById("healthPanel");
@@ -47,16 +45,21 @@ let project = null;
 let rootId = null;
 let focusedNodeId = null;
 let editingNodeId = null;
-let dragState = null;
 let zoomScale = 1;
 let refMode = false;
 let pendingRefFrom = null;
-let panCenterX = null;
-let panCenterY = null;
+let panOffsetX = 0;
+let panOffsetY = 0;
 let selectedEdgeKey = null; // "ref:<refId>" or "tree:<childId>"
 let lastVisiblePositions = new Map();
 let lastViewW = 800;
 let lastViewH = 500;
+let showDependencies = false;
+let expandedGroupOverflow = false; // "show all" for progressive disclosure of many ungrouped children
+
+const ROW_GAP = 130;
+const COL_GAP = 24;
+const MAX_UNGROUPED_VISIBLE = 12;
 
 if (!projectId) {
   projectNameEl.textContent = "No project specified";
@@ -104,8 +107,9 @@ function render() {
 
 async function focusNode(nodeId) {
   focusedNodeId = nodeId;
-  panCenterX = null;
-  panCenterY = null;
+  panOffsetX = 0;
+  panOffsetY = 0;
+  expandedGroupOverflow = false;
   zoomScale = 1;
   zoomLevelEl.textContent = "100%";
   await expandAncestors(nodeId);
@@ -159,7 +163,7 @@ function renderNode(nodeId) {
 
   const label = document.createElement("span");
   label.className = "label";
-  label.textContent = node.label;
+  label.textContent = node.is_group ? `▤ ${node.label}` : node.label;
   label.addEventListener("dblclick", (e) => {
     e.stopPropagation();
     startRename(nodeId, row, label);
@@ -448,42 +452,65 @@ function curvePath(from, to) {
   return `M ${from.x} ${from.y} C ${from.x} ${midY}, ${to.x} ${midY}, ${to.x} ${to.y}`;
 }
 
+function computeCanvasLayout(viewW, viewH) {
+  const focus = project.nodes[focusedNodeId];
+  const parent = focus.parent_id ? project.nodes[focus.parent_id] : null;
+  const allChildren = focus.children.map((id) => project.nodes[id]);
+  const visibleChildren =
+    !expandedGroupOverflow && allChildren.length > MAX_UNGROUPED_VISIBLE
+      ? allChildren.slice(0, MAX_UNGROUPED_VISIBLE)
+      : allChildren;
+  const hiddenCount = allChildren.length - visibleChildren.length;
+
+  const positions = new Map();
+  positions.set(focus.id, { x: viewW / 2, y: viewH / 2 });
+  if (parent) positions.set(parent.id, { x: viewW / 2, y: viewH / 2 - ROW_GAP });
+
+  const n = visibleChildren.length;
+  const rowOffsetX = n > 0 ? -((n - 1) * (NODE_W + COL_GAP)) / 2 : 0;
+  visibleChildren.forEach((child, i) => {
+    positions.set(child.id, {
+      x: viewW / 2 + rowOffsetX + i * (NODE_W + COL_GAP),
+      y: viewH / 2 + ROW_GAP,
+    });
+  });
+
+  let minX = viewW / 2 - NODE_W / 2;
+  let maxX = viewW / 2 + NODE_W / 2;
+  const minY = (parent ? viewH / 2 - ROW_GAP : viewH / 2) - NODE_H / 2;
+  let maxY = viewH / 2 + NODE_H / 2;
+  for (const child of visibleChildren) {
+    const p = positions.get(child.id);
+    minX = Math.min(minX, p.x - NODE_W / 2);
+    maxX = Math.max(maxX, p.x + NODE_W / 2);
+    maxY = Math.max(maxY, p.y + NODE_H / 2);
+  }
+
+  return { focus, parent, visibleChildren, hiddenCount, positions, bounds: { minX, maxX, minY, maxY } };
+}
+
 function renderCanvas() {
   canvasSvg.innerHTML = "";
   canvasSvg.classList.toggle("ref-mode-active", refMode);
   canvasSvg.appendChild(buildRefArrowDefs());
   if (!project || !focusedNodeId) return;
 
-  const focus = project.nodes[focusedNodeId];
-  const parent = focus.parent_id ? project.nodes[focus.parent_id] : null;
-  const children = focus.children.map((id) => project.nodes[id]);
-  const visible = [focus, ...(parent ? [parent] : []), ...children];
-  const visibleIds = new Set(visible.map((n) => n.id));
-
   const rect = canvasSvg.getBoundingClientRect();
   const viewW = rect.width || 800;
   const viewH = rect.height || 500;
-  const centerX = panCenterX !== null ? panCenterX : focus.canvas_x;
-  const centerY = panCenterY !== null ? panCenterY : focus.canvas_y;
 
-  const toScreen = (node) => ({
-    x: viewW / 2 + (node.canvas_x - centerX),
-    y: viewH / 2 + (node.canvas_y - centerY),
-  });
-  const positions = new Map(visible.map((n) => [n.id, toScreen(n)]));
+  const { focus, parent, visibleChildren, hiddenCount, positions } = computeCanvasLayout(viewW, viewH);
+  const visibleIds = new Set(positions.keys());
 
   const viewport = document.createElementNS(SVG_NS, "g");
   viewport.setAttribute(
     "transform",
-    `translate(${viewW / 2} ${viewH / 2}) scale(${zoomScale}) translate(${-viewW / 2} ${-viewH / 2})`
+    `translate(${viewW / 2 + panOffsetX} ${viewH / 2 + panOffsetY}) scale(${zoomScale}) translate(${-viewW / 2} ${-viewH / 2})`
   );
 
   const edgesGroup = document.createElementNS(SVG_NS, "g");
   const refGroup = document.createElementNS(SVG_NS, "g");
   const nodesGroup = document.createElementNS(SVG_NS, "g");
-
-  const groupedMode = focus.group_children && children.length > 0;
-  groupChildrenBtn.classList.toggle("active", !!focus.group_children);
 
   if (parent) {
     const parentPos = positions.get(parent.id);
@@ -495,51 +522,49 @@ function renderCanvas() {
     }
   }
 
-  let groupBox = null;
-  if (groupedMode) {
-    groupBox = drawGroupedChildrenBox(focus, positions.get(focus.id), children);
-    edgesGroup.appendChild(drawTreeEdge(positions.get(focus.id), groupBox.anchor, focus.id, null));
-  } else {
-    edgesGroup.appendChild(drawTreeBranches(positions.get(focus.id), children, positions));
+  if (visibleChildren.length > 0) {
+    edgesGroup.appendChild(drawTreeBranches(positions.get(focus.id), visibleChildren, positions));
   }
 
-  const tagCounters = new Map();
-  for (const ref of project.references) {
-    // Only draw references touching the focused node itself — otherwise a node with many
-    // children each carrying their own unrelated reference links turns into a wall of lines.
-    if (ref.from !== focus.id && ref.to !== focus.id) continue;
-    const fromVisible = visibleIds.has(ref.from);
-    const toVisible = visibleIds.has(ref.to);
-    if (fromVisible && toVisible) {
-      const fromPos = positions.get(ref.from);
-      const toPos = positions.get(ref.to);
-      refGroup.appendChild(drawRefEdge(fromPos, toPos, ref.from, ref.to, ref.id));
-      if (selectedEdgeKey === edgeKey("ref", ref.id)) {
-        refGroup.appendChild(drawRefHandle(fromPos, ref, "from"));
-        refGroup.appendChild(drawRefHandle(toPos, ref, "to"));
+  if (showDependencies) {
+    const tagCounters = new Map();
+    for (const ref of project.references) {
+      // Only draw references touching the focused node itself — otherwise a node with many
+      // children each carrying their own unrelated reference links turns into a wall of lines.
+      if (ref.from !== focus.id && ref.to !== focus.id) continue;
+      const fromVisible = visibleIds.has(ref.from);
+      const toVisible = visibleIds.has(ref.to);
+      if (fromVisible && toVisible) {
+        const fromPos = positions.get(ref.from);
+        const toPos = positions.get(ref.to);
+        refGroup.appendChild(drawRefEdge(fromPos, toPos, ref.from, ref.to, ref.id));
+        if (selectedEdgeKey === edgeKey("ref", ref.id)) {
+          refGroup.appendChild(drawRefHandle(fromPos, ref, "from"));
+          refGroup.appendChild(drawRefHandle(toPos, ref, "to"));
+        }
+      } else if (fromVisible || toVisible) {
+        const visibleId = fromVisible ? ref.from : ref.to;
+        const otherId = fromVisible ? ref.to : ref.from;
+        const otherNode = project.nodes[otherId];
+        if (!otherNode) continue;
+        const index = tagCounters.get(visibleId) || 0;
+        tagCounters.set(visibleId, index + 1);
+        const arrow = fromVisible ? "→" : "←";
+        refGroup.appendChild(
+          drawRefTag(positions.get(visibleId), `${arrow} ${otherNode.label}`, otherId, index, visibleId)
+        );
       }
-    } else if (fromVisible || toVisible) {
-      const visibleId = fromVisible ? ref.from : ref.to;
-      const otherId = fromVisible ? ref.to : ref.from;
-      const otherNode = project.nodes[otherId];
-      if (!otherNode) continue;
-      const index = tagCounters.get(visibleId) || 0;
-      tagCounters.set(visibleId, index + 1);
-      const arrow = fromVisible ? "→" : "←";
-      refGroup.appendChild(
-        drawRefTag(positions.get(visibleId), `${arrow} ${otherNode.label}`, otherId, index, visibleId)
-      );
     }
   }
 
   if (parent) nodesGroup.appendChild(drawNode(parent, positions.get(parent.id)));
   nodesGroup.appendChild(drawNode(focus, positions.get(focus.id)));
-  if (groupedMode) {
-    nodesGroup.appendChild(groupBox.group);
-  } else {
-    for (const child of children) {
-      nodesGroup.appendChild(drawNode(child, positions.get(child.id)));
-    }
+  for (const child of visibleChildren) {
+    nodesGroup.appendChild(drawNode(child, positions.get(child.id)));
+  }
+  if (hiddenCount > 0) {
+    const lastPos = positions.get(visibleChildren[visibleChildren.length - 1].id);
+    nodesGroup.appendChild(drawShowMoreAffordance(lastPos.x + NODE_W + COL_GAP, lastPos.y, hiddenCount));
   }
 
   viewport.appendChild(edgesGroup);
@@ -557,10 +582,33 @@ function renderCanvas() {
       renderCanvas();
     }
   };
-  canvasSvg.ondblclick = (e) => {
-    if (e.target !== canvasSvg || refMode) return;
-    handleCanvasDblClick(e, centerX, centerY, viewW, viewH);
-  };
+}
+
+function drawShowMoreAffordance(x, y, hiddenCount) {
+  const group = document.createElementNS(SVG_NS, "g");
+  group.setAttribute("class", "show-more-affordance");
+
+  const box = document.createElementNS(SVG_NS, "rect");
+  box.setAttribute("x", x - NODE_W / 2);
+  box.setAttribute("y", y - NODE_H / 2);
+  box.setAttribute("width", NODE_W);
+  box.setAttribute("height", NODE_H);
+  box.setAttribute("rx", 10);
+
+  const label = document.createElementNS(SVG_NS, "text");
+  label.setAttribute("x", x);
+  label.setAttribute("y", y);
+  label.textContent = `+${hiddenCount} more`;
+
+  group.appendChild(box);
+  group.appendChild(label);
+  group.addEventListener("click", (e) => {
+    e.stopPropagation();
+    expandedGroupOverflow = true;
+    renderCanvas();
+    fitToView();
+  });
+  return group;
 }
 
 function edgeKey(kind, id) {
@@ -571,29 +619,23 @@ function drawTreeBranches(focusPos, children, positions) {
   const group = document.createElementNS(SVG_NS, "g");
   if (children.length === 0) return group;
 
-  const childPositions = children.map((c) => positions.get(c.id));
-  const ys = childPositions.map((p) => p.y);
-  const sameRow = Math.max(...ys) - Math.min(...ys) < 20;
-
-  if (children.length === 1 || !sameRow) {
-    // Irregular layout (dragged around, or split across rows) — a shared trunk/bus
-    // wouldn't line up cleanly, so fall back to a direct curve per child.
-    children.forEach((child, i) => {
-      const childPos = childPositions[i];
-      group.appendChild(drawTreeEdge(focusPos, childPos, null, child.id));
-      const key = edgeKey("tree", child.id);
-      if (selectedEdgeKey === key) {
-        group.appendChild(drawTreeHandle(focusPos, child.id, childPos));
-        group.appendChild(drawTreeHandle(childPos, child.id, focusPos));
-      }
-    });
+  if (children.length === 1) {
+    const childPos = positions.get(children[0].id);
+    group.appendChild(drawTreeEdge(focusPos, childPos, null, children[0].id));
+    const key = edgeKey("tree", children[0].id);
+    if (selectedEdgeKey === key) {
+      group.appendChild(drawTreeHandle(focusPos, children[0].id, childPos));
+      group.appendChild(drawTreeHandle(childPos, children[0].id, focusPos));
+    }
     return group;
   }
 
   // Classic org-chart connector: one trunk from the parent down to a shared horizontal
   // bus, then one short branch per child — much clearer than N lines fanning from a
-  // single point once there are more than a couple of children.
-  const busY = focusPos.y + (ys[0] - focusPos.y) / 2;
+  // single point once there are more than a couple of children. Children are always laid
+  // out in a single deterministic row, so the bus always lines up cleanly.
+  const childPositions = children.map((c) => positions.get(c.id));
+  const busY = focusPos.y + (childPositions[0].y - focusPos.y) / 2;
   const xs = childPositions.map((p) => p.x);
   const minX = Math.min(...xs, focusPos.x);
   const maxX = Math.max(...xs, focusPos.x);
@@ -854,138 +896,35 @@ function drawRefTag(nodePos, text, targetId, index, anchorId) {
   return group;
 }
 
-function drawShapeEl(node, pos) {
-  const shape = node.shape || "rect";
-  const w = NODE_W;
-  const h = NODE_H;
-  const cx = pos.x;
-  const cy = pos.y;
-
-  if (shape === "diamond") {
-    const el = document.createElementNS(SVG_NS, "polygon");
-    el.setAttribute(
-      "points",
-      `${cx},${cy - h / 2} ${cx + w / 2},${cy} ${cx},${cy + h / 2} ${cx - w / 2},${cy}`
-    );
-    return el;
-  }
-  if (shape === "hexagon") {
-    const inset = w * 0.2;
-    const el = document.createElementNS(SVG_NS, "polygon");
-    el.setAttribute(
-      "points",
-      `${cx - w / 2 + inset},${cy - h / 2} ${cx + w / 2 - inset},${cy - h / 2} ${cx + w / 2},${cy} ` +
-        `${cx + w / 2 - inset},${cy + h / 2} ${cx - w / 2 + inset},${cy + h / 2} ${cx - w / 2},${cy}`
-    );
-    return el;
-  }
-  if (shape === "ellipse") {
-    const el = document.createElementNS(SVG_NS, "ellipse");
-    el.setAttribute("cx", cx);
-    el.setAttribute("cy", cy);
-    el.setAttribute("rx", w / 2);
-    el.setAttribute("ry", h / 2);
-    return el;
-  }
-  const el = document.createElementNS(SVG_NS, "rect");
-  el.setAttribute("x", cx - w / 2);
-  el.setAttribute("y", cy - h / 2);
-  el.setAttribute("width", w);
-  el.setAttribute("height", h);
-  el.setAttribute("rx", shape === "pill" ? h / 2 : Math.max(4, 16 - (node.level - 1) * 2));
-  return el;
-}
-
-function drawGroupedChildrenBox(focus, focusPos, children) {
-  const perRow = 3;
-  const innerW = 120;
-  const innerH = 34;
-  const gapX = 10;
-  const gapY = 8;
-  const padding = 14;
-  const headerH = 24;
-  const cols = Math.min(perRow, children.length);
-  const rows = Math.ceil(children.length / perRow);
-  const boxW = cols * innerW + (cols - 1) * gapX + padding * 2;
-  const boxH = headerH + rows * innerH + (rows - 1) * gapY + padding * 2;
-  const boxX = focusPos.x - boxW / 2;
-  const boxY = focusPos.y + 150;
-
-  const group = document.createElementNS(SVG_NS, "g");
-  group.setAttribute("class", "group-box");
-
-  const rect = document.createElementNS(SVG_NS, "rect");
-  rect.setAttribute("class", "group-box-rect");
-  rect.setAttribute("x", boxX);
-  rect.setAttribute("y", boxY);
-  rect.setAttribute("width", boxW);
-  rect.setAttribute("height", boxH);
-  rect.setAttribute("rx", 10);
-  group.appendChild(rect);
-
-  const title = document.createElementNS(SVG_NS, "text");
-  title.setAttribute("class", "group-box-title");
-  title.setAttribute("x", boxX + padding);
-  title.setAttribute("y", boxY + padding + 2);
-  title.textContent = `${children.length} item${children.length === 1 ? "" : "s"}`;
-  group.appendChild(title);
-
-  children.forEach((child, i) => {
-    const row = Math.floor(i / perRow);
-    const col = i % perRow;
-    const cx = boxX + padding + col * (innerW + gapX);
-    const cy = boxY + headerH + padding + row * (innerH + gapY);
-
-    const childGroup = document.createElementNS(SVG_NS, "g");
-    childGroup.setAttribute("class", "group-box-item" + (child.id === focusedNodeId ? " focused" : ""));
-
-    const childRect = document.createElementNS(SVG_NS, "rect");
-    childRect.setAttribute("x", cx);
-    childRect.setAttribute("y", cy);
-    childRect.setAttribute("width", innerW);
-    childRect.setAttribute("height", innerH);
-    childRect.setAttribute("rx", 6);
-
-    const childLabel = document.createElementNS(SVG_NS, "text");
-    childLabel.setAttribute("x", cx + innerW / 2);
-    childLabel.setAttribute("y", cy + innerH / 2);
-    const maxChars = 16;
-    childLabel.textContent = child.label.length > maxChars ? child.label.slice(0, maxChars - 1) + "…" : child.label;
-
-    childGroup.appendChild(childRect);
-    childGroup.appendChild(childLabel);
-    childGroup.addEventListener("click", (e) => {
-      e.stopPropagation();
-      focusNode(child.id);
-    });
-    group.appendChild(childGroup);
-  });
-
-  return { group, anchor: { x: boxX + boxW / 2, y: boxY } };
-}
-
 function drawNode(node, pos) {
   const group = document.createElementNS(SVG_NS, "g");
   const classes = ["node-group"];
   if (node.id === focusedNodeId) classes.push("focused");
   if (node.id === pendingRefFrom) classes.push("ref-pending");
+  if (node.is_group) classes.push("is-group");
   group.setAttribute("class", classes.join(" "));
   group.dataset.id = node.id;
 
-  const box = drawShapeEl(node, pos);
+  const box = document.createElementNS(SVG_NS, "rect");
   box.setAttribute("class", "node-box");
+  box.setAttribute("x", pos.x - NODE_W / 2);
+  box.setAttribute("y", pos.y - NODE_H / 2);
+  box.setAttribute("width", NODE_W);
+  box.setAttribute("height", NODE_H);
+  box.setAttribute("rx", node.is_group ? 6 : 10);
 
   const label = document.createElementNS(SVG_NS, "text");
   label.setAttribute("class", "node-label");
   label.setAttribute("x", pos.x);
   label.setAttribute("y", pos.y);
   const maxChars = 20;
-  label.textContent = node.label.length > maxChars ? node.label.slice(0, maxChars - 1) + "…" : node.label;
+  const displayText = node.is_group ? `▤ ${node.label} (${node.children.length})` : node.label;
+  label.textContent = displayText.length > maxChars ? displayText.slice(0, maxChars - 1) + "…" : displayText;
 
   group.appendChild(box);
   group.appendChild(label);
 
-  if (computeWarnings(node).length > 0) {
+  if (!node.is_group && computeWarnings(node).length > 0) {
     const dot = document.createElementNS(SVG_NS, "circle");
     dot.setAttribute("class", "warning-dot");
     dot.setAttribute("cx", pos.x + NODE_W / 2 - 6);
@@ -994,123 +933,17 @@ function drawNode(node, pos) {
     group.appendChild(dot);
   }
 
-  group.addEventListener("mousedown", (e) => {
+  group.addEventListener("click", (e) => {
     if (refMode) {
       e.preventDefault();
       e.stopPropagation();
       handleRefModeClick(node.id);
     } else {
-      startDrag(e, node, group, pos);
+      focusNode(node.id);
     }
   });
 
   return group;
-}
-
-function startDrag(e, node, group, origPos) {
-  e.preventDefault();
-  const startX = e.clientX;
-  const startY = e.clientY;
-
-  const relatedEdges = Array.from(canvasSvg.querySelectorAll("[data-from-id], [data-to-id]")).filter(
-    (el) => el.dataset.fromId === node.id || el.dataset.toId === node.id
-  );
-  const relatedTags = Array.from(canvasSvg.querySelectorAll(".ref-tag")).filter(
-    (el) => el.dataset.anchorId === node.id
-  );
-
-  dragState = {
-    nodeId: node.id,
-    group,
-    startX,
-    startY,
-    origX: node.canvas_x,
-    origY: node.canvas_y,
-    origScreenX: origPos.x,
-    origScreenY: origPos.y,
-    relatedEdges,
-    relatedTags,
-    moved: false,
-  };
-
-  const onMove = (moveEvent) => {
-    if (!dragState) return;
-    const rawDx = moveEvent.clientX - dragState.startX;
-    const rawDy = moveEvent.clientY - dragState.startY;
-    if (Math.abs(rawDx) > 3 || Math.abs(rawDy) > 3) dragState.moved = true;
-    if (!dragState.moved) return;
-    const dx = rawDx / zoomScale;
-    const dy = rawDy / zoomScale;
-    dragState.group.classList.add("dragging");
-    dragState.group.setAttribute("transform", `translate(${dx} ${dy})`);
-
-    const newCenterX = dragState.origScreenX + dx;
-    const newCenterY = dragState.origScreenY + dy;
-    for (const edge of dragState.relatedEdges) {
-      const x1 = edge.dataset.fromId === node.id ? newCenterX : parseFloat(edge.dataset.x1);
-      const y1 = edge.dataset.fromId === node.id ? newCenterY : parseFloat(edge.dataset.y1);
-      const x2 = edge.dataset.toId === node.id ? newCenterX : parseFloat(edge.dataset.x2);
-      const y2 = edge.dataset.toId === node.id ? newCenterY : parseFloat(edge.dataset.y2);
-      const paths = edge.querySelectorAll("path");
-      const d = curvePath({ x: x1, y: y1 }, { x: x2, y: y2 });
-      for (const p of paths) p.setAttribute("d", d);
-    }
-    for (const tag of dragState.relatedTags) {
-      tag.setAttribute("transform", `translate(${dx} ${dy})`);
-    }
-    dragState.finalDx = dx;
-    dragState.finalDy = dy;
-  };
-
-  const onUp = async () => {
-    document.removeEventListener("mousemove", onMove);
-    document.removeEventListener("mouseup", onUp);
-    if (!dragState) return;
-    const { nodeId, moved, origX, origY, finalDx, finalDy } = dragState;
-    dragState = null;
-    if (!moved) {
-      await focusNode(nodeId);
-      return;
-    }
-    const newX = origX + finalDx;
-    const newY = origY + finalDy;
-    await fetch(`/api/projects/${projectId}/nodes/${nodeId}/position`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ canvas_x: newX, canvas_y: newY }),
-    });
-    await loadProject();
-  };
-
-  document.addEventListener("mousemove", onMove);
-  document.addEventListener("mouseup", onUp);
-}
-
-async function handleCanvasDblClick(e, centerX, centerY, viewW, viewH) {
-  const rect = canvasSvg.getBoundingClientRect();
-  const screenX = e.clientX - rect.left;
-  const screenY = e.clientY - rect.top;
-  const canvasX = centerX + (screenX - viewW / 2) / zoomScale;
-  const canvasY = centerY + (screenY - viewH / 2) / zoomScale;
-
-  const focus = project.nodes[focusedNodeId];
-  const parentId = focus.parent_id !== null ? focus.parent_id : focus.id;
-
-  const res = await fetch(`/api/projects/${projectId}/nodes`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ parent_id: parentId, label: "New node" }),
-  });
-  const newNode = await res.json();
-
-  await fetch(`/api/projects/${projectId}/nodes/${newNode.id}/position`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ canvas_x: canvasX, canvas_y: canvasY }),
-  });
-
-  focusedNodeId = newNode.id;
-  await loadProject();
 }
 
 window.addEventListener("resize", () => {
@@ -1184,11 +1017,8 @@ canvasSvg.addEventListener(
       setZoom(zoomScale + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
       return;
     }
-    const focus = project.nodes[focusedNodeId];
-    const baseX = panCenterX !== null ? panCenterX : focus.canvas_x;
-    const baseY = panCenterY !== null ? panCenterY : focus.canvas_y;
-    panCenterX = baseX + e.deltaX / zoomScale;
-    panCenterY = baseY + e.deltaY / zoomScale;
+    panOffsetX -= e.deltaX;
+    panOffsetY -= e.deltaY;
     renderCanvas();
   },
   { passive: false }
@@ -1196,72 +1026,41 @@ canvasSvg.addEventListener(
 
 function fitToView() {
   if (!project || !focusedNodeId) return;
-  const focus = project.nodes[focusedNodeId];
-  const parent = focus.parent_id ? project.nodes[focus.parent_id] : null;
-  const children = focus.children.map((id) => project.nodes[id]);
-  const visible = [focus, ...(parent ? [parent] : []), ...children];
-
-  const xs = visible.map((n) => n.canvas_x);
-  const ys = visible.map((n) => n.canvas_y);
-  const minX = Math.min(...xs) - NODE_W / 2;
-  const maxX = Math.max(...xs) + NODE_W / 2;
-  const minY = Math.min(...ys) - NODE_H / 2;
-  const maxY = Math.max(...ys) + NODE_H / 2;
-  const boxW = Math.max(maxX - minX, 1);
-  const boxH = Math.max(maxY - minY, 1);
-
+  panOffsetX = 0;
+  panOffsetY = 0;
   const rect = canvasSvg.getBoundingClientRect();
   const viewW = rect.width || 800;
   const viewH = rect.height || 500;
-  const padding = 70;
+  const { bounds } = computeCanvasLayout(viewW, viewH);
+  const boxW = Math.max(bounds.maxX - bounds.minX, 1);
+  const boxH = Math.max(bounds.maxY - bounds.minY, 1);
+  const padding = 60;
 
   const scale = Math.min((viewW - padding * 2) / boxW, (viewH - padding * 2) / boxH, ZOOM_MAX);
-  zoomScale = Math.max(0.05, scale);
-  panCenterX = (minX + maxX) / 2;
-  panCenterY = (minY + maxY) / 2;
+  zoomScale = Math.max(0.1, scale);
   zoomLevelEl.textContent = `${Math.round(zoomScale * 100)}%`;
   renderCanvas();
 }
 
 fitViewBtn.addEventListener("click", fitToView);
 
-arrangeChildrenBtn.addEventListener("click", async () => {
+addGroupBtn.addEventListener("click", async () => {
   if (!focusedNodeId) return;
-  await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/arrange-children`, { method: "POST" });
-  await loadProject();
-  fitToView();
+  const name = prompt("Name for this group (e.g. Configuration, Scanning, Validation):");
+  if (!name || !name.trim()) return;
+  const res = await fetch(`/api/projects/${projectId}/nodes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ parent_id: focusedNodeId, label: name.trim(), is_group: true }),
+  });
+  const newNode = await res.json();
+  await focusNode(newNode.id);
 });
 
-groupChildrenBtn.addEventListener("click", async () => {
-  if (!focusedNodeId || !project) return;
-  const node = project.nodes[focusedNodeId];
-  await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ group_children: !node.group_children }),
-  });
-  await loadProject();
-  fitToView();
-});
-
-shapeBtn.addEventListener("click", () => {
-  shapePicker.hidden = !shapePicker.hidden;
-});
-shapePicker.addEventListener("click", async (e) => {
-  const btn = e.target.closest("button[data-shape]");
-  if (!btn || !focusedNodeId) return;
-  shapePicker.hidden = true;
-  await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ shape: btn.dataset.shape }),
-  });
-  await loadProject();
-});
-document.addEventListener("click", (e) => {
-  if (!shapePicker.hidden && !shapePicker.contains(e.target) && e.target !== shapeBtn) {
-    shapePicker.hidden = true;
-  }
+showDepsBtn.addEventListener("click", () => {
+  showDependencies = !showDependencies;
+  showDepsBtn.classList.toggle("active", showDependencies);
+  renderCanvas();
 });
 
 // ---------- Minimap ----------
@@ -1270,66 +1069,44 @@ function renderMinimap() {
   minimapSvg.innerHTML = "";
   if (!project || !focusedNodeId) return;
 
-  const allNodes = Object.values(project.nodes);
-  const xs = allNodes.map((n) => n.canvas_x);
-  const ys = allNodes.map((n) => n.canvas_y);
-  const minX = Math.min(...xs) - NODE_W / 2;
-  const maxX = Math.max(...xs) + NODE_W / 2;
-  const minY = Math.min(...ys) - NODE_H / 2;
-  const maxY = Math.max(...ys) + NODE_H / 2;
-  const treeW = Math.max(maxX - minX, 1);
-  const treeH = Math.max(maxY - minY, 1);
+  // Overview by hierarchy level — one horizontal band per level, real (non-group) nodes
+  // only, since groups are a display-time organizational device rather than a real layer.
+  const byLevel = new Map();
+  for (const node of Object.values(project.nodes)) {
+    if (node.is_group) continue;
+    if (!byLevel.has(node.level)) byLevel.set(node.level, []);
+    byLevel.get(node.level).push(node);
+  }
+  const levels = [...byLevel.keys()].sort((a, b) => a - b);
+  if (levels.length === 0) return;
 
   const mapW = 160;
   const mapH = 100;
   const pad = 8;
-  const scale = Math.min((mapW - pad * 2) / treeW, (mapH - pad * 2) / treeH);
+  const rowH = (mapH - pad * 2) / levels.length;
+  const focusLevel = project.nodes[focusedNodeId].level;
 
-  const toMini = (x, y) => ({
-    x: pad + (x - minX) * scale,
-    y: pad + (y - minY) * scale,
+  levels.forEach((level, rowIdx) => {
+    const nodesAtLevel = byLevel.get(level);
+    const y = pad + rowIdx * rowH + rowH / 2;
+    const colW = (mapW - pad * 2) / nodesAtLevel.length;
+    nodesAtLevel.forEach((node, colIdx) => {
+      const x = pad + colIdx * colW + colW / 2;
+      const dot = document.createElementNS(SVG_NS, "circle");
+      const classes = ["mini-node"];
+      if (node.id === focusedNodeId) classes.push("focused");
+      else if (level === focusLevel) classes.push("same-level");
+      dot.setAttribute("class", classes.join(" "));
+      dot.setAttribute("cx", x);
+      dot.setAttribute("cy", y);
+      dot.setAttribute("r", node.id === focusedNodeId ? 3 : 2);
+      dot.addEventListener("click", (e) => {
+        e.stopPropagation();
+        focusNode(node.id);
+      });
+      minimapSvg.appendChild(dot);
+    });
   });
-
-  const focus = project.nodes[focusedNodeId];
-  const rect = canvasSvg.getBoundingClientRect();
-  const viewW = rect.width || 800;
-  const viewH = rect.height || 500;
-  const centerX = panCenterX !== null ? panCenterX : focus.canvas_x;
-  const centerY = panCenterY !== null ? panCenterY : focus.canvas_y;
-  const viewportWorldW = viewW / zoomScale;
-  const viewportWorldH = viewH / zoomScale;
-  const vpTopLeft = toMini(centerX - viewportWorldW / 2, centerY - viewportWorldH / 2);
-  const vpBottomRight = toMini(centerX + viewportWorldW / 2, centerY + viewportWorldH / 2);
-
-  const viewportRect = document.createElementNS(SVG_NS, "rect");
-  viewportRect.setAttribute("class", "mini-viewport");
-  viewportRect.setAttribute("x", vpTopLeft.x);
-  viewportRect.setAttribute("y", vpTopLeft.y);
-  viewportRect.setAttribute("width", Math.max(2, vpBottomRight.x - vpTopLeft.x));
-  viewportRect.setAttribute("height", Math.max(2, vpBottomRight.y - vpTopLeft.y));
-  viewportRect.addEventListener("click", (e) => {
-    const svgRect = minimapSvg.getBoundingClientRect();
-    const clickX = e.clientX - svgRect.left;
-    const clickY = e.clientY - svgRect.top;
-    const worldX = minX + (clickX - pad) / scale;
-    const worldY = minY + (clickY - pad) / scale;
-    panCenterX = worldX;
-    panCenterY = worldY;
-    renderCanvas();
-    renderMinimap();
-  });
-
-  for (const node of allNodes) {
-    const pos = toMini(node.canvas_x, node.canvas_y);
-    const dot = document.createElementNS(SVG_NS, "circle");
-    dot.setAttribute("class", "mini-node" + (node.id === focusedNodeId ? " focused" : ""));
-    dot.setAttribute("cx", pos.x);
-    dot.setAttribute("cy", pos.y);
-    dot.setAttribute("r", node.id === focusedNodeId ? 3 : 2);
-    minimapSvg.appendChild(dot);
-  }
-
-  minimapSvg.appendChild(viewportRect);
 }
 
 // ---------- Health / validation / activity ----------
@@ -1811,6 +1588,28 @@ function renderInspectorTab(container, node) {
   btnRow.appendChild(mkBtn("+ Child", "Add a child node", () => addChild(focusedNodeId)));
   btnRow.appendChild(mkBtn("+ Sibling", "Add a sibling node below", () => addSiblingBelow(focusedNodeId)));
   if (node.parent_id !== null) {
+    btnRow.appendChild(
+      mkBtn("↑ Move up", "Move earlier among its siblings", async () => {
+        const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/move-sibling`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ direction: "up" }),
+        });
+        if (!res.ok) alert("Already first among its siblings.");
+        await loadProject();
+      })
+    );
+    btnRow.appendChild(
+      mkBtn("↓ Move down", "Move later among its siblings", async () => {
+        const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/move-sibling`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ direction: "down" }),
+        });
+        if (!res.ok) alert("Already last among its siblings.");
+        await loadProject();
+      })
+    );
     btnRow.appendChild(
       mkBtn("⇧ Promote to root", "Make this node the new root of the whole tree", async () => {
         const confirmed = confirm(

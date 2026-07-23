@@ -369,22 +369,10 @@ button {
 }
 
 #addRefModeBtn.active,
-#groupChildrenBtn.active {
+#showDepsBtn.active {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
-}
-
-.shape-picker {
-  flex-direction: row;
-  padding: 4px;
-  min-width: auto;
-}
-
-.shape-picker button {
-  font-size: 18px;
-  padding: 6px 10px;
-  text-align: center;
 }
 
 .ref-mode-banner {
@@ -458,7 +446,7 @@ button {
   fill: var(--surface);
   stroke: var(--border);
   stroke-width: 1.5;
-  cursor: grab;
+  cursor: pointer;
 }
 
 .canvas-svg .node-box:hover {
@@ -468,10 +456,6 @@ button {
 .canvas-svg .node-group.focused .node-box {
   stroke: var(--accent);
   stroke-width: 2.5;
-}
-
-.canvas-svg .node-group.dragging .node-box {
-  cursor: grabbing;
 }
 
 .canvas-svg .node-label {
@@ -539,41 +523,44 @@ button {
   stroke-dasharray: 4 2;
 }
 
-.canvas-svg .group-box-rect {
+.canvas-svg .node-group.is-group .node-box {
   fill: var(--surface-2);
   stroke: var(--border);
-  stroke-width: 1.5;
+  stroke-dasharray: none;
 }
 
-.canvas-svg .group-box-title {
-  font-size: 11px;
+.canvas-svg .node-group.is-group .node-label {
   fill: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  font-weight: 600;
+  font-size: 12px;
 }
 
-.canvas-svg .group-box-item {
+.canvas-svg .node-group.is-group:hover .node-box {
+  stroke: var(--accent);
+}
+
+.canvas-svg .node-group.is-group.focused .node-box {
+  stroke: var(--accent);
+}
+
+.canvas-svg .show-more-affordance {
   cursor: pointer;
 }
 
-.canvas-svg .group-box-item rect {
-  fill: var(--surface);
+.canvas-svg .show-more-affordance rect {
+  fill: none;
   stroke: var(--border);
-  stroke-width: 1;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
 }
 
-.canvas-svg .group-box-item:hover rect {
+.canvas-svg .show-more-affordance:hover rect {
   stroke: var(--accent);
 }
 
-.canvas-svg .group-box-item.focused rect {
-  stroke: var(--accent);
-  stroke-width: 2;
-}
-
-.canvas-svg .group-box-item text {
-  font-size: 11px;
-  fill: var(--text);
+.canvas-svg .show-more-affordance text {
+  font-size: 12px;
+  fill: var(--text-muted);
   text-anchor: middle;
   dominant-baseline: middle;
   pointer-events: none;
@@ -1090,19 +1077,18 @@ hr.inspector-divider {
 
 .minimap-svg .mini-node {
   fill: var(--text-muted);
-  opacity: 0.6;
+  opacity: 0.5;
+  cursor: pointer;
+}
+
+.minimap-svg .mini-node.same-level {
+  fill: var(--accent-text);
+  opacity: 0.8;
 }
 
 .minimap-svg .mini-node.focused {
   fill: var(--accent);
   opacity: 1;
-}
-
-.minimap-svg .mini-viewport {
-  fill: var(--accent-bg);
-  stroke: var(--accent);
-  stroke-width: 1;
-  cursor: pointer;
 }
 
 /* ---------- Bottom panel (health / validation / activity) ---------- */
