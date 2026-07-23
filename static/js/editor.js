@@ -85,6 +85,7 @@ const exportBtn = document.getElementById("exportBtn");
 const exportMenu = document.getElementById("exportMenu");
 const statusFilterBtn = document.getElementById("statusFilterBtn");
 const statusFilterMenu = document.getElementById("statusFilterMenu");
+const showDepsCheckbox = document.getElementById("showDepsCheckbox");
 const collapseExpandBtn = document.getElementById("collapseExpandBtn");
 const collapseExpandMenu = document.getElementById("collapseExpandMenu");
 const collapseAllBtn = document.getElementById("collapseAllBtn");
@@ -92,12 +93,14 @@ const expandBranchBtn = document.getElementById("expandBranchBtn");
 const expandToLevelBtn = document.getElementById("expandToLevelBtn");
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
-const addRefModeBtn = document.getElementById("addRefModeBtn");
 const refModeBanner = document.getElementById("refModeBanner");
 const zoomInBtn = document.getElementById("zoomInBtn");
 const zoomOutBtn = document.getElementById("zoomOutBtn");
 const zoomLevelEl = document.getElementById("zoomLevel");
-const fitViewBtn = document.getElementById("fitViewBtn");
+const fitBtn = document.getElementById("fitBtn");
+const fitMenu = document.getElementById("fitMenu");
+const fitSelectionBtn = document.getElementById("fitSelectionBtn");
+const fitBranchBtn = document.getElementById("fitBranchBtn");
 const fitAllBtn = document.getElementById("fitAllBtn");
 const selectionToolbar = document.getElementById("selectionToolbar");
 const selectionCountEl = document.getElementById("selectionCount");
@@ -108,8 +111,6 @@ const selStatusBtn = document.getElementById("selStatusBtn");
 const selStatusMenu = document.getElementById("selStatusMenu");
 const selGroupBtn = document.getElementById("selGroupBtn");
 const selClearBtn = document.getElementById("selClearBtn");
-const addGroupBtn = document.getElementById("addGroupBtn");
-const showDepsBtn = document.getElementById("showDepsBtn");
 const focusModeBtn = document.getElementById("focusModeBtn");
 const fullArchModeBtn = document.getElementById("fullArchModeBtn");
 const minimapSvg = document.getElementById("minimapSvg");
@@ -1717,6 +1718,7 @@ function openContextMenu(nodeId, clientX, clientY) {
       focusNode(newNode.id);
     }, { disabled: isRoot })
   );
+  menu.appendChild(contextMenuItem("▤ Add Group", () => addGroupUnder(nodeId)));
   menu.appendChild(
     contextMenuItem("✎ Rename", () => {
       const label = prompt("Rename node:", node.label);
@@ -1800,7 +1802,6 @@ function openContextMenu(nodeId, clientX, clientY) {
     contextMenuItem("⇢ Add Reference Link", () => {
       refMode = true;
       pendingRefFrom = nodeId;
-      addRefModeBtn.classList.add("active");
       refModeBanner.hidden = false;
       renderCanvas();
     })
@@ -1857,23 +1858,13 @@ window.addEventListener("resize", () => {
 });
 
 // ---------- Reference mode ----------
-
-addRefModeBtn.addEventListener("click", () => {
-  if (refMode) {
-    exitRefMode();
-  } else {
-    refMode = true;
-    pendingRefFrom = null;
-    addRefModeBtn.classList.add("active");
-    refModeBanner.hidden = false;
-    renderCanvas();
-  }
-});
+// Entered via a node's right-click "Add Reference Link" (context menu) or the References
+// tab's own button — there is no standalone toolbar toggle; the ref-mode-banner is the
+// only persistent indicator that it's active.
 
 function exitRefMode() {
   refMode = false;
   pendingRefFrom = null;
-  addRefModeBtn.classList.remove("active");
   refModeBanner.hidden = true;
   renderCanvas();
 }
@@ -1992,30 +1983,112 @@ function zoomToNode(nodeId) {
   renderCanvas();
 }
 
-function fitToView(smooth = true) {
-  if (!project || !focusedNodeId) return;
-  panOffsetX = 0;
-  panOffsetY = 0;
-  const rect = canvasSvg.getBoundingClientRect();
-  const viewW = rect.width || 800;
-  const viewH = rect.height || 500;
-  const { bounds } = viewMode === "full" ? computeFullArchitectureLayout(viewW, viewH) : computeCanvasLayout(viewW, viewH);
+// Centers the given content-space bounds in the viewport and scales to fit, correctly
+// accounting for bounds that aren't already centered around (viewW/2, viewH/2) — needed
+// for Fit Selection/Fit Branch, whose bounding boxes can sit anywhere in content space.
+function fitToBounds(bounds, viewW, viewH, smooth = true) {
   const boxW = Math.max(bounds.maxX - bounds.minX, 1);
   const boxH = Math.max(bounds.maxY - bounds.minY, 1);
   const padding = 60;
-
   const scale = Math.min((viewW - padding * 2) / boxW, (viewH - padding * 2) / boxH, ZOOM_MAX);
   zoomScale = Math.max(0.1, scale);
+  const cx = (bounds.minX + bounds.maxX) / 2;
+  const cy = (bounds.minY + bounds.maxY) / 2;
+  panOffsetX = -zoomScale * (cx - viewW / 2);
+  panOffsetY = -zoomScale * (cy - viewH / 2);
   zoomLevelEl.textContent = `${Math.round(zoomScale * 100)}%`;
   smoothZoomNextRender = smooth;
   renderCanvas();
 }
 
-fitAllBtn.addEventListener("click", () => {
+function fitToView(smooth = true) {
+  if (!project || !focusedNodeId) return;
+  const rect = canvasSvg.getBoundingClientRect();
+  const viewW = rect.width || 800;
+  const viewH = rect.height || 500;
+  const { bounds } = viewMode === "full" ? computeFullArchitectureLayout(viewW, viewH) : computeCanvasLayout(viewW, viewH);
+  fitToBounds(bounds, viewW, viewH, smooth);
+}
+
+function boundsFromPositions(ids) {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const id of ids) {
+    const pos = lastVisiblePositions.get(id);
+    if (!pos) continue;
+    minX = Math.min(minX, pos.x - NODE_W / 2);
+    maxX = Math.max(maxX, pos.x + NODE_W / 2);
+    minY = Math.min(minY, pos.y - NODE_H / 2);
+    maxY = Math.max(maxY, pos.y + NODE_H / 2);
+  }
+  return isFinite(minX) ? { minX, maxX, minY, maxY } : null;
+}
+
+// Fit Selection: frames the current multi-selection if there is one, otherwise falls back
+// to the same "fit the current focus context" behavior as before.
+function fitSelection() {
+  if (!project) return;
+  if (selectedNodeIds.size === 0) {
+    fitToView();
+    return;
+  }
+  const bounds = boundsFromPositions(selectedNodeIds);
+  if (!bounds) {
+    fitToView();
+    return;
+  }
+  const rect = canvasSvg.getBoundingClientRect();
+  fitToBounds(bounds, rect.width || 800, rect.height || 500);
+}
+
+// Fit Branch: switches to Full Architecture mode (so the whole subtree actually renders)
+// and frames just the focused node's own descendants, not the whole tree.
+function fitBranch() {
+  if (!project || !focusedNodeId) return;
+  viewMode = "full";
+  focusModeBtn.classList.remove("active");
+  fullArchModeBtn.classList.add("active");
+  renderCanvas();
+  const bounds = boundsFromPositions(collectSubtreeIds(focusedNodeId));
+  if (!bounds) return;
+  const rect = canvasSvg.getBoundingClientRect();
+  fitToBounds(bounds, rect.width || 800, rect.height || 500);
+}
+
+function fitArchitecture() {
   viewMode = "full";
   focusModeBtn.classList.remove("active");
   fullArchModeBtn.classList.add("active");
   fitToView();
+}
+
+fitBtn.addEventListener("click", () => {
+  if (fitMenu.hidden) {
+    exportMenu.hidden = true;
+    statusFilterMenu.hidden = true;
+    collapseExpandMenu.hidden = true;
+    closeImportModal();
+  }
+  fitMenu.hidden = !fitMenu.hidden;
+});
+document.addEventListener("click", (e) => {
+  if (!fitMenu.hidden && !fitMenu.contains(e.target) && e.target !== fitBtn) {
+    fitMenu.hidden = true;
+  }
+});
+fitSelectionBtn.addEventListener("click", () => {
+  fitMenu.hidden = true;
+  fitSelection();
+});
+fitBranchBtn.addEventListener("click", () => {
+  fitMenu.hidden = true;
+  fitBranch();
+});
+fitAllBtn.addEventListener("click", () => {
+  fitMenu.hidden = true;
+  fitArchitecture();
 });
 
 // ---------- Rubber-band box select ----------
@@ -2181,8 +2254,6 @@ selGroupBtn.addEventListener("click", async () => {
   focusNode(groupNode.id);
 });
 
-fitViewBtn.addEventListener("click", () => fitToView());
-
 function setViewMode(mode) {
   if (viewMode === mode) return;
   viewMode = mode;
@@ -2193,22 +2264,20 @@ function setViewMode(mode) {
 focusModeBtn.addEventListener("click", () => setViewMode("focus"));
 fullArchModeBtn.addEventListener("click", () => setViewMode("full"));
 
-addGroupBtn.addEventListener("click", async () => {
-  if (!focusedNodeId) return;
+async function addGroupUnder(parentId) {
   const name = prompt("Name for this group (e.g. Configuration, Scanning, Validation):");
   if (!name || !name.trim()) return;
   const res = await fetch(`/api/projects/${projectId}/nodes`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ parent_id: focusedNodeId, label: name.trim(), is_group: true }),
+    body: JSON.stringify({ parent_id: parentId, label: name.trim(), is_group: true }),
   });
   const newNode = await res.json();
   await focusNode(newNode.id);
-});
+}
 
-showDepsBtn.addEventListener("click", () => {
-  showDependencies = !showDependencies;
-  showDepsBtn.classList.toggle("active", showDependencies);
+showDepsCheckbox.addEventListener("change", () => {
+  showDependencies = showDepsCheckbox.checked;
   renderCanvas();
 });
 
@@ -2218,6 +2287,7 @@ statusFilterBtn.addEventListener("click", () => {
   if (statusFilterMenu.hidden) {
     exportMenu.hidden = true;
     collapseExpandMenu.hidden = true;
+    fitMenu.hidden = true;
     closeImportModal();
   }
   statusFilterMenu.hidden = !statusFilterMenu.hidden;
@@ -2256,6 +2326,7 @@ collapseExpandBtn.addEventListener("click", () => {
   if (collapseExpandMenu.hidden) {
     exportMenu.hidden = true;
     statusFilterMenu.hidden = true;
+    fitMenu.hidden = true;
     closeImportModal();
   }
   collapseExpandMenu.hidden = !collapseExpandMenu.hidden;
@@ -2727,6 +2798,7 @@ exportBtn.addEventListener("click", () => {
   if (exportMenu.hidden) closeImportModal();
   statusFilterMenu.hidden = true;
   collapseExpandMenu.hidden = true;
+  fitMenu.hidden = true;
   exportMenu.hidden = !exportMenu.hidden;
 });
 
@@ -3289,7 +3361,6 @@ function renderReferencesTab(container, node) {
   addRefBtn.addEventListener("click", () => {
     refMode = true;
     pendingRefFrom = node.id;
-    addRefModeBtn.classList.add("active");
     refModeBanner.hidden = false;
     renderCanvas();
   });

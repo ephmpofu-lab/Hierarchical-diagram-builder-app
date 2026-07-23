@@ -58,6 +58,8 @@
               <label><input type="checkbox" data-filter="Completed" checked> ✓ Completed</label>
               <label><input type="checkbox" data-filter="Needs Review" checked> ⚠ Needs Review</label>
               <label><input type="checkbox" data-filter="Blocked" checked> ⛔ Blocked</label>
+              <div class="dropdown-divider"></div>
+              <label><input type="checkbox" id="showDepsCheckbox"> ⇢ Show Dependencies</label>
             </div>
           </div>
           <div class="dropdown-wrap">
@@ -68,11 +70,14 @@
               <button id="expandToLevelBtn">Expand to Level…</button>
             </div>
           </div>
-          <button id="addGroupBtn" class="btn btn-small" title="Organize this node's children into a named, collapsible group">▤ + Group</button>
-          <button id="addRefModeBtn" class="btn btn-small" title="Click two nodes in sequence to link them with a reference/dependency">+ Reference</button>
-          <button id="showDepsBtn" class="btn btn-small" title="Show dashed dependency/reference links for the focused node">⇢ Show Dependencies</button>
-          <button id="fitViewBtn" class="btn btn-small" title="Zoom to fit parent, focus, and children in view">⤢ Fit Selected</button>
-          <button id="fitAllBtn" class="btn btn-small" title="Switch to Full Architecture mode and zoom to fit the entire tree">⤢ Fit Entire Architecture</button>
+          <div class="dropdown-wrap">
+            <button id="fitBtn" class="btn btn-small" title="Camera fitting: bring the selection, the current branch, or the whole tree into view">⤢ Fit ▾</button>
+            <div id="fitMenu" class="dropdown-menu" hidden>
+              <button id="fitSelectionBtn">Fit Selection</button>
+              <button id="fitBranchBtn">Fit Branch</button>
+              <button id="fitAllBtn">Fit Architecture</button>
+            </div>
+          </div>
           <button id="zoomOutBtn" class="btn btn-small" title="Zoom out (or scroll the mouse wheel)">−</button>
           <span id="zoomLevel" class="zoom-level" title="Current zoom level">100%</span>
           <button id="zoomInBtn" class="btn btn-small" title="Zoom in (or scroll the mouse wheel)">+</button>

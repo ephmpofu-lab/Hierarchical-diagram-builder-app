@@ -520,11 +520,9 @@ button {
   text-align: center;
 }
 
-#addRefModeBtn.active,
-#showDepsBtn.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+.dropdown-divider {
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
 }
 
 .view-mode-toggle {
