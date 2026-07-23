@@ -1566,6 +1566,32 @@ hr.inspector-divider {
   margin-top: 8px;
 }
 
+.severity-group-header {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 10px 0 4px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--border);
+}
+
+.severity-group-header:first-child {
+  margin-top: 0;
+}
+
+.severity-group-header.severity-critical-issues {
+  color: var(--danger-text);
+}
+
+.severity-group-header.severity-warnings {
+  color: var(--warning-text);
+}
+
+.severity-group-header.severity-suggestions {
+  color: var(--text-muted);
+}
+
 .risk-pill {
   font-size: 11px;
   font-weight: 600;

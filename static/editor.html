@@ -116,17 +116,17 @@
     </div>
     <div class="bottom-panel-grid">
       <div class="health-card">
-        <div class="pane-header" title="Measures the structural quality of the architecture using validation rules: duplicates, cycles, oversized modules, missing documentation, and more. Higher is healthier.">Architecture Health</div>
+        <div class="pane-header" title="A single score (0-100) summarizing structural quality: duplicates, cycles, orphans, broken references, oversized modules, single-child levels, and missing owners/notes all subtract points. Why it matters: it is a quick proxy for how easy this architecture will be to navigate and maintain as it grows. How to improve: work through the Critical Issues first, then Warnings, then Suggestions below.">Architecture Health</div>
         <div id="healthScore" class="health-score"></div>
-        <button id="viewFullReportBtn" class="btn btn-small">View Full Report</button>
+        <button id="viewFullReportBtn" class="btn btn-small" title="Expand every flagged category below at once instead of clicking each one open individually">View Full Report</button>
       </div>
       <div class="health-card">
-        <div class="pane-header" title="Structural issues found across the whole tree. Click any row to jump to an affected node.">Validation Summary</div>
+        <div class="pane-header" title="Every validation rule, grouped by severity. Critical Issues are structural breakage (cycles, orphaned/unreachable nodes, dangling references) - these usually indicate a real bug and are worth fixing first. Warnings are quality problems (duplicate labels, oversized modules, missing owners) that make the architecture harder to work with but are not broken. Suggestions are soft style nits (single-child levels, missing notes). Click any row to expand it and jump straight to an affected node.">Validation Summary</div>
         <div id="validationSummary" class="validation-list"></div>
-        <button id="runValidationBtn" class="btn btn-small" title="Re-scan the whole tree for issues right now">Run Validation</button>
+        <button id="runValidationBtn" class="btn btn-small" title="Re-scan the whole tree for issues right now — useful after a batch of edits, since this panel does not auto-refresh on every change">Run Validation</button>
       </div>
       <div class="health-card">
-        <div class="pane-header" title="A running log of structural changes: additions, deletions, renames, moves, and links">Recent Changes</div>
+        <div class="pane-header" title="A running log of structural changes: additions, deletions, renames, moves, and links. Why it matters: gives you an audit trail of what changed and when, without needing real version history. How to improve: nothing to fix here - it is read-only history.">Recent Changes</div>
         <div id="activityList" class="activity-list"></div>
       </div>
     </div>

@@ -2429,17 +2429,66 @@ function renderHealthScore(report) {
 
 let expandedValidationRows = new Set();
 
+// Every validation rule explained in the same shape: what it is, why it matters, and how to
+// fix it, plus which severity bucket it belongs in for the Critical/Warnings/Suggestions
+// grouping below. Critical = actual structural breakage; Warnings = quality problems that
+// aren't broken but make the tree harder to work with; Suggestions = soft style nits.
+const VALIDATION_CATEGORY_INFO = {
+  "Duplicate labels": {
+    severity: "critical",
+    tooltip:
+      "Two or more nodes share the exact same label. Why it matters: duplicate names make it ambiguous which node is being referenced anywhere else in the app (search, references, exports). How to improve: rename one of them so every label is unique.",
+  },
+  "Circular references": {
+    severity: "critical",
+    tooltip:
+      "A chain of reference links loops back on itself. Why it matters: circular dependencies usually signal a real design problem and make it unclear which component actually owns what. How to improve: break the cycle by removing or redirecting one of the reference links in the Inspector's References tab.",
+  },
+  "Orphaned nodes": {
+    severity: "critical",
+    tooltip:
+      "This node is not reachable from the root by following parent/child links. Why it matters: this usually means data corruption from a bug or a manual JSON edit, not a normal design choice. How to improve: reparent it under the correct part of the tree via drag-to-reattach or the context menu.",
+  },
+  "Broken references": {
+    severity: "critical",
+    tooltip:
+      "A reference link points to a node that no longer exists. Why it matters: stale references clutter the dependency graph with dead links that go nowhere. How to improve: delete the reference from the Inspector's References tab.",
+  },
+  "Large modules (>10 children)": {
+    severity: "warning",
+    tooltip:
+      "This node has more than 10 direct children. Why it matters: modules this wide are hard to scan and usually mean several unrelated concerns got flattened into one place. How to improve: group related children into a named group (right-click a child > Add Group), or split into sub-levels.",
+  },
+  "Missing owners": {
+    severity: "warning",
+    tooltip:
+      "This node has no owner assigned. Why it matters: without an owner it's unclear who is responsible for planning or maintaining this part of the system. How to improve: assign an owner in the Properties tab.",
+  },
+  "Single-child nodes": {
+    severity: "suggestion",
+    tooltip:
+      "This node has exactly one child. Why it matters: a level that never branches often doesn't need to be its own level, adding depth without adding real structure. How to improve: consider merging it with its child, or add more children if more detail genuinely belongs here.",
+  },
+  "Missing notes": {
+    severity: "suggestion",
+    tooltip:
+      "This node has no description or notes. Why it matters: undocumented nodes are the first thing to become confusing as the architecture grows. How to improve: add a short description in the Documentation tab.",
+  },
+};
+
 function validationIssueRow(label, issues) {
   const row = document.createElement("div");
   row.className = "validation-row" + (issues.length > 0 ? " flagged clickable" : "");
+  const info = VALIDATION_CATEGORY_INFO[label];
   const l = document.createElement("span");
   l.textContent = label;
   const v = document.createElement("strong");
   v.textContent = issues.length;
   row.appendChild(l);
   row.appendChild(v);
+  const baseTooltip = info ? info.tooltip : "";
+  row.title = issues.length > 0 ? `${baseTooltip} Click to expand and jump to affected nodes.` : baseTooltip;
   if (issues.length > 0) {
-    row.title = "Click to see and jump to affected nodes";
     row.addEventListener("click", () => {
       if (expandedValidationRows.has(label)) expandedValidationRows.delete(label);
       else expandedValidationRows.add(label);
@@ -2465,17 +2514,39 @@ function validationIssueRow(label, issues) {
   }
 }
 
+function renderSeverityGroup(title, entries) {
+  const totalCount = entries.reduce((sum, [, issues]) => sum + issues.length, 0);
+  const header = document.createElement("div");
+  header.className = "severity-group-header severity-" + title.toLowerCase().replace(/\s+/g, "-");
+  header.textContent = `${title} (${totalCount})`;
+  validationSummaryEl.appendChild(header);
+  for (const [label, issues] of entries) {
+    validationIssueRow(label, issues);
+  }
+}
+
 function renderValidationSummary(report) {
   validationSummaryEl.innerHTML = "";
 
-  validationIssueRow("Duplicate labels", report.duplicate_labels);
-  validationIssueRow("Circular references", report.circular_references.map((chain) => ({ label: chain.join(" → ") })));
-  validationIssueRow("Large modules (>10 children)", report.large_modules);
-  validationIssueRow("Single-child nodes", report.single_child_nodes);
-  validationIssueRow("Missing notes", report.missing_notes);
-  validationIssueRow("Missing owners", report.missing_owners);
-  validationIssueRow("Orphaned nodes", report.orphan_nodes);
-  validationIssueRow("Broken references", report.broken_references.map((msg) => ({ label: msg })));
+  const categories = [
+    ["Duplicate labels", report.duplicate_labels],
+    ["Circular references", report.circular_references.map((chain) => ({ label: chain.join(" → ") }))],
+    ["Orphaned nodes", report.orphan_nodes],
+    ["Broken references", report.broken_references.map((msg) => ({ label: msg }))],
+    ["Large modules (>10 children)", report.large_modules],
+    ["Missing owners", report.missing_owners],
+    ["Single-child nodes", report.single_child_nodes],
+    ["Missing notes", report.missing_notes],
+  ];
+
+  const buckets = { critical: [], warning: [], suggestion: [] };
+  for (const entry of categories) {
+    buckets[VALIDATION_CATEGORY_INFO[entry[0]].severity].push(entry);
+  }
+
+  renderSeverityGroup("Critical Issues", buckets.critical);
+  renderSeverityGroup("Warnings", buckets.warning);
+  renderSeverityGroup("Suggestions", buckets.suggestion);
 
   validationSummaryEl.appendChild(document.createElement("hr")).className = "inspector-divider";
 
