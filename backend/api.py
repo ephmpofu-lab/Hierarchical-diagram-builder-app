@@ -19,6 +19,7 @@ from .models import (
     Reference,
     ReferenceCreate,
     ReferenceUpdate,
+    ReparentRequest,
     Template,
     TemplateCreate,
     TemplateSummary,
@@ -120,6 +121,8 @@ def api_update_node(project_id: str, node_id: str, body: NodeUpdate):
         body.risk_level,
         body.tags,
         body.owner,
+        body.shape,
+        body.group_children,
     )
     if body.label is not None and body.label != old_label:
         tree.log_activity(project, f"Renamed '{old_label}' to '{body.label}'")
@@ -160,6 +163,31 @@ def api_indent_node(project_id: str, node_id: str):
 def api_arrange_children(project_id: str, node_id: str):
     project = storage.load_project(project_id)
     tree.arrange_children(project, node_id)
+    storage.save_project(project)
+    node = project.nodes[node_id]
+    return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node_id))
+
+
+@router.post("/projects/{project_id}/nodes/{node_id}/reparent", response_model=NodeWithLevel)
+def api_reparent_node(project_id: str, node_id: str, body: ReparentRequest):
+    project = storage.load_project(project_id)
+    old_parent_label = project.nodes[project.nodes[node_id].parent_id].label if project.nodes[node_id].parent_id else "?"
+    tree.reparent_node(project, node_id, body.new_parent_id)
+    new_parent_label = project.nodes[body.new_parent_id].label
+    tree.log_activity(
+        project, f"Moved '{project.nodes[node_id].label}' from '{old_parent_label}' to '{new_parent_label}'"
+    )
+    storage.save_project(project)
+    node = project.nodes[node_id]
+    return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node_id))
+
+
+@router.post("/projects/{project_id}/nodes/{node_id}/promote-to-root", response_model=NodeWithLevel)
+def api_promote_to_root(project_id: str, node_id: str):
+    project = storage.load_project(project_id)
+    label = project.nodes[node_id].label
+    tree.promote_to_root(project, node_id)
+    tree.log_activity(project, f"Promoted '{label}' to be the new root")
     storage.save_project(project)
     node = project.nodes[node_id]
     return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node_id))

@@ -26,6 +26,8 @@ class Node(BaseModel):
     tags: List[str] = Field(default_factory=list)
     owner: Optional[str] = None
     comments: List[Comment] = Field(default_factory=list)
+    shape: str = "rect"
+    group_children: bool = False
 
 
 class Reference(BaseModel):
@@ -101,6 +103,12 @@ class NodeUpdate(BaseModel):
     risk_level: Optional[str] = None
     tags: Optional[List[str]] = None
     owner: Optional[str] = None
+    shape: Optional[str] = None
+    group_children: Optional[bool] = None
+
+
+class ReparentRequest(BaseModel):
+    new_parent_id: str
 
 
 class NodePosition(BaseModel):

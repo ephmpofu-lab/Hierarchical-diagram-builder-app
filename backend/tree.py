@@ -124,6 +124,8 @@ def rename_node(
     risk_level: Optional[str] = None,
     tags: Optional[List[str]] = None,
     owner: Optional[str] = None,
+    shape: Optional[str] = None,
+    group_children: Optional[bool] = None,
 ) -> None:
     node = get_node_or_404(project, node_id)
     if label is not None:
@@ -146,6 +148,10 @@ def rename_node(
         node.tags = tags
     if owner is not None:
         node.owner = owner
+    if shape is not None:
+        node.shape = shape
+    if group_children is not None:
+        node.group_children = group_children
 
 
 def move_node_position(project: Project, node_id: str, canvas_x: float, canvas_y: float) -> None:
@@ -202,6 +208,53 @@ def outdent_node(project: Project, node_id: str) -> None:
     node.parent_id = grandparent.id
     parent_index = grandparent.children.index(old_parent.id)
     grandparent.children.insert(parent_index + 1, node_id)
+
+
+def reparent_node(project: Project, node_id: str, new_parent_id: str) -> None:
+    """Move node_id to become a child of new_parent_id (e.g. dragging its tree edge onto
+    a different node). Root can't be reparented this way — use promote_to_root instead."""
+    node = get_node_or_404(project, node_id)
+    if node.parent_id is None:
+        raise HTTPException(status_code=400, detail="Cannot reparent the root node this way")
+    new_parent = get_node_or_404(project, new_parent_id)
+    if new_parent_id == node_id:
+        raise HTTPException(status_code=400, detail="A node cannot be its own parent")
+    if node.parent_id == new_parent_id:
+        return
+    if _is_ancestor(project, node_id, new_parent_id):
+        raise HTTPException(status_code=400, detail="Cannot move a node under its own descendant")
+
+    old_parent = project.nodes[node.parent_id]
+    old_parent.children.remove(node_id)
+    new_parent.children.append(node_id)
+    node.parent_id = new_parent_id
+
+
+def promote_to_root(project: Project, node_id: str) -> None:
+    """Re-root the tree at node_id. Reverses the chain of parent links from node_id up to
+    the current root; every other subtree stays attached exactly where it was."""
+    node = get_node_or_404(project, node_id)
+    if node.parent_id is None:
+        raise HTTPException(status_code=400, detail="This node is already the root")
+
+    path = []
+    current = node_id
+    while project.nodes[current].parent_id is not None:
+        path.append(current)
+        current = project.nodes[current].parent_id
+    path.append(current)  # current is now the old root
+
+    for i in range(len(path) - 1):
+        child_id = path[i]
+        old_parent_id = path[i + 1]
+        child_node = project.nodes[child_id]
+        old_parent_node = project.nodes[old_parent_id]
+        if child_id in old_parent_node.children:
+            old_parent_node.children.remove(child_id)
+        child_node.children.append(old_parent_id)
+        old_parent_node.parent_id = child_id
+
+    node.parent_id = None
 
 
 def add_reference(project: Project, from_id: str, to_id: str, label: Optional[str]) -> Reference:
