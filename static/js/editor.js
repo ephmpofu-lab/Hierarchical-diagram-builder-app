@@ -93,6 +93,7 @@ let lastViewW = 800;
 let lastViewH = 500;
 let showDependencies = false;
 let expandedGroupOverflow = false; // "show all" for progressive disclosure of many ungrouped children
+let lastValidationReport = null;
 
 const ROW_GAP = 130;
 const COL_GAP = 24;
@@ -1444,9 +1445,11 @@ async function refreshHealthPanel() {
   const res = await fetch(`/api/projects/${projectId}/validation`);
   if (!res.ok) return;
   const report = await res.json();
+  lastValidationReport = report;
   renderHealthScore(report);
   renderValidationSummary(report);
   renderActivityLog();
+  if (inspectorActiveTab === "validation") renderInspector();
 }
 
 function renderHealthScore(report) {
@@ -1808,7 +1811,7 @@ function infoSelectValue(fieldKey, options, node) {
   return wrap;
 }
 
-let inspectorActiveTab = "inspector"; // "inspector" | "properties" | "comments"
+let inspectorActiveTab = "overview"; // overview | properties | references | documentation | history | comments | validation
 
 function renderInspector() {
   inspectorContent.innerHTML = "";
@@ -1845,10 +1848,15 @@ function renderInspector() {
 
   const tabBar = document.createElement("div");
   tabBar.className = "inspector-tabs";
+  const touchingRefCount = project.references.filter((r) => r.from === node.id || r.to === node.id).length;
   const tabDefs = [
-    ["inspector", "Inspector"],
+    ["overview", "Overview"],
     ["properties", "Properties"],
+    ["references", `References${touchingRefCount ? ` (${touchingRefCount})` : ""}`],
+    ["documentation", "Documentation"],
+    ["history", "History"],
     ["comments", `Comments${node.comments.length ? ` (${node.comments.length})` : ""}`],
+    ["validation", "Validation"],
   ];
   for (const [key, label] of tabDefs) {
     const tabBtn = document.createElement("button");
@@ -1867,17 +1875,22 @@ function renderInspector() {
   tabContent.className = "inspector-tab-content";
   inspectorContent.appendChild(tabContent);
 
-  if (inspectorActiveTab === "inspector") renderInspectorTab(tabContent, node);
+  if (inspectorActiveTab === "overview") renderOverviewTab(tabContent, node);
   else if (inspectorActiveTab === "properties") renderPropertiesTab(tabContent, node);
+  else if (inspectorActiveTab === "references") renderReferencesTab(tabContent, node);
+  else if (inspectorActiveTab === "documentation") renderDocumentationTab(tabContent, node);
+  else if (inspectorActiveTab === "history") renderHistoryTab(tabContent, node);
+  else if (inspectorActiveTab === "validation") renderValidationTab(tabContent, node);
   else renderCommentsTab(tabContent, node);
 }
 
-function renderInspectorTab(container, node) {
+function renderOverviewTab(container, node) {
   const parentNode = node.parent_id ? project.nodes[node.parent_id] : null;
   const infoTable = document.createElement("div");
   infoTable.className = "info-table";
   infoTable.appendChild(infoRow("Parent", infoStaticValue(parentNode ? parentNode.label : "— (root)")));
   infoTable.appendChild(infoRow("Children", infoStaticValue(String(node.children.length))));
+  infoTable.appendChild(infoRow("Level", infoStaticValue(String(node.level))));
   container.appendChild(infoTable);
 
   const btnRow = document.createElement("div");
@@ -1944,38 +1957,6 @@ function renderInspectorTab(container, node) {
     btnRow.appendChild(delBtn);
   }
   container.appendChild(btnRow);
-  container.appendChild(document.createElement("hr")).className = "inspector-divider";
-
-  const notesField = document.createElement("div");
-  notesField.className = "field";
-  const notesLabel = document.createElement("label");
-  notesLabel.textContent = "Description / Notes";
-  notesField.appendChild(notesLabel);
-  const textarea = document.createElement("textarea");
-  textarea.rows = 4;
-  textarea.placeholder = "Add notes…";
-  textarea.value = node.notes;
-  let notesTimer = null;
-  textarea.addEventListener("input", () => {
-    clearTimeout(notesTimer);
-    notesTimer = setTimeout(async () => {
-      await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: textarea.value }),
-      });
-      if (project.nodes[focusedNodeId]) project.nodes[focusedNodeId].notes = textarea.value;
-    }, 500);
-  });
-  notesField.appendChild(textarea);
-  container.appendChild(notesField);
-
-  for (const warning of computeWarnings(node)) {
-    const box = document.createElement("div");
-    box.className = "warning-box";
-    box.textContent = warning;
-    container.appendChild(box);
-  }
 }
 
 function infoClassificationValue(node) {
@@ -2079,15 +2060,28 @@ function renderPropertiesTab(container, node) {
   tagsField.appendChild(tagsWrap);
   tagsField.appendChild(tagInput);
   container.appendChild(tagsField);
+}
 
-  container.appendChild(document.createElement("hr")).className = "inspector-divider";
-
+function renderReferencesTab(container, node) {
   const touchingRefs = project.references.filter((r) => r.from === node.id || r.to === node.id);
   const subtreeIds = new Set(collectSubtreeIds(node.id));
   const outsideCount = touchingRefs.filter((r) => {
     const other = r.from === node.id ? r.to : r.from;
     return !subtreeIds.has(other);
   }).length;
+
+  const addRefBtn = document.createElement("button");
+  addRefBtn.className = "btn btn-small";
+  addRefBtn.textContent = "⇢ Add Reference Link";
+  addRefBtn.title = "Click two nodes on the canvas in sequence to link them with a reference/dependency";
+  addRefBtn.addEventListener("click", () => {
+    refMode = true;
+    pendingRefFrom = node.id;
+    addRefModeBtn.classList.add("active");
+    refModeBanner.hidden = false;
+    renderCanvas();
+  });
+  container.appendChild(addRefBtn);
 
   if (outsideCount > 0) {
     const badge = document.createElement("div");
@@ -2123,8 +2117,40 @@ function renderPropertiesTab(container, node) {
       refsField.appendChild(item);
     }
     container.appendChild(refsField);
-    container.appendChild(document.createElement("hr")).className = "inspector-divider";
+  } else {
+    const empty = document.createElement("p");
+    empty.className = "inspector-empty-note";
+    empty.textContent = "No reference links yet.";
+    container.appendChild(empty);
   }
+}
+
+function renderDocumentationTab(container, node) {
+  const notesField = document.createElement("div");
+  notesField.className = "field";
+  const notesLabel = document.createElement("label");
+  notesLabel.textContent = "Description / Notes";
+  notesField.appendChild(notesLabel);
+  const textarea = document.createElement("textarea");
+  textarea.rows = 6;
+  textarea.placeholder = "Add notes…";
+  textarea.value = node.notes;
+  let notesTimer = null;
+  textarea.addEventListener("input", () => {
+    clearTimeout(notesTimer);
+    notesTimer = setTimeout(async () => {
+      await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: textarea.value }),
+      });
+      if (project.nodes[focusedNodeId]) project.nodes[focusedNodeId].notes = textarea.value;
+    }, 500);
+  });
+  notesField.appendChild(textarea);
+  container.appendChild(notesField);
+
+  container.appendChild(document.createElement("hr")).className = "inspector-divider";
 
   const templateField = field("Templates");
   const saveTplBtn = document.createElement("button");
@@ -2230,4 +2256,96 @@ function renderCommentsTab(container, node) {
     }
   });
   container.appendChild(commentInput);
+}
+
+function renderHistoryTab(container, node) {
+  const note = document.createElement("p");
+  note.className = "inspector-empty-note";
+  note.textContent = "Changes across the project that mention this node's label.";
+  container.appendChild(note);
+
+  const entries = (project.activity_log || [])
+    .filter((entry) => entry.message.includes(node.label))
+    .slice()
+    .reverse();
+
+  if (entries.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "inspector-empty-note";
+    empty.textContent = "No recorded changes mention this node yet.";
+    container.appendChild(empty);
+    return;
+  }
+
+  for (const entry of entries) {
+    const row = document.createElement("div");
+    row.className = "history-row";
+    const meta = document.createElement("div");
+    meta.className = "comment-meta";
+    meta.textContent = formatDateTime(entry.timestamp);
+    const text = document.createElement("div");
+    text.className = "comment-text";
+    text.textContent = entry.message;
+    row.appendChild(meta);
+    row.appendChild(text);
+    container.appendChild(row);
+  }
+}
+
+function renderValidationTab(container, node) {
+  const warnings = computeWarnings(node);
+  if (warnings.length === 0) {
+    const ok = document.createElement("p");
+    ok.className = "inspector-empty-note";
+    ok.textContent = "No structural warnings for this node.";
+    container.appendChild(ok);
+  } else {
+    for (const warning of warnings) {
+      const box = document.createElement("div");
+      box.className = "warning-box";
+      box.textContent = warning;
+      container.appendChild(box);
+    }
+  }
+
+  container.appendChild(document.createElement("hr")).className = "inspector-divider";
+
+  if (!lastValidationReport) {
+    const runBtn = document.createElement("button");
+    runBtn.className = "btn btn-small";
+    runBtn.textContent = "Run Validation";
+    runBtn.title = "Scan the whole tree so project-wide issues can be cross-checked against this node";
+    runBtn.addEventListener("click", async () => {
+      await refreshHealthPanel();
+      renderInspector();
+    });
+    container.appendChild(runBtn);
+    return;
+  }
+
+  const report = lastValidationReport;
+  const flags = [];
+  if (report.duplicate_labels.includes(node.label)) flags.push("Duplicate label — another node shares this exact label.");
+  if (report.large_modules.includes(node.label)) flags.push("Large module — more than 10 direct children.");
+  if (report.single_child_nodes.includes(node.label)) flags.push("Single-child node — consider whether it needs its own level.");
+  if (report.circular_references.some((cycle) => cycle.includes(node.label))) {
+    flags.push("Part of a circular reference chain.");
+  }
+  if (!node.notes.trim()) flags.push("Missing description/notes.");
+
+  if (flags.length === 0) {
+    const ok = document.createElement("p");
+    ok.className = "inspector-empty-note";
+    ok.textContent = "No project-wide validation issues involve this node.";
+    container.appendChild(ok);
+  } else {
+    const field_ = field("Project-wide issues involving this node");
+    for (const flag of flags) {
+      const box = document.createElement("div");
+      box.className = "warning-box";
+      box.textContent = flag;
+      field_.appendChild(box);
+    }
+    container.appendChild(field_);
+  }
 }

@@ -894,16 +894,20 @@ button {
 
 .inspector-tabs {
   display: flex;
-  gap: 4px;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .inspector-tab {
   border: none;
   background: none;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
-  padding: 8px 10px 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 8px 8px 10px;
   cursor: pointer;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
@@ -1148,6 +1152,18 @@ hr.inspector-divider {
   font-size: 13px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.history-row {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 0;
+}
+
+.inspector-empty-note {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin-bottom: 10px;
 }
 
 /* ---------- Minimap ---------- */
