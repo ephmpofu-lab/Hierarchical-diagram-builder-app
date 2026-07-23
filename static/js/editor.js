@@ -137,6 +137,10 @@ const selClearBtn = document.getElementById("selClearBtn");
 const focusModeBtn = document.getElementById("focusModeBtn");
 const fullArchModeBtn = document.getElementById("fullArchModeBtn");
 const minimapSvg = document.getElementById("minimapSvg");
+const architectureModeBtn = document.getElementById("architectureModeBtn");
+const conceptModeBtn = document.getElementById("conceptModeBtn");
+const outlinePaneTitle = document.getElementById("outlinePaneTitle");
+const toolboxContent = document.getElementById("toolboxContent");
 const presentEnterBtn = document.getElementById("presentEnterBtn");
 const presentationBar = document.getElementById("presentationBar");
 const presentPrevLevelBtn = document.getElementById("presentPrevLevelBtn");
@@ -876,7 +880,9 @@ function renderCanvas() {
   const viewW = rect.width || 800;
   const viewH = rect.height || 500;
 
-  if (viewMode === "full") {
+  if (appMode === "concept") {
+    renderConceptCanvas(viewW, viewH);
+  } else if (viewMode === "full") {
     renderFullArchitectureCanvas(viewW, viewH);
   } else {
     renderFocusCanvas(viewW, viewH);
@@ -1095,6 +1101,397 @@ function renderFullArchitectureCanvas(viewW, viewH) {
       renderCanvas();
     }
   };
+}
+
+// ---------- Concept Mode: freeform planning board ----------
+// A physical-planning-board counterpart to the structured architecture tree. Objects are
+// freely positioned (not the deterministic grid the tree uses), dragged, resized, and
+// right-clicked for color/border/layer/convert actions — additive to the app, never
+// replacing the architecture view, which stays exactly as it was.
+let appMode = "architecture";
+let selectedConceptObjectId = null;
+let conceptDragState = null;
+
+const CONCEPT_DEFAULT_COLORS = {
+  rectangle: "#475569",
+  "rounded-rectangle": "#2563eb",
+  circle: "#0891b2",
+  diamond: "#f59e0b",
+  "sticky-note": "#fde68a",
+  text: "#f1f5f9",
+  arrow: "#64748b",
+  divider: "#64748b",
+  icon: "#8b5cf6",
+};
+
+function setAppMode(mode) {
+  if (appMode === mode) return;
+  appMode = mode;
+  architectureModeBtn.classList.toggle("active", mode === "architecture");
+  conceptModeBtn.classList.toggle("active", mode === "concept");
+  outlineTree.hidden = mode !== "architecture";
+  toolboxContent.hidden = mode !== "concept";
+  outlinePaneTitle.textContent = mode === "architecture" ? "Outline" : "Toolbox";
+  selectedConceptObjectId = null;
+  closeContextMenu();
+  renderCanvas();
+}
+architectureModeBtn.addEventListener("click", () => setAppMode("architecture"));
+conceptModeBtn.addEventListener("click", () => setAppMode("concept"));
+
+toolboxContent.addEventListener("click", (e) => {
+  const btn = e.target.closest(".toolbox-item");
+  if (!btn) return;
+  createConceptObject(btn.dataset.objType);
+});
+
+async function createConceptObject(type) {
+  const rect = canvasSvg.getBoundingClientRect();
+  const viewW = rect.width || 800;
+  const viewH = rect.height || 500;
+  const cx = viewW / 2 - panOffsetX / zoomScale;
+  const cy = viewH / 2 - panOffsetY / zoomScale;
+  const needsText = type === "text" || type === "sticky-note" || type === "icon";
+  const res = await fetch(`/api/projects/${projectId}/concept-objects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      type,
+      x: cx,
+      y: cy,
+      text: needsText ? (type === "icon" ? "★" : "Double-click to edit") : "",
+    }),
+  });
+  const obj = await res.json();
+  selectedConceptObjectId = obj.id;
+  await loadProject();
+}
+
+function renderConceptCanvas(viewW, viewH) {
+  const viewport = document.createElementNS(SVG_NS, "g");
+  viewport.setAttribute("class", "viewport-group" + (smoothZoomNextRender ? " smooth" : ""));
+  viewport.setAttribute(
+    "transform",
+    `translate(${viewW / 2 + panOffsetX} ${viewH / 2 + panOffsetY}) scale(${zoomScale}) translate(${-viewW / 2} ${-viewH / 2})`
+  );
+
+  const objectsGroup = document.createElementNS(SVG_NS, "g");
+  const sorted = [...project.concept_objects].sort((a, b) => a.z_index - b.z_index);
+  for (const obj of sorted) {
+    objectsGroup.appendChild(drawConceptObject(obj));
+  }
+  viewport.appendChild(objectsGroup);
+  canvasSvg.appendChild(viewport);
+
+  lastVisiblePositions = new Map();
+  lastViewW = viewW;
+  lastViewH = viewH;
+
+  canvasSvg.onclick = (e) => {
+    if (e.target === canvasSvg && selectedConceptObjectId) {
+      selectedConceptObjectId = null;
+      renderCanvas();
+    }
+  };
+}
+
+function drawConceptObject(obj) {
+  const group = document.createElementNS(SVG_NS, "g");
+  group.setAttribute("class", "concept-object" + (selectedConceptObjectId === obj.id ? " selected" : ""));
+  group.dataset.id = obj.id;
+
+  const color = obj.color || CONCEPT_DEFAULT_COLORS[obj.type] || "#64748b";
+  let shape;
+
+  if (obj.type === "circle") {
+    shape = document.createElementNS(SVG_NS, "ellipse");
+    shape.setAttribute("cx", obj.x + obj.width / 2);
+    shape.setAttribute("cy", obj.y + obj.height / 2);
+    shape.setAttribute("rx", obj.width / 2);
+    shape.setAttribute("ry", obj.height / 2);
+    shape.setAttribute("fill", "var(--surface)");
+    shape.setAttribute("stroke", color);
+  } else if (obj.type === "diamond") {
+    const cx = obj.x + obj.width / 2;
+    const cy = obj.y + obj.height / 2;
+    shape = document.createElementNS(SVG_NS, "polygon");
+    shape.setAttribute(
+      "points",
+      `${cx},${obj.y} ${obj.x + obj.width},${cy} ${cx},${obj.y + obj.height} ${obj.x},${cy}`
+    );
+    shape.setAttribute("fill", "var(--surface)");
+    shape.setAttribute("stroke", color);
+  } else if (obj.type === "divider") {
+    shape = document.createElementNS(SVG_NS, "line");
+    shape.setAttribute("x1", obj.x);
+    shape.setAttribute("y1", obj.y);
+    shape.setAttribute("x2", obj.x + obj.width);
+    shape.setAttribute("y2", obj.y);
+    shape.setAttribute("stroke", color);
+  } else if (obj.type === "arrow") {
+    shape = document.createElementNS(SVG_NS, "line");
+    shape.setAttribute("x1", obj.x);
+    shape.setAttribute("y1", obj.y);
+    shape.setAttribute("x2", obj.x + obj.width);
+    shape.setAttribute("y2", obj.y);
+    shape.setAttribute("stroke", color);
+    shape.setAttribute("marker-end", "url(#refArrow)");
+  } else if (obj.type === "text" || obj.type === "icon") {
+    shape = document.createElementNS(SVG_NS, "rect");
+    shape.setAttribute("x", obj.x);
+    shape.setAttribute("y", obj.y);
+    shape.setAttribute("width", obj.width);
+    shape.setAttribute("height", obj.height);
+    shape.setAttribute("fill", "transparent");
+    shape.style.stroke = "none";
+  } else {
+    shape = document.createElementNS(SVG_NS, "rect");
+    shape.setAttribute("x", obj.x);
+    shape.setAttribute("y", obj.y);
+    shape.setAttribute("width", obj.width);
+    shape.setAttribute("height", obj.height);
+    shape.setAttribute("rx", obj.type === "rounded-rectangle" ? 14 : obj.type === "sticky-note" ? 4 : 0);
+    shape.setAttribute("fill", obj.type === "sticky-note" ? color : "var(--surface)");
+    shape.setAttribute("stroke", obj.type === "sticky-note" ? "transparent" : color);
+  }
+  shape.setAttribute("class", "concept-shape");
+  if (obj.type !== "text" && obj.type !== "icon") {
+    shape.style.strokeWidth = obj.border_style === "none" ? 0 : 2;
+    if (obj.border_style === "dashed") shape.style.strokeDasharray = "6 4";
+  }
+  group.appendChild(shape);
+
+  if (obj.text && obj.type !== "divider" && obj.type !== "arrow") {
+    const textEl = document.createElementNS(SVG_NS, "text");
+    textEl.setAttribute("class", "concept-object-text" + (obj.type === "icon" ? " concept-icon-text" : ""));
+    textEl.setAttribute("x", obj.x + obj.width / 2);
+    textEl.setAttribute("y", obj.y + obj.height / 2);
+    const displayText = obj.text.length > 60 ? obj.text.slice(0, 59) + "…" : obj.text;
+    textEl.textContent = displayText;
+    if (obj.type === "sticky-note") textEl.style.fill = "#1f2937";
+    group.appendChild(textEl);
+  }
+
+  if (selectedConceptObjectId === obj.id) {
+    const handle = document.createElementNS(SVG_NS, "rect");
+    handle.setAttribute("class", "concept-resize-handle");
+    handle.setAttribute("x", obj.x + obj.width - 6);
+    handle.setAttribute("y", obj.y + obj.height - 6);
+    handle.setAttribute("width", 12);
+    handle.setAttribute("height", 12);
+    handle.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+      startConceptDrag(e, obj.id, "resize");
+    });
+    group.appendChild(handle);
+  }
+
+  group.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    selectedConceptObjectId = obj.id;
+    startConceptDrag(e, obj.id, "move");
+    renderCanvas();
+  });
+  group.addEventListener("dblclick", (e) => {
+    e.stopPropagation();
+    startConceptTextEdit(obj.id);
+  });
+  group.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    selectedConceptObjectId = obj.id;
+    openConceptObjectContextMenu(obj.id, e.clientX, e.clientY);
+  });
+
+  return group;
+}
+
+function startConceptDrag(e, objId, mode) {
+  const obj = project.concept_objects.find((o) => o.id === objId);
+  if (!obj) return;
+  conceptDragState = {
+    id: objId,
+    startClientX: e.clientX,
+    startClientY: e.clientY,
+    startX: obj.x,
+    startY: obj.y,
+    startW: obj.width,
+    startH: obj.height,
+  };
+
+  const onMove = (moveEvent) => {
+    if (!conceptDragState) return;
+    const dx = (moveEvent.clientX - conceptDragState.startClientX) / zoomScale;
+    const dy = (moveEvent.clientY - conceptDragState.startClientY) / zoomScale;
+    const liveObj = project.concept_objects.find((o) => o.id === conceptDragState.id);
+    if (!liveObj) return;
+    if (mode === "move") {
+      liveObj.x = conceptDragState.startX + dx;
+      liveObj.y = conceptDragState.startY + dy;
+    } else {
+      liveObj.width = Math.max(30, conceptDragState.startW + dx);
+      liveObj.height = Math.max(20, conceptDragState.startH + dy);
+    }
+    renderCanvas();
+  };
+  const onUp = async () => {
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+    const liveObj = project.concept_objects.find((o) => o.id === objId);
+    conceptDragState = null;
+    if (!liveObj) return;
+    await fetch(`/api/projects/${projectId}/concept-objects/${objId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ x: liveObj.x, y: liveObj.y, width: liveObj.width, height: liveObj.height }),
+    });
+  };
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
+}
+
+function startConceptTextEdit(objId) {
+  const obj = project.concept_objects.find((o) => o.id === objId);
+  if (!obj) return;
+  const svgRect = canvasSvg.getBoundingClientRect();
+  const localX = lastViewW / 2 + panOffsetX + zoomScale * (obj.x - lastViewW / 2);
+  const localY = lastViewH / 2 + panOffsetY + zoomScale * (obj.y - lastViewH / 2);
+
+  const textarea = document.createElement("textarea");
+  textarea.className = "concept-text-edit-overlay";
+  textarea.value = obj.text || "";
+  textarea.style.left = `${svgRect.left + localX}px`;
+  textarea.style.top = `${svgRect.top + localY}px`;
+  textarea.style.width = `${Math.max(60, obj.width * zoomScale)}px`;
+  textarea.style.height = `${Math.max(24, obj.height * zoomScale)}px`;
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  const commit = async () => {
+    textarea.removeEventListener("blur", commit);
+    if (textarea.parentNode) textarea.remove();
+    if (textarea.value !== obj.text) {
+      await fetch(`/api/projects/${projectId}/concept-objects/${objId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: textarea.value }),
+      });
+      await loadProject();
+    }
+  };
+  textarea.addEventListener("blur", commit);
+  textarea.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      textarea.removeEventListener("blur", commit);
+      textarea.remove();
+    } else if (e.key === "Enter" && !e.shiftKey && obj.type !== "sticky-note" && obj.type !== "text") {
+      e.preventDefault();
+      textarea.blur();
+    }
+  });
+}
+
+function openConceptObjectContextMenu(objId, clientX, clientY) {
+  closeContextMenu();
+  const obj = project.concept_objects.find((o) => o.id === objId);
+  if (!obj) return;
+
+  const menu = document.createElement("div");
+  menu.className = "context-menu";
+
+  menu.appendChild(
+    contextMenuItem("🎨 Change Color", () => {
+      const colorInput = document.createElement("input");
+      colorInput.type = "color";
+      colorInput.value = obj.color || CONCEPT_DEFAULT_COLORS[obj.type] || "#64748b";
+      colorInput.style.position = "fixed";
+      colorInput.style.left = "-9999px";
+      document.body.appendChild(colorInput);
+      colorInput.addEventListener("change", async () => {
+        await fetch(`/api/projects/${projectId}/concept-objects/${objId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ color: colorInput.value }),
+        });
+        colorInput.remove();
+        await loadProject();
+      });
+      colorInput.click();
+    })
+  );
+  menu.appendChild(
+    contextMenuSubmenu("▭ Border Style", ["Solid", "Dashed", "None"], async (opt) => {
+      await fetch(`/api/projects/${projectId}/concept-objects/${objId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ border_style: opt.toLowerCase() }),
+      });
+      await loadProject();
+    })
+  );
+  menu.appendChild(
+    contextMenuItem("✎ Edit Text", () => startConceptTextEdit(objId))
+  );
+  menu.appendChild(
+    contextMenuItem("⧉ Duplicate", async () => {
+      const res = await fetch(`/api/projects/${projectId}/concept-objects/${objId}/duplicate`, { method: "POST" });
+      const newObj = await res.json();
+      selectedConceptObjectId = newObj.id;
+      await loadProject();
+    })
+  );
+
+  menu.appendChild(contextMenuSeparator());
+
+  menu.appendChild(
+    contextMenuItem("⬆ Bring to Front", async () => {
+      await fetch(`/api/projects/${projectId}/concept-objects/${objId}/bring-to-front`, { method: "POST" });
+      await loadProject();
+    })
+  );
+  menu.appendChild(
+    contextMenuItem("⬇ Send to Back", async () => {
+      await fetch(`/api/projects/${projectId}/concept-objects/${objId}/send-to-back`, { method: "POST" });
+      await loadProject();
+    })
+  );
+
+  menu.appendChild(contextMenuSeparator());
+
+  menu.appendChild(
+    contextMenuItem("→ Convert to Architecture Component", async () => {
+      const parentId = (project.nodes[focusedNodeId] && focusedNodeId) || rootId;
+      const res = await fetch(`/api/projects/${projectId}/concept-objects/${objId}/convert-to-node`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parent_id: parentId }),
+      });
+      const node = await res.json();
+      await loadProject();
+      setAppMode("architecture");
+      focusNode(node.id);
+    })
+  );
+
+  menu.appendChild(
+    contextMenuItem("🗑 Delete", () => {
+      fetch(`/api/projects/${projectId}/concept-objects/${objId}`, { method: "DELETE" }).then(async () => {
+        if (selectedConceptObjectId === objId) selectedConceptObjectId = null;
+        await loadProject();
+      });
+    }, { danger: true })
+  );
+
+  menu.style.left = `${clientX}px`;
+  menu.style.top = `${clientY}px`;
+  document.body.appendChild(menu);
+  openContextMenuEl = menu;
+
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) menu.style.left = `${Math.max(4, window.innerWidth - rect.width - 4)}px`;
+  if (rect.bottom > window.innerHeight) menu.style.top = `${Math.max(4, window.innerHeight - rect.height - 4)}px`;
 }
 
 function drawShowMoreAffordance(x, y, hiddenCount) {
@@ -1997,6 +2394,16 @@ function openContextMenu(nodeId, clientX, clientY) {
     }, { disabled: isRoot })
   );
   menu.appendChild(contextMenuItem("▤ Add Group", () => addGroupUnder(nodeId)));
+  menu.appendChild(
+    contextMenuItem("→ Convert to Planning Object", async () => {
+      const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/convert-to-object`, { method: "POST" });
+      const obj = await res.json();
+      await loadProject();
+      setAppMode("concept");
+      selectedConceptObjectId = obj.id;
+      renderCanvas();
+    })
+  );
   menu.appendChild(
     contextMenuItem("✎ Rename", () => {
       const label = prompt("Rename node:", node.label);

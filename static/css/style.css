@@ -291,6 +291,48 @@ button {
   margin-top: 4px;
 }
 
+.canvas-svg .concept-object .concept-shape {
+  cursor: move;
+}
+
+.canvas-svg .concept-object.selected .concept-shape {
+  stroke: var(--accent) !important;
+  stroke-width: 2.5 !important;
+}
+
+.canvas-svg .concept-object-text {
+  font-size: 13px;
+  fill: var(--text);
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
+.canvas-svg .concept-icon-text {
+  font-size: 28px;
+}
+
+.canvas-svg .concept-resize-handle {
+  fill: var(--accent);
+  stroke: var(--surface);
+  stroke-width: 1.5;
+  cursor: nwse-resize;
+}
+
+.concept-text-edit-overlay {
+  position: fixed;
+  z-index: 170;
+  font: inherit;
+  font-size: 13px;
+  padding: 6px;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  resize: none;
+}
+
 .node-hover-tooltip {
   position: fixed;
   z-index: 150;
@@ -594,7 +636,8 @@ button {
   margin: 4px 0;
 }
 
-.view-mode-toggle {
+.view-mode-toggle,
+.app-mode-toggle {
   display: flex;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -602,13 +645,58 @@ button {
   margin-right: 4px;
 }
 
-.view-mode-toggle .btn {
+.view-mode-toggle .btn,
+.app-mode-toggle .btn {
   border: none;
   border-radius: 0;
 }
 
-.view-mode-toggle .btn + .btn {
+.view-mode-toggle .btn + .btn,
+.app-mode-toggle .btn + .btn {
   border-left: 1px solid var(--border);
+}
+
+#conceptModeBtn.active,
+#architectureModeBtn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.toolbox-content {
+  padding: 8px 12px;
+}
+
+.toolbox-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.toolbox-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 6px;
+  font-size: 20px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.toolbox-item:hover {
+  background: var(--surface-hover);
+  border-color: var(--accent);
+}
+
+.toolbox-item span {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 #focusModeBtn.active,
