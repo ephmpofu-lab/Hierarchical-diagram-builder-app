@@ -322,6 +322,11 @@ def update_reference(
     to_id: Optional[str],
     label: Optional[str],
     reference_type: Optional[str] = None,
+    custom_color: Optional[str] = None,
+    thickness: Optional[str] = None,
+    direction: Optional[str] = None,
+    animated: Optional[bool] = None,
+    connector_hidden: Optional[bool] = None,
 ) -> Reference:
     ref = next((r for r in project.references if r.id == reference_id), None)
     if ref is None:
@@ -336,6 +341,16 @@ def update_reference(
     ref.to = new_to
     if label is not None:
         ref.label = label
+    if custom_color is not None:
+        ref.custom_color = custom_color or None
+    if thickness is not None:
+        ref.thickness = thickness or None
+    if direction is not None:
+        ref.direction = direction or None
+    if animated is not None:
+        ref.animated = animated
+    if connector_hidden is not None:
+        ref.connector_hidden = connector_hidden
     if reference_type is not None:
         ref.reference_type = reference_type or None
     return ref

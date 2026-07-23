@@ -40,6 +40,11 @@ class Reference(BaseModel):
     to: str
     label: Optional[str] = None
     reference_type: Optional[str] = None  # None | "Dependency" | "Warning" | "Broken"
+    custom_color: Optional[str] = None
+    thickness: Optional[str] = None  # "Thin" | "Normal" | "Thick"
+    direction: Optional[str] = None  # "Forward" | "Backward" | "Both"
+    animated: bool = False
+    connector_hidden: bool = False
 
     model_config = {"populate_by_name": True}
 
@@ -57,6 +62,12 @@ class ReferenceUpdate(BaseModel):
     from_: Optional[str] = Field(default=None, alias="from")
     to: Optional[str] = None
     label: Optional[str] = None
+    reference_type: Optional[str] = None
+    custom_color: Optional[str] = None
+    thickness: Optional[str] = None
+    direction: Optional[str] = None
+    animated: Optional[bool] = None
+    connector_hidden: Optional[bool] = None
     reference_type: Optional[str] = None
 
     model_config = {"populate_by_name": True}

@@ -223,6 +223,74 @@ button {
   background: var(--surface-hover);
 }
 
+.connector-panel {
+  position: fixed;
+  z-index: 160;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  padding: 12px;
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.connector-panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.connector-panel-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.connector-panel-row label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.connector-panel-row select,
+.connector-panel-input {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+
+.connector-panel-color-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.connector-panel-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.connector-panel-close {
+  align-self: flex-end;
+  margin-top: 4px;
+}
+
 .node-hover-tooltip {
   position: fixed;
   z-index: 150;

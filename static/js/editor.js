@@ -626,6 +626,7 @@ document.addEventListener("keydown", async (e) => {
   }
   if (e.key === "Escape" && selectedEdgeKey) {
     selectedEdgeKey = null;
+    closeConnectorPanel();
     renderCanvas();
     return;
   }
@@ -926,6 +927,7 @@ function renderFocusCanvas(viewW, viewH) {
   if (showDependencies) {
     const tagCounters = new Map();
     for (const ref of project.references) {
+      if (ref.connector_hidden) continue;
       // Only draw references touching the focused node itself — otherwise a node with many
       // children each carrying their own unrelated reference links turns into a wall of lines.
       if (ref.from !== focus.id && ref.to !== focus.id) continue;
@@ -934,7 +936,7 @@ function renderFocusCanvas(viewW, viewH) {
       if (fromVisible && toVisible) {
         const fromPos = positions.get(ref.from);
         const toPos = positions.get(ref.to);
-        refGroup.appendChild(drawRefEdge(fromPos, toPos, ref.from, ref.to, ref.id, ref.reference_type));
+        refGroup.appendChild(drawRefEdge(fromPos, toPos, ref));
         if (selectedEdgeKey === edgeKey("ref", ref.id)) {
           refGroup.appendChild(drawRefHandle(fromPos, ref, "from"));
           refGroup.appendChild(drawRefHandle(toPos, ref, "to"));
@@ -981,6 +983,7 @@ function renderFocusCanvas(viewW, viewH) {
   canvasSvg.onclick = (e) => {
     if (e.target === canvasSvg && selectedEdgeKey) {
       selectedEdgeKey = null;
+      closeConnectorPanel();
       renderCanvas();
     }
   };
@@ -1088,6 +1091,7 @@ function renderFullArchitectureCanvas(viewW, viewH) {
   canvasSvg.onclick = (e) => {
     if (e.target === canvasSvg && selectedEdgeKey) {
       selectedEdgeKey = null;
+      closeConnectorPanel();
       renderCanvas();
     }
   };
@@ -1255,6 +1259,7 @@ function drawTreeHandle(pos, childId, fixedPos) {
         return;
       }
       selectedEdgeKey = null;
+      closeConnectorPanel();
       await focusNode(childId);
     });
   });
@@ -1280,25 +1285,32 @@ function buildRefArrowDefs() {
 }
 
 const REF_TYPE_CLASS = { Dependency: "type-dependency", Warning: "type-warning", Broken: "type-broken" };
+const REF_THICKNESS_WIDTH = { Thin: 1, Normal: 1.5, Thick: 2.5 };
 
-function drawRefEdge(from, to, fromId, toId, refId, referenceType) {
+function drawRefEdge(from, to, ref) {
   const group = document.createElementNS(SVG_NS, "g");
-  const key = edgeKey("ref", refId);
+  const key = edgeKey("ref", ref.id);
 
   const hitPath = document.createElementNS(SVG_NS, "path");
   hitPath.setAttribute("class", "edge-hit");
   hitPath.setAttribute("d", curvePath(from, to));
 
-  const typeClass = REF_TYPE_CLASS[referenceType] || "";
+  const typeClass = REF_TYPE_CLASS[ref.reference_type] || "";
   const line = document.createElementNS(SVG_NS, "path");
   line.setAttribute(
     "class",
     "ref-edge" + (typeClass ? ` ${typeClass}` : "") + (selectedEdgeKey === key ? " selected" : "")
   );
   line.setAttribute("d", curvePath(from, to));
-  line.setAttribute("marker-end", "url(#refArrow)");
-  group.dataset.fromId = fromId;
-  group.dataset.toId = toId;
+  line.style.strokeWidth = REF_THICKNESS_WIDTH[ref.thickness] || REF_THICKNESS_WIDTH.Normal;
+  if (ref.custom_color) line.style.stroke = ref.custom_color;
+  const direction = ref.direction || "Forward";
+  // #refArrow uses orient="auto-start-reverse", so the same marker definition flips
+  // correctly whether it's attached as marker-start or marker-end.
+  if (direction === "Forward" || direction === "Both") line.setAttribute("marker-end", "url(#refArrow)");
+  if (direction === "Backward" || direction === "Both") line.setAttribute("marker-start", "url(#refArrow)");
+  group.dataset.fromId = ref.from;
+  group.dataset.toId = ref.to;
   group.dataset.x1 = from.x;
   group.dataset.y1 = from.y;
   group.dataset.x2 = to.x;
@@ -1307,15 +1319,16 @@ function drawRefEdge(from, to, fromId, toId, refId, referenceType) {
   group.appendChild(hitPath);
   group.appendChild(line);
 
-  if (animateDataFlow) {
+  if (animateDataFlow || ref.animated) {
     const particleColor =
-      referenceType === "Dependency"
+      ref.custom_color ||
+      (ref.reference_type === "Dependency"
         ? "var(--success-text)"
-        : referenceType === "Warning"
+        : ref.reference_type === "Warning"
         ? "var(--warning-text)"
-        : referenceType === "Broken"
+        : ref.reference_type === "Broken"
         ? "var(--danger-text)"
-        : "var(--text-muted)";
+        : "var(--text-muted)");
     const particle = document.createElementNS(SVG_NS, "circle");
     particle.setAttribute("class", "flow-particle");
     particle.setAttribute("r", 2.5);
@@ -1330,11 +1343,176 @@ function drawRefEdge(from, to, fromId, toId, refId, referenceType) {
 
   group.addEventListener("click", (e) => {
     e.stopPropagation();
-    selectedEdgeKey = selectedEdgeKey === key ? null : key;
+    if (selectedEdgeKey === key) {
+      selectedEdgeKey = null;
+      closeConnectorPanel();
+    } else {
+      selectedEdgeKey = key;
+      showConnectorPropertiesPanel(ref.id, e.clientX, e.clientY);
+    }
     renderCanvas();
   });
 
   return group;
+}
+
+// ---------- Connector properties panel ----------
+// Selecting a reference edge opens a small floating panel so connectors stop being passive
+// graphics: type, description, color, direction, thickness, per-connector animation, and
+// visibility are all editable right from the canvas, not buried in a modal elsewhere.
+let connectorPanelEl = null;
+let connectorPanelPos = null;
+
+function closeConnectorPanel() {
+  if (connectorPanelEl) {
+    connectorPanelEl.remove();
+    connectorPanelEl = null;
+  }
+  connectorPanelPos = null;
+}
+
+async function updateConnector(refId, payload) {
+  await fetch(`/api/projects/${projectId}/references/${refId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await loadProject();
+  if (connectorPanelPos && selectedEdgeKey === edgeKey("ref", refId)) {
+    showConnectorPropertiesPanel(refId, connectorPanelPos.x, connectorPanelPos.y);
+  }
+}
+
+function connectorPanelField(labelText, inputEl) {
+  const row = document.createElement("div");
+  row.className = "connector-panel-row";
+  const l = document.createElement("label");
+  l.textContent = labelText;
+  row.appendChild(l);
+  row.appendChild(inputEl);
+  return row;
+}
+
+function showConnectorPropertiesPanel(refId, clientX, clientY) {
+  closeConnectorPanel();
+  const ref = project.references.find((r) => r.id === refId);
+  if (!ref) return;
+  connectorPanelPos = { x: clientX, y: clientY };
+
+  const panel = document.createElement("div");
+  panel.className = "connector-panel";
+
+  const title = document.createElement("div");
+  title.className = "connector-panel-title";
+  const fromNode = project.nodes[ref.from];
+  const toNode = project.nodes[ref.to];
+  title.textContent = `${fromNode ? fromNode.label : "?"} → ${toNode ? toNode.label : "?"}`;
+  panel.appendChild(title);
+
+  const typeSelect = document.createElement("select");
+  for (const opt of ["", "Dependency", "Warning", "Broken"]) {
+    const o = document.createElement("option");
+    o.value = opt;
+    o.textContent = opt || "Reference";
+    if ((ref.reference_type || "") === opt) o.selected = true;
+    typeSelect.appendChild(o);
+  }
+  typeSelect.addEventListener("change", () => updateConnector(refId, { reference_type: typeSelect.value }));
+  panel.appendChild(connectorPanelField("Type", typeSelect));
+
+  const descInput = document.createElement("input");
+  descInput.type = "text";
+  descInput.className = "connector-panel-input";
+  descInput.value = ref.label || "";
+  descInput.placeholder = "Description";
+  descInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") descInput.blur();
+  });
+  descInput.addEventListener("blur", () => {
+    if (descInput.value !== (ref.label || "")) updateConnector(refId, { label: descInput.value });
+  });
+  panel.appendChild(connectorPanelField("Description", descInput));
+
+  const colorWrap = document.createElement("div");
+  colorWrap.className = "connector-panel-color-wrap";
+  const colorInput = document.createElement("input");
+  colorInput.type = "color";
+  colorInput.className = "color-swatch-input";
+  colorInput.value = ref.custom_color || "#64748b";
+  colorInput.addEventListener("change", () => updateConnector(refId, { custom_color: colorInput.value }));
+  colorWrap.appendChild(colorInput);
+  if (ref.custom_color) {
+    const resetBtn = document.createElement("button");
+    resetBtn.className = "btn btn-small";
+    resetBtn.textContent = "Reset";
+    resetBtn.title = "Remove the color override and fall back to the relationship type color";
+    resetBtn.addEventListener("click", () => updateConnector(refId, { custom_color: "" }));
+    colorWrap.appendChild(resetBtn);
+  }
+  panel.appendChild(connectorPanelField("Color", colorWrap));
+
+  const directionSelect = document.createElement("select");
+  for (const opt of ["Forward", "Backward", "Both"]) {
+    const o = document.createElement("option");
+    o.value = opt;
+    o.textContent = opt;
+    if ((ref.direction || "Forward") === opt) o.selected = true;
+    directionSelect.appendChild(o);
+  }
+  directionSelect.addEventListener("change", () => updateConnector(refId, { direction: directionSelect.value }));
+  panel.appendChild(connectorPanelField("Direction", directionSelect));
+
+  const thicknessSelect = document.createElement("select");
+  for (const opt of ["Thin", "Normal", "Thick"]) {
+    const o = document.createElement("option");
+    o.value = opt;
+    o.textContent = opt;
+    if ((ref.thickness || "Normal") === opt) o.selected = true;
+    thicknessSelect.appendChild(o);
+  }
+  thicknessSelect.addEventListener("change", () => updateConnector(refId, { thickness: thicknessSelect.value }));
+  panel.appendChild(connectorPanelField("Thickness", thicknessSelect));
+
+  const animatedLabel = document.createElement("label");
+  animatedLabel.className = "connector-panel-checkbox-row";
+  const animatedCheckbox = document.createElement("input");
+  animatedCheckbox.type = "checkbox";
+  animatedCheckbox.checked = !!ref.animated;
+  animatedCheckbox.addEventListener("change", () => updateConnector(refId, { animated: animatedCheckbox.checked }));
+  animatedLabel.appendChild(animatedCheckbox);
+  animatedLabel.appendChild(document.createTextNode(" Animate this connector"));
+  panel.appendChild(animatedLabel);
+
+  const visibleLabel = document.createElement("label");
+  visibleLabel.className = "connector-panel-checkbox-row";
+  const visibleCheckbox = document.createElement("input");
+  visibleCheckbox.type = "checkbox";
+  visibleCheckbox.checked = !ref.connector_hidden;
+  visibleCheckbox.addEventListener("change", () =>
+    updateConnector(refId, { connector_hidden: !visibleCheckbox.checked })
+  );
+  visibleLabel.appendChild(visibleCheckbox);
+  visibleLabel.appendChild(document.createTextNode(" Visible"));
+  panel.appendChild(visibleLabel);
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "btn btn-small connector-panel-close";
+  closeBtn.textContent = "Close";
+  closeBtn.addEventListener("click", () => {
+    selectedEdgeKey = null;
+    closeConnectorPanel();
+    renderCanvas();
+  });
+  panel.appendChild(closeBtn);
+
+  panel.style.left = `${clientX}px`;
+  panel.style.top = `${clientY}px`;
+  document.body.appendChild(panel);
+  connectorPanelEl = panel;
+
+  const rect = panel.getBoundingClientRect();
+  if (rect.right > window.innerWidth) panel.style.left = `${Math.max(4, window.innerWidth - rect.width - 4)}px`;
+  if (rect.bottom > window.innerHeight) panel.style.top = `${Math.max(4, window.innerHeight - rect.height - 4)}px`;
 }
 
 function drawRefHandle(pos, ref, endpoint) {

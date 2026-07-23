@@ -288,7 +288,19 @@ def api_add_reference(project_id: str, body: ReferenceCreate):
 @router.put("/projects/{project_id}/references/{reference_id}", response_model=Reference)
 def api_update_reference(project_id: str, reference_id: str, body: ReferenceUpdate):
     project = storage.load_project(project_id)
-    ref = tree.update_reference(project, reference_id, body.from_, body.to, body.label, body.reference_type)
+    ref = tree.update_reference(
+        project,
+        reference_id,
+        body.from_,
+        body.to,
+        body.label,
+        body.reference_type,
+        body.custom_color,
+        body.thickness,
+        body.direction,
+        body.animated,
+        body.connector_hidden,
+    )
     tree.log_activity(
         project, f"Relinked reference to '{project.nodes[ref.from_].label}' -> '{project.nodes[ref.to].label}'"
     )
