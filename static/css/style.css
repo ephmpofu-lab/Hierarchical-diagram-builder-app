@@ -222,6 +222,54 @@ button {
   background: var(--surface-hover);
 }
 
+.node-hover-tooltip {
+  position: fixed;
+  z-index: 150;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  padding: 10px 12px;
+  max-width: 280px;
+  pointer-events: none;
+}
+
+.node-hover-tooltip .hover-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.node-hover-tooltip .hover-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.node-hover-tooltip .hover-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.node-hover-tooltip .hover-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.node-hover-tooltip .hover-row span {
+  color: var(--text-muted);
+}
+
+.node-hover-tooltip .hover-row strong {
+  color: var(--text);
+  text-align: right;
+}
+
 .context-menu {
   position: fixed;
   background: var(--surface);

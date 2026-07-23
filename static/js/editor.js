@@ -746,6 +746,7 @@ function computeCanvasLayout(viewW, viewH) {
 }
 
 function renderCanvas() {
+  hideNodeHoverTooltip();
   canvasSvg.innerHTML = "";
   canvasSvg.classList.toggle("ref-mode-active", refMode);
   canvasSvg.appendChild(buildRefArrowDefs());
@@ -1415,7 +1416,102 @@ function drawNode(node, pos, faded = false) {
     openContextMenu(node.id, e.clientX, e.clientY);
   });
 
+  group.addEventListener("mouseenter", (e) => {
+    if (refMode) return;
+    showNodeHoverTooltip(node, e.clientX, e.clientY);
+  });
+  group.addEventListener("mousemove", (e) => {
+    if (refMode) return;
+    positionHoverTooltip(e.clientX, e.clientY);
+  });
+  group.addEventListener("mouseleave", hideNodeHoverTooltip);
+
   return group;
+}
+
+// ---------- Node hover tooltip ----------
+// A rich hover popover so users can scan a node's key facts without clicking into the
+// Inspector — distinct from the title= tooltips on toolbar chrome.
+let hoverTooltipEl = null;
+
+function ensureHoverTooltip() {
+  if (!hoverTooltipEl) {
+    hoverTooltipEl = document.createElement("div");
+    hoverTooltipEl.className = "node-hover-tooltip";
+    hoverTooltipEl.hidden = true;
+    document.body.appendChild(hoverTooltipEl);
+  }
+  return hoverTooltipEl;
+}
+
+function hoverField(label, value) {
+  const row = document.createElement("div");
+  row.className = "hover-row";
+  const l = document.createElement("span");
+  l.textContent = label;
+  const v = document.createElement("strong");
+  v.textContent = value;
+  row.appendChild(l);
+  row.appendChild(v);
+  return row;
+}
+
+function showNodeHoverTooltip(node, clientX, clientY) {
+  const el = ensureHoverTooltip();
+  el.innerHTML = "";
+
+  const title = document.createElement("div");
+  title.className = "hover-title";
+  title.textContent = node.label;
+  el.appendChild(title);
+
+  if (node.notes.trim()) {
+    const desc = document.createElement("div");
+    desc.className = "hover-desc";
+    desc.textContent = node.notes.length > 140 ? node.notes.slice(0, 139) + "…" : node.notes;
+    el.appendChild(desc);
+  }
+
+  const fields = document.createElement("div");
+  fields.className = "hover-fields";
+  if (node.node_type) fields.appendChild(hoverField("Type", node.node_type));
+  if (node.classification) {
+    fields.appendChild(hoverField("Classification", `${CLASSIFICATION_ICONS[node.classification] || ""} ${node.classification}`));
+  }
+  if (node.status) fields.appendChild(hoverField("Status", node.status));
+  if (node.planning_status) {
+    fields.appendChild(hoverField("Planning", `${PLANNING_STATUS_ICONS[node.planning_status]} ${node.planning_status}`));
+  }
+  if (node.owner) fields.appendChild(hoverField("Owner", node.owner));
+  if (node.priority) fields.appendChild(hoverField("Priority", node.priority));
+  if (node.risk_level) fields.appendChild(hoverField("Risk", node.risk_level));
+  const stats = progressCache.get(node.id);
+  if (stats && stats.total > 0) {
+    fields.appendChild(hoverField("Completion", `${stats.completed} / ${stats.total} (${stats.percent}%)`));
+  }
+  fields.appendChild(hoverField("Children", String(node.children.length)));
+  const touchingRefs = project.references.filter((r) => r.from === node.id || r.to === node.id).length;
+  if (touchingRefs > 0) fields.appendChild(hoverField("References", String(touchingRefs)));
+  el.appendChild(fields);
+
+  el.hidden = false;
+  positionHoverTooltip(clientX, clientY);
+}
+
+function positionHoverTooltip(clientX, clientY) {
+  if (!hoverTooltipEl || hoverTooltipEl.hidden) return;
+  const offset = 16;
+  const rect = hoverTooltipEl.getBoundingClientRect();
+  let left = clientX + offset;
+  let top = clientY + offset;
+  if (left + rect.width > window.innerWidth) left = clientX - rect.width - offset;
+  if (top + rect.height > window.innerHeight) top = clientY - rect.height - offset;
+  hoverTooltipEl.style.left = `${Math.max(4, left)}px`;
+  hoverTooltipEl.style.top = `${Math.max(4, top)}px`;
+}
+
+function hideNodeHoverTooltip() {
+  if (hoverTooltipEl) hoverTooltipEl.hidden = true;
 }
 
 // ---------- Context menu ----------
