@@ -4,6 +4,7 @@ const projectId = params.get("project");
 const CLASSIFICATIONS = [
   "AI Agent", "Workflow", "Database", "API", "UI", "Decision", "Configuration",
   "Storage", "Queue", "Security", "Validation", "Service", "Monitoring", "Infrastructure",
+  "Engine", "Pipeline", "Module", "Strategy",
 ];
 const CLASSIFICATION_COLORS = {
   "AI Agent": "#8b5cf6",
@@ -20,6 +21,10 @@ const CLASSIFICATION_COLORS = {
   Service: "#0ea5e9",
   Monitoring: "#ea580c",
   Infrastructure: "#475569",
+  Engine: "#0d9488",
+  Pipeline: "#059669",
+  Module: "#92400e",
+  Strategy: "#c026d3",
 };
 const CLASSIFICATION_BADGES = {
   "AI Agent": "AI",
@@ -36,6 +41,10 @@ const CLASSIFICATION_BADGES = {
   Service: "SVC",
   Monitoring: "MON",
   Infrastructure: "INF",
+  Engine: "ENG",
+  Pipeline: "PIPE",
+  Module: "MOD",
+  Strategy: "STR",
 };
 const CLASSIFICATION_ICONS = {
   "AI Agent": "🤖",
@@ -52,6 +61,10 @@ const CLASSIFICATION_ICONS = {
   Service: "⚡",
   Monitoring: "📊",
   Infrastructure: "🏗",
+  Engine: "🎛",
+  Pipeline: "🔀",
+  Module: "🧩",
+  Strategy: "🎯",
 };
 
 // Planning status is distinct from the freeform `status` field (Planned/In Development/
