@@ -640,10 +640,14 @@ document.addEventListener("keydown", async (e) => {
   }
   if (!typingGlobal && appMode === "concept" && e.key === "Delete" && selectedConceptObjectId) {
     const objId = selectedConceptObjectId;
+    pushUndoSnapshot("Delete");
     const res = await fetch(`/api/projects/${projectId}/concept-objects/${objId}`, { method: "DELETE" });
     if (res.ok) {
       selectedConceptObjectId = null;
       await loadProject();
+    } else {
+      undoStack.pop();
+      updateUndoRedoButtons();
     }
     return;
   }
@@ -1194,6 +1198,7 @@ toolboxContent.addEventListener("click", (e) => {
 });
 
 async function createConceptObject(type) {
+  pushUndoSnapshot("Add Content");
   const rect = canvasSvg.getBoundingClientRect();
   const viewW = rect.width || 800;
   const viewH = rect.height || 500;
@@ -1217,6 +1222,7 @@ async function createConceptObject(type) {
 
 async function pasteConceptObject(clientX, clientY) {
   if (!conceptClipboard) return;
+  pushUndoSnapshot("Paste");
   const svgRect = canvasSvg.getBoundingClientRect();
   const viewW = svgRect.width || 800;
   const viewH = svgRect.height || 500;
@@ -1421,6 +1427,7 @@ function drawConceptObject(obj) {
 function startConceptDrag(e, objId, mode) {
   const obj = project.concept_objects.find((o) => o.id === objId);
   if (!obj || obj.locked) return;
+  pushUndoSnapshot(mode === "resize" ? "Resize" : "Move");
   conceptDragState = {
     id: objId,
     startClientX: e.clientX,
@@ -1450,8 +1457,19 @@ function startConceptDrag(e, objId, mode) {
     document.removeEventListener("mousemove", onMove);
     document.removeEventListener("mouseup", onUp);
     const liveObj = project.concept_objects.find((o) => o.id === objId);
+    const dragState = conceptDragState;
     conceptDragState = null;
-    if (!liveObj) return;
+    if (!liveObj || !dragState) return;
+    const unchanged =
+      liveObj.x === dragState.startX &&
+      liveObj.y === dragState.startY &&
+      liveObj.width === dragState.startW &&
+      liveObj.height === dragState.startH;
+    if (unchanged) {
+      undoStack.pop();
+      updateUndoRedoButtons();
+      return;
+    }
     await fetch(`/api/projects/${projectId}/concept-objects/${objId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -1484,6 +1502,7 @@ function startConceptTextEdit(objId) {
     textarea.removeEventListener("blur", commit);
     if (textarea.parentNode) textarea.remove();
     if (textarea.value !== obj.text) {
+      pushUndoSnapshot("Edit Text");
       await fetch(`/api/projects/${projectId}/concept-objects/${objId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -1521,6 +1540,7 @@ function openConceptObjectContextMenu(objId, clientX, clientY) {
       colorInput.style.left = "-9999px";
       document.body.appendChild(colorInput);
       colorInput.addEventListener("change", async () => {
+        pushUndoSnapshot("Change Color");
         await fetch(`/api/projects/${projectId}/concept-objects/${objId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -1534,6 +1554,7 @@ function openConceptObjectContextMenu(objId, clientX, clientY) {
   );
   menu.appendChild(
     contextMenuSubmenu("▭ Border Style", ["Solid", "Dashed", "None"], async (opt) => {
+      pushUndoSnapshot("Change Border Style");
       await fetch(`/api/projects/${projectId}/concept-objects/${objId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -1547,6 +1568,7 @@ function openConceptObjectContextMenu(objId, clientX, clientY) {
   );
   menu.appendChild(
     contextMenuItem("⧉ Duplicate", async () => {
+      pushUndoSnapshot("Duplicate");
       const res = await fetch(`/api/projects/${projectId}/concept-objects/${objId}/duplicate`, { method: "POST" });
       const newObj = await res.json();
       selectedConceptObjectId = newObj.id;
@@ -1560,6 +1582,7 @@ function openConceptObjectContextMenu(objId, clientX, clientY) {
   );
   menu.appendChild(
     contextMenuItem(obj.locked ? "🔓 Unlock" : "🔒 Lock", async () => {
+      pushUndoSnapshot(obj.locked ? "Unlock" : "Lock");
       await fetch(`/api/projects/${projectId}/concept-objects/${objId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -1573,6 +1596,7 @@ function openConceptObjectContextMenu(objId, clientX, clientY) {
 
   menu.appendChild(
     contextMenuSubmenu("▤ Organize", ["Bring to Front", "Send to Back"], async (opt) => {
+      pushUndoSnapshot(opt);
       const endpoint = opt === "Bring to Front" ? "bring-to-front" : "send-to-back";
       await fetch(`/api/projects/${projectId}/concept-objects/${objId}/${endpoint}`, { method: "POST" });
       await loadProject();
@@ -1583,6 +1607,7 @@ function openConceptObjectContextMenu(objId, clientX, clientY) {
 
   menu.appendChild(
     contextMenuItem("→ Convert to Architecture Component", async () => {
+      pushUndoSnapshot("Convert to Architecture Component");
       const parentId = (project.nodes[focusedNodeId] && focusedNodeId) || rootId;
       const res = await fetch(`/api/projects/${projectId}/concept-objects/${objId}/convert-to-node`, {
         method: "POST",
@@ -1600,8 +1625,11 @@ function openConceptObjectContextMenu(objId, clientX, clientY) {
     contextMenuItem(
       "🗑 Delete",
       async () => {
+        pushUndoSnapshot("Delete");
         const res = await fetch(`/api/projects/${projectId}/concept-objects/${objId}`, { method: "DELETE" });
         if (!res.ok) {
+          undoStack.pop();
+          updateUndoRedoButtons();
           const err = await res.json().catch(() => ({}));
           alert(err.detail || "Couldn't delete this object.");
           return;
@@ -2545,6 +2573,7 @@ function openContextMenu(nodeId, clientX, clientY) {
   menu.appendChild(contextMenuItem("▤ Add Group", () => addGroupUnder(nodeId)));
   menu.appendChild(
     contextMenuItem("→ Convert to Planning Object", async () => {
+      pushUndoSnapshot("Convert to Planning Object");
       const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/convert-to-object`, { method: "POST" });
       const obj = await res.json();
       await loadProject();
