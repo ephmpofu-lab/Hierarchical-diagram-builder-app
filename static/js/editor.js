@@ -83,6 +83,8 @@ const searchWrap = document.querySelector(".search-wrap");
 const searchResults = document.getElementById("searchResults");
 const exportBtn = document.getElementById("exportBtn");
 const exportMenu = document.getElementById("exportMenu");
+const statusFilterBtn = document.getElementById("statusFilterBtn");
+const statusFilterMenu = document.getElementById("statusFilterMenu");
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
 const addRefModeBtn = document.getElementById("addRefModeBtn");
@@ -135,6 +137,15 @@ let showDependencies = false;
 let expandedGroupOverflow = false; // "show all" for progressive disclosure of many ungrouped children
 let lastValidationReport = null;
 let viewMode = "focus"; // "focus" | "full"
+let activeStatusFilters = new Set(PLANNING_STATUSES);
+
+// Nodes with no planning_status set are never filtered out — only nodes that HAVE an
+// explicit status get faded when their status is unchecked, so freshly-added nodes never
+// mysteriously vanish from view.
+function nodeMatchesStatusFilter(node) {
+  if (!node.planning_status) return true;
+  return activeStatusFilters.has(node.planning_status);
+}
 
 const ROW_GAP = 130;
 const COL_GAP = 24;
@@ -832,14 +843,16 @@ function renderFocusCanvas(viewW, viewH) {
     }
   }
 
-  if (grandparent) nodesGroup.appendChild(drawNode(grandparent, positions.get(grandparent.id)));
+  if (grandparent) {
+    nodesGroup.appendChild(drawNode(grandparent, positions.get(grandparent.id), !nodeMatchesStatusFilter(grandparent)));
+  }
   for (const fadedId of fadedIds) {
     nodesGroup.appendChild(drawNode(project.nodes[fadedId], positions.get(fadedId), true));
   }
-  if (parent) nodesGroup.appendChild(drawNode(parent, positions.get(parent.id)));
+  if (parent) nodesGroup.appendChild(drawNode(parent, positions.get(parent.id), !nodeMatchesStatusFilter(parent)));
   nodesGroup.appendChild(drawNode(focus, positions.get(focus.id)));
   for (const child of visibleChildren) {
-    nodesGroup.appendChild(drawNode(child, positions.get(child.id)));
+    nodesGroup.appendChild(drawNode(child, positions.get(child.id), !nodeMatchesStatusFilter(child)));
   }
   if (hiddenCount > 0) {
     const lastPos = positions.get(visibleChildren[visibleChildren.length - 1].id);
@@ -941,7 +954,8 @@ function renderFullArchitectureCanvas(viewW, viewH) {
   }
 
   for (const [nodeId, pos] of positions.entries()) {
-    nodesGroup.appendChild(drawNode(project.nodes[nodeId], pos));
+    const n = project.nodes[nodeId];
+    nodesGroup.appendChild(drawNode(n, pos, !nodeMatchesStatusFilter(n)));
     const overflow = overflowByParent.get(nodeId);
     if (overflow) {
       const label = document.createElementNS(SVG_NS, "text");
@@ -1880,6 +1894,30 @@ showDepsBtn.addEventListener("click", () => {
   renderCanvas();
 });
 
+// ---------- Visual status filters ----------
+
+statusFilterBtn.addEventListener("click", () => {
+  if (statusFilterMenu.hidden) {
+    exportMenu.hidden = true;
+    closeImportModal();
+  }
+  statusFilterMenu.hidden = !statusFilterMenu.hidden;
+});
+document.addEventListener("click", (e) => {
+  if (!statusFilterMenu.hidden && !statusFilterMenu.contains(e.target) && e.target !== statusFilterBtn) {
+    statusFilterMenu.hidden = true;
+  }
+});
+statusFilterMenu.addEventListener("change", (e) => {
+  const checkbox = e.target.closest("input[data-filter]");
+  if (!checkbox) return;
+  if (checkbox.checked) activeStatusFilters.add(checkbox.dataset.filter);
+  else activeStatusFilters.delete(checkbox.dataset.filter);
+  const allChecked = activeStatusFilters.size === PLANNING_STATUSES.length;
+  statusFilterBtn.classList.toggle("active", !allChecked);
+  renderCanvas();
+});
+
 // ---------- Minimap ----------
 
 function renderMinimap() {
@@ -2216,6 +2254,7 @@ function buildPathString(nodeId) {
 
 exportBtn.addEventListener("click", () => {
   if (exportMenu.hidden) closeImportModal();
+  statusFilterMenu.hidden = true;
   exportMenu.hidden = !exportMenu.hidden;
 });
 

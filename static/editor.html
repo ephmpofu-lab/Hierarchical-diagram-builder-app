@@ -48,6 +48,16 @@
             <button id="focusModeBtn" class="btn btn-small active">Focus Mode</button>
             <button id="fullArchModeBtn" class="btn btn-small">Full Architecture</button>
           </div>
+          <div class="dropdown-wrap">
+            <button id="statusFilterBtn" class="btn btn-small" title="Show or hide nodes by planning status — unfinished work stays fully visible, everything else fades">Filters ▾</button>
+            <div id="statusFilterMenu" class="dropdown-menu status-filter-menu" hidden>
+              <label><input type="checkbox" data-filter="Not Started" checked> ○ Not Started</label>
+              <label><input type="checkbox" data-filter="In Progress" checked> ◐ In Progress</label>
+              <label><input type="checkbox" data-filter="Completed" checked> ✓ Completed</label>
+              <label><input type="checkbox" data-filter="Needs Review" checked> ⚠ Needs Review</label>
+              <label><input type="checkbox" data-filter="Blocked" checked> ⛔ Blocked</label>
+            </div>
+          </div>
           <button id="addGroupBtn" class="btn btn-small" title="Organize this node's children into a named, collapsible group">▤ + Group</button>
           <button id="addRefModeBtn" class="btn btn-small" title="Click two nodes in sequence to link them with a reference/dependency">+ Reference</button>
           <button id="showDepsBtn" class="btn btn-small" title="Show dashed dependency/reference links for the focused node">⇢ Show Dependencies</button>

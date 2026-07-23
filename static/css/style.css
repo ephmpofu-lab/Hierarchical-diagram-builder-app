@@ -524,6 +524,30 @@ button {
   color: #fff;
 }
 
+#statusFilterBtn.active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.status-filter-menu {
+  padding: 6px 0;
+}
+
+.status-filter-menu label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.status-filter-menu label:hover {
+  background: var(--surface-hover);
+}
+
 .canvas-svg .faded-node {
   opacity: 0.35;
 }
