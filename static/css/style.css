@@ -360,10 +360,23 @@ button {
   text-align: center;
 }
 
-#addRefModeBtn.active {
+#addRefModeBtn.active,
+#groupChildrenBtn.active {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+
+.shape-picker {
+  flex-direction: row;
+  padding: 4px;
+  min-width: auto;
+}
+
+.shape-picker button {
+  font-size: 18px;
+  padding: 6px 10px;
+  text-align: center;
 }
 
 .ref-mode-banner {
@@ -418,6 +431,19 @@ button {
   stroke: var(--border);
   stroke-width: 2;
   fill: none;
+  pointer-events: none;
+}
+
+.canvas-svg .edge.selected {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+.canvas-svg .edge-hit {
+  stroke: transparent;
+  stroke-width: 14;
+  fill: none;
+  cursor: pointer;
 }
 
 .canvas-svg .node-box {
@@ -459,13 +485,6 @@ button {
 
 .canvas-svg .ref-edge.selected {
   stroke-width: 2.5;
-}
-
-.canvas-svg .ref-edge-hit {
-  stroke: transparent;
-  stroke-width: 14;
-  fill: none;
-  cursor: pointer;
 }
 
 .canvas-svg .ref-handle {
@@ -510,6 +529,47 @@ button {
   stroke: var(--warning);
   stroke-width: 2.5;
   stroke-dasharray: 4 2;
+}
+
+.canvas-svg .group-box-rect {
+  fill: var(--surface-2);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.canvas-svg .group-box-title {
+  font-size: 11px;
+  fill: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.canvas-svg .group-box-item {
+  cursor: pointer;
+}
+
+.canvas-svg .group-box-item rect {
+  fill: var(--surface);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.canvas-svg .group-box-item:hover rect {
+  stroke: var(--accent);
+}
+
+.canvas-svg .group-box-item.focused rect {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.canvas-svg .group-box-item text {
+  font-size: 11px;
+  fill: var(--text);
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+  user-select: none;
 }
 
 .canvas-svg .warning-dot {
