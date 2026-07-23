@@ -48,6 +48,8 @@ const searchWrap = document.querySelector(".search-wrap");
 const searchResults = document.getElementById("searchResults");
 const exportBtn = document.getElementById("exportBtn");
 const exportMenu = document.getElementById("exportMenu");
+const undoBtn = document.getElementById("undoBtn");
+const redoBtn = document.getElementById("redoBtn");
 const addRefModeBtn = document.getElementById("addRefModeBtn");
 const refModeBanner = document.getElementById("refModeBanner");
 const zoomInBtn = document.getElementById("zoomInBtn");
@@ -286,6 +288,7 @@ function startRename(nodeId, row, labelSpan) {
     if (commit) {
       const trimmed = input.value.trim();
       if (trimmed && trimmed !== node.label) {
+        pushUndoSnapshot("Rename node");
         await fetch(`/api/projects/${projectId}/nodes/${nodeId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -309,6 +312,7 @@ function startRename(nodeId, row, labelSpan) {
 }
 
 async function addChild(parentId) {
+  pushUndoSnapshot("Add child");
   const res = await fetch(`/api/projects/${projectId}/nodes`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -330,6 +334,7 @@ async function addSiblingBelow(nodeId) {
   if (node.parent_id === null) {
     return addChild(nodeId);
   }
+  pushUndoSnapshot("Add sibling");
   const res = await fetch(`/api/projects/${projectId}/nodes`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -375,6 +380,7 @@ async function deleteNodeFlow(nodeId) {
 }
 
 async function performDelete(nodeId, promoteChildren) {
+  pushUndoSnapshot("Delete node");
   if (focusedNodeId === nodeId) focusedNodeId = project.nodes[nodeId].parent_id;
   await fetch(`/api/projects/${projectId}/nodes/${nodeId}?promote_children=${promoteChildren}`, {
     method: "DELETE",
@@ -421,6 +427,23 @@ function showChoiceModal(message, choices) {
 }
 
 document.addEventListener("keydown", async (e) => {
+  const activeTagGlobal = document.activeElement && document.activeElement.tagName;
+  const typingGlobal = activeTagGlobal === "INPUT" || activeTagGlobal === "TEXTAREA";
+  if (!typingGlobal && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey) {
+    e.preventDefault();
+    await performUndo();
+    return;
+  }
+  if (
+    !typingGlobal &&
+    (e.ctrlKey || e.metaKey) &&
+    ((e.key.toLowerCase() === "z" && e.shiftKey) || e.key.toLowerCase() === "y")
+  ) {
+    e.preventDefault();
+    await performRedo();
+    return;
+  }
+
   if (e.key === "Escape" && refMode) {
     exitRefMode();
     return;
@@ -445,10 +468,16 @@ document.addEventListener("keydown", async (e) => {
   if (e.key === "Tab") {
     e.preventDefault();
     const endpoint = e.shiftKey ? "outdent" : "indent";
+    pushUndoSnapshot(e.shiftKey ? "Outdent" : "Indent");
     const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/${endpoint}`, {
       method: "POST",
     });
-    if (res.ok) await loadProject();
+    if (res.ok) {
+      await loadProject();
+    } else {
+      undoStack.pop();
+      updateUndoRedoButtons();
+    }
   } else if (e.key === "Enter") {
     e.preventDefault();
     await addSiblingBelow(focusedNodeId);
@@ -457,6 +486,72 @@ document.addEventListener("keydown", async (e) => {
     await deleteNodeFlow(focusedNodeId);
   }
 });
+
+// ---------- Undo / Redo ----------
+// Scoped to structural edits: create, delete, rename, reparent, indent/outdent, and
+// move-sibling. Rather than hand-writing an inverse for every action (fragile, especially
+// for delete which destroys data), each of those flows snapshots the whole project just
+// before it runs; undo/redo replay a snapshot wholesale via PUT /restore. Cosmetic field
+// edits (status, tags, notes, comments, etc.) are not part of this history.
+const UNDO_LIMIT = 50;
+let undoStack = [];
+let redoStack = [];
+
+function cloneProject() {
+  return JSON.parse(JSON.stringify(project));
+}
+
+function pushUndoSnapshot(label) {
+  if (!project) return;
+  undoStack.push({ label, snapshot: cloneProject() });
+  if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+  redoStack = [];
+  updateUndoRedoButtons();
+}
+
+function updateUndoRedoButtons() {
+  undoBtn.disabled = undoStack.length === 0;
+  redoBtn.disabled = redoStack.length === 0;
+  undoBtn.title = undoStack.length
+    ? `Undo: ${undoStack[undoStack.length - 1].label} (Ctrl+Z)`
+    : "Undo the last change (Ctrl+Z)";
+  redoBtn.title = redoStack.length
+    ? `Redo: ${redoStack[redoStack.length - 1].label} (Ctrl+Shift+Z / Ctrl+Y)`
+    : "Redo the last undone change (Ctrl+Shift+Z / Ctrl+Y)";
+}
+
+async function restoreSnapshot(snapshotProject) {
+  await fetch(`/api/projects/${projectId}/restore`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(snapshotProject),
+  });
+  await loadProject();
+  if (!project.nodes[focusedNodeId]) {
+    focusedNodeId = rootId;
+    render();
+  }
+}
+
+async function performUndo() {
+  if (undoStack.length === 0 || !project) return;
+  const entry = undoStack.pop();
+  redoStack.push({ label: entry.label, snapshot: cloneProject() });
+  await restoreSnapshot(entry.snapshot);
+  updateUndoRedoButtons();
+}
+
+async function performRedo() {
+  if (redoStack.length === 0 || !project) return;
+  const entry = redoStack.pop();
+  undoStack.push({ label: entry.label, snapshot: cloneProject() });
+  await restoreSnapshot(entry.snapshot);
+  updateUndoRedoButtons();
+}
+
+undoBtn.addEventListener("click", performUndo);
+redoBtn.addEventListener("click", performRedo);
+updateUndoRedoButtons();
 
 // ---------- Breadcrumb ----------
 
@@ -943,12 +1038,15 @@ function drawTreeHandle(pos, childId, fixedPos) {
   circle.setAttribute("r", 6);
   circle.addEventListener("mousedown", (e) => {
     startEdgeEndpointDrag(e, fixedPos, childId, async (targetId) => {
+      pushUndoSnapshot("Reparent node");
       const res = await fetch(`/api/projects/${projectId}/nodes/${childId}/reparent`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ new_parent_id: targetId }),
       });
       if (!res.ok) {
+        undoStack.pop();
+        updateUndoRedoButtons();
         const err = await res.json().catch(() => ({}));
         alert(err.detail || "Couldn't move this node there.");
         renderCanvas();
@@ -1315,7 +1413,10 @@ function openContextMenu(nodeId, clientX, clientY) {
   menu.appendChild(
     contextMenuItem("✎ Rename", () => {
       const label = prompt("Rename node:", node.label);
-      if (label && label.trim()) patchNodeById(nodeId, { label: label.trim() });
+      if (label && label.trim()) {
+        pushUndoSnapshot("Rename node");
+        patchNodeById(nodeId, { label: label.trim() });
+      }
     })
   );
 
@@ -2131,7 +2232,10 @@ function renderInspector() {
   });
   labelInput.addEventListener("blur", async () => {
     const trimmed = labelInput.value.trim();
-    if (trimmed && trimmed !== node.label) await patchNode({ label: trimmed });
+    if (trimmed && trimmed !== node.label) {
+      pushUndoSnapshot("Rename node");
+      await patchNode({ label: trimmed });
+    }
   });
   const levelPill = document.createElement("span");
   levelPill.className = "level-pill";
@@ -2200,15 +2304,25 @@ function renderOverviewTab(container, node) {
   };
   btnRow.appendChild(
     mkBtn("⇥ Indent", "Make this a child of the node above", async () => {
+      pushUndoSnapshot("Indent");
       const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/indent`, { method: "POST" });
-      if (!res.ok) alert("Can't indent: no preceding sibling.");
+      if (!res.ok) {
+        undoStack.pop();
+        updateUndoRedoButtons();
+        alert("Can't indent: no preceding sibling.");
+      }
       await loadProject();
     })
   );
   btnRow.appendChild(
     mkBtn("⇤ Outdent", "Move this up one level", async () => {
+      pushUndoSnapshot("Outdent");
       const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/outdent`, { method: "POST" });
-      if (!res.ok) alert("Can't outdent past the root.");
+      if (!res.ok) {
+        undoStack.pop();
+        updateUndoRedoButtons();
+        alert("Can't outdent past the root.");
+      }
       await loadProject();
     })
   );
@@ -2217,23 +2331,33 @@ function renderOverviewTab(container, node) {
   if (node.parent_id !== null) {
     btnRow.appendChild(
       mkBtn("↑ Move up", "Move earlier among its siblings", async () => {
+        pushUndoSnapshot("Move sibling up");
         const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/move-sibling`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ direction: "up" }),
         });
-        if (!res.ok) alert("Already first among its siblings.");
+        if (!res.ok) {
+          undoStack.pop();
+          updateUndoRedoButtons();
+          alert("Already first among its siblings.");
+        }
         await loadProject();
       })
     );
     btnRow.appendChild(
       mkBtn("↓ Move down", "Move later among its siblings", async () => {
+        pushUndoSnapshot("Move sibling down");
         const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/move-sibling`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ direction: "down" }),
         });
-        if (!res.ok) alert("Already last among its siblings.");
+        if (!res.ok) {
+          undoStack.pop();
+          updateUndoRedoButtons();
+          alert("Already last among its siblings.");
+        }
         await loadProject();
       })
     );

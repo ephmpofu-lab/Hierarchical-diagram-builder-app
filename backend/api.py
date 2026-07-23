@@ -97,6 +97,17 @@ def api_delete_project(project_id: str):
     storage.delete_project(project_id)
 
 
+@router.put("/projects/{project_id}/restore", response_model=Project)
+def api_restore_project(project_id: str, body: Project):
+    """Overwrites the whole project with a client-supplied snapshot. Used by the editor's
+    Undo/Redo, which keeps prior project states in memory and replays them wholesale
+    rather than trying to compute a structural inverse for every possible edit."""
+    storage.load_project(project_id)  # 404s if the project doesn't exist
+    body.id = project_id
+    storage.save_project(body)
+    return body
+
+
 @router.post("/projects/{project_id}/nodes", response_model=NodeWithLevel, status_code=201)
 def api_add_node(project_id: str, body: NodeCreate):
     project = storage.load_project(project_id)

@@ -304,6 +304,15 @@ button {
   background: var(--surface-hover);
 }
 
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn:disabled:hover {
+  background: var(--surface);
+}
+
 .btn-primary {
   background: var(--accent);
   border-color: var(--accent);
