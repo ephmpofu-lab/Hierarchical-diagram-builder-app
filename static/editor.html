@@ -132,6 +132,7 @@
         <button id="presentNextLevelBtn" class="btn btn-small" title="Go down to the first child (Down arrow)">Level ▼</button>
         <button id="presentBranchBtn" class="btn btn-small" title="Frame the focused node's whole branch">Focus Branch</button>
         <button id="presentZoomTopicBtn" class="btn btn-small" title="Zoom in close on the focused node">Zoom to Topic</button>
+        <button id="presentStoryBtn" class="btn btn-small" title="Auto-advance through the outline in story order (Space to toggle)">▶ Story Mode</button>
         <button id="presentExitBtn" class="btn btn-small" title="Exit Presentation Mode (Esc)">✕ Exit</button>
       </div>
       <div class="canvas-svg-wrap">
@@ -143,13 +144,13 @@
     <div class="pane inspector-pane" id="inspectorPane">
       <div class="pane-header">
         <div class="panel-mode-toggle">
-          <button id="inspectorModeBtn" class="panel-mode-btn active" title="Details and editable fields for the currently selected node">Inspector</button>
-          <button id="healthModeBtn" class="panel-mode-btn" title="Project-wide architecture score, validation issues, and recent changes">Health</button>
+          <button id="inspectorModeBtn" class="panel-mode-btn" title="Details and editable fields for the currently selected node">Inspector</button>
+          <button id="healthModeBtn" class="panel-mode-btn active" title="Project-wide architecture score, validation issues, and recent changes">Health</button>
         </div>
         <button id="inspectorCollapseBtn" class="pane-collapse-btn" title="Collapse this panel for a distraction-free canvas">»</button>
       </div>
-      <div id="inspectorContent" class="inspector-content"></div>
-      <div id="healthContent" class="health-content" hidden>
+      <div id="inspectorContent" class="inspector-content" hidden></div>
+      <div id="healthContent" class="health-content">
         <div class="health-card">
           <div class="pane-header" title="A single score (0-100) summarizing structural quality: duplicates, cycles, orphans, broken references, oversized modules, single-child levels, and missing owners/notes all subtract points. Why it matters: it is a quick proxy for how easy this architecture will be to navigate and maintain as it grows. How to improve: work through the Critical Issues first, then Warnings, then Suggestions below.">Architecture Health</div>
           <div id="healthScore" class="health-score"></div>

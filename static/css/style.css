@@ -802,6 +802,12 @@ button {
   flex-shrink: 0;
 }
 
+.presentation-bar .btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
 /* Presentation Mode: hide everything except the topbar title, breadcrumb, canvas, and the
    presentation bar itself — the architecture is the story, not the surrounding chrome. */
 body.presentation-active .topbar-actions,
@@ -975,6 +981,84 @@ body.presentation-active .editor-panes {
 
 .canvas-svg .ref-arrow-fill {
   fill: var(--text-muted);
+}
+
+.node-drag-ghost {
+  fill: var(--accent);
+  fill-opacity: 0.18;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
+.node-drop-zone-highlight {
+  fill: none;
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.node-drop-zone-highlight.zone-child {
+  stroke: var(--accent);
+  fill: var(--accent);
+  fill-opacity: 0.1;
+}
+
+.node-drop-zone-highlight.zone-before,
+.node-drop-zone-highlight.zone-after {
+  stroke: none;
+  fill: var(--accent);
+}
+
+.node-drop-zone-highlight.zone-reference {
+  stroke: #64748b;
+  stroke-dasharray: 3 2;
+}
+
+.node-drop-zone-highlight.zone-dependency {
+  stroke: #10b981;
+  stroke-dasharray: 3 2;
+}
+
+.floating-node-toolbar {
+  position: fixed;
+  z-index: 140;
+  display: flex;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  padding: 4px;
+  transform: translate(-50%, -100%);
+}
+
+.floating-toolbar-btn {
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.floating-toolbar-btn:hover {
+  background: var(--surface-2);
+}
+
+.drop-hint-label {
+  position: fixed;
+  z-index: 200;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 .canvas-svg .ref-tag {
@@ -1204,6 +1288,12 @@ body.presentation-active .editor-panes {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.outline-row .level-dot {
+  flex-shrink: 0;
+  font-size: 8px;
+  opacity: 0.8;
 }
 
 .outline-row .level-badge {

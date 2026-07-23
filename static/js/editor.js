@@ -95,6 +95,11 @@ function levelTintColor(level) {
   return LEVEL_TINT_COLORS[(Math.max(1, level) - 1) % LEVEL_TINT_COLORS.length];
 }
 
+// A small icon per hierarchy level in the Outline, cycling alongside the tint colors above —
+// distinct from classification icons (node TYPE) and the L-badge (level NUMBER); this one
+// just gives depth a recognizable shape at a glance while scanning the tree.
+const LEVEL_ICONS = ["◆", "▲", "●", "■", "▶", "◈"];
+
 const outlineTree = document.getElementById("outlineTree");
 const projectNameEl = document.getElementById("projectName");
 const breadcrumbEl = document.getElementById("breadcrumb");
@@ -149,6 +154,7 @@ const presentNextNodeBtn = document.getElementById("presentNextNodeBtn");
 const presentNextLevelBtn = document.getElementById("presentNextLevelBtn");
 const presentBranchBtn = document.getElementById("presentBranchBtn");
 const presentZoomTopicBtn = document.getElementById("presentZoomTopicBtn");
+const presentStoryBtn = document.getElementById("presentStoryBtn");
 const presentExitBtn = document.getElementById("presentExitBtn");
 const outlinePane = document.getElementById("outlinePane");
 const outlineCollapseBtn = document.getElementById("outlineCollapseBtn");
@@ -193,8 +199,11 @@ let showDependencies = false;
 let expandedGroupOverflow = false; // "show all" for progressive disclosure of many ungrouped children
 let lastValidationReport = null;
 let viewMode = "focus"; // "focus" | "full"
-let inspectorPanelMode = "inspector"; // "inspector" | "health" — the right panel's top-level mode
+// Health opens by default (the Canvas is the source of truth; the Inspector's job is to
+// surface project-wide signal first, editable node detail second).
+let inspectorPanelMode = "health"; // "inspector" | "health" — the right panel's top-level mode
 let activeStatusFilters = new Set(PLANNING_STATUSES);
+let nodeDragJustHappened = false; // suppresses the click-to-select that follows a drag's mouseup
 
 // Nodes with no planning_status set are never filtered out — only nodes that HAVE an
 // explicit status get faded when their status is unchecked, so freshly-added nodes never
@@ -407,6 +416,11 @@ function renderNode(nodeId) {
     if (node.children.length > 0) toggleCollapse(nodeId, !node.collapsed);
   });
 
+  const levelDot = document.createElement("span");
+  levelDot.className = "level-dot";
+  levelDot.textContent = LEVEL_ICONS[(node.level - 1) % LEVEL_ICONS.length];
+  levelDot.style.color = levelTintColor(node.level);
+
   const label = document.createElement("span");
   label.className = "label";
   const typeIcon = !node.is_group && node.classification ? `${CLASSIFICATION_ICONS[node.classification]} ` : "";
@@ -423,15 +437,6 @@ function renderNode(nodeId) {
   const actions = document.createElement("span");
   actions.className = "row-actions";
 
-  const addBtn = document.createElement("button");
-  addBtn.className = "row-btn add-child";
-  addBtn.textContent = "+";
-  addBtn.title = "Add Component";
-  addBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    addChild(nodeId);
-  });
-
   const delBtn = document.createElement("button");
   delBtn.className = "row-btn delete-node";
   delBtn.textContent = "×";
@@ -441,10 +446,10 @@ function renderNode(nodeId) {
     deleteNodeFlow(nodeId);
   });
 
-  actions.appendChild(addBtn);
   if (node.parent_id !== null) actions.appendChild(delBtn);
 
   row.appendChild(toggle);
+  row.appendChild(levelDot);
   row.appendChild(label);
   row.appendChild(levelBadge);
   row.appendChild(actions);
@@ -925,7 +930,10 @@ function renderCanvas() {
   canvasSvg.innerHTML = "";
   canvasSvg.classList.toggle("ref-mode-active", refMode);
   canvasSvg.appendChild(buildRefArrowDefs());
-  if (!project || !focusedNodeId) return;
+  if (!project || !focusedNodeId) {
+    closeFloatingNodeToolbar();
+    return;
+  }
 
   const rect = canvasSvg.getBoundingClientRect();
   const viewW = rect.width || 800;
@@ -933,10 +941,13 @@ function renderCanvas() {
 
   if (appMode === "concept") {
     renderConceptCanvas(viewW, viewH);
+    closeFloatingNodeToolbar();
   } else if (viewMode === "full") {
     renderFullArchitectureCanvas(viewW, viewH);
+    updateFloatingNodeToolbar(rect);
   } else {
     renderFocusCanvas(viewW, viewH);
+    updateFloatingNodeToolbar(rect);
   }
   smoothZoomNextRender = false;
 }
@@ -1949,6 +1960,13 @@ function drawRefEdge(from, to, ref) {
     }
     renderCanvas();
   });
+  group.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    selectedEdgeKey = key;
+    showConnectorPropertiesPanel(ref.id, e.clientX, e.clientY);
+    renderCanvas();
+  });
 
   return group;
 }
@@ -2092,6 +2110,39 @@ function showConnectorPropertiesPanel(refId, clientX, clientY) {
   visibleLabel.appendChild(document.createTextNode(" Visible"));
   panel.appendChild(visibleLabel);
 
+  const actionRow = document.createElement("div");
+  actionRow.className = "btn-row connector-panel-actions";
+
+  const reverseBtn = document.createElement("button");
+  reverseBtn.className = "btn btn-small";
+  reverseBtn.textContent = "⇄ Reverse Direction";
+  reverseBtn.title = "Swap this connector's from/to endpoints";
+  reverseBtn.addEventListener("click", async () => {
+    pushUndoSnapshot("Reverse connector");
+    await fetch(`/api/projects/${projectId}/references/${refId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: ref.to, to: ref.from }),
+    });
+    selectedEdgeKey = null;
+    closeConnectorPanel();
+    await loadProject();
+  });
+  actionRow.appendChild(reverseBtn);
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.className = "btn btn-small btn-danger";
+  deleteBtn.textContent = "🗑 Delete Connection";
+  deleteBtn.addEventListener("click", async () => {
+    pushUndoSnapshot("Delete connector");
+    await fetch(`/api/projects/${projectId}/references/${refId}`, { method: "DELETE" });
+    selectedEdgeKey = null;
+    closeConnectorPanel();
+    await loadProject();
+  });
+  actionRow.appendChild(deleteBtn);
+  panel.appendChild(actionRow);
+
   const closeBtn = document.createElement("button");
   closeBtn.className = "btn btn-small connector-panel-close";
   closeBtn.textContent = "Close";
@@ -2179,6 +2230,170 @@ function startEdgeEndpointDrag(e, fixedPos, excludeId, onDrop) {
     } else {
       renderCanvas();
     }
+  };
+
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
+}
+
+const DROP_ZONE_LABELS = {
+  child: "⬇ Become Child",
+  before: "⇤ Become Parallel Component",
+  after: "⇥ Become Parallel Component",
+  reference: "⇢ Create Reference  (hold Alt)",
+  dependency: "⇢ Create Dependency  (Alt+Shift)",
+};
+
+// Dragging a node's body previews the drop outcome live (Mural/Figma-style direct
+// manipulation) instead of requiring Move Up/Down/Indent/Outdent buttons: drop in the
+// middle of another node to reparent under it, near its top/bottom edge to become its
+// sibling, or hold Alt (Alt+Shift for a Dependency) to draw a reference link instead of
+// reparenting. Architecture Mode's layout stays deterministic — the ghost is just a
+// drag preview; the real position is always recomputed from the tree after the drop.
+function startNodeReparentDrag(e, nodeId, startPos) {
+  const rect = canvasSvg.getBoundingClientRect();
+  const startClientX = e.clientX;
+  const startClientY = e.clientY;
+  const excludeIds = new Set(collectSubtreeIds(nodeId));
+  let dragging = false;
+  let ghost = null;
+  let highlight = null;
+  let hintLabel = null;
+  let dropTarget = null;
+
+  const toPretransform = (clientX, clientY) => ({
+    x: lastViewW / 2 + (clientX - rect.left - lastViewW / 2 - panOffsetX) / zoomScale,
+    y: lastViewH / 2 + (clientY - rect.top - lastViewH / 2 - panOffsetY) / zoomScale,
+  });
+
+  const beginDrag = () => {
+    dragging = true;
+    closeFloatingNodeToolbar();
+    const viewportEl = canvasSvg.querySelector(":scope > g");
+    if (!viewportEl) return;
+    ghost = document.createElementNS(SVG_NS, "rect");
+    ghost.setAttribute("class", "node-drag-ghost");
+    ghost.setAttribute("width", NODE_W);
+    ghost.setAttribute("height", NODE_H);
+    ghost.setAttribute("rx", 10);
+    viewportEl.appendChild(ghost);
+    highlight = document.createElementNS(SVG_NS, "rect");
+    highlight.setAttribute("class", "node-drop-zone-highlight");
+    highlight.setAttribute("rx", 8);
+    highlight.style.display = "none";
+    viewportEl.appendChild(highlight);
+    hintLabel = document.createElement("div");
+    hintLabel.className = "drop-hint-label";
+    hintLabel.hidden = true;
+    document.body.appendChild(hintLabel);
+  };
+
+  const onMove = (moveEvent) => {
+    if (!dragging) {
+      if (Math.abs(moveEvent.clientX - startClientX) < 5 && Math.abs(moveEvent.clientY - startClientY) < 5) return;
+      beginDrag();
+    }
+    const p = toPretransform(moveEvent.clientX, moveEvent.clientY);
+    ghost.setAttribute("x", p.x - NODE_W / 2);
+    ghost.setAttribute("y", p.y - NODE_H / 2);
+
+    dropTarget = null;
+    for (const [targetId, tpos] of lastVisiblePositions.entries()) {
+      if (excludeIds.has(targetId)) continue;
+      if (Math.abs(p.x - tpos.x) <= NODE_W / 2 && Math.abs(p.y - tpos.y) <= NODE_H / 2) {
+        const relY = (p.y - tpos.y) / (NODE_H / 2);
+        let zone = relY < -0.35 ? "before" : relY > 0.35 ? "after" : "child";
+        if (moveEvent.altKey) zone = moveEvent.shiftKey ? "dependency" : "reference";
+        const targetNode = project.nodes[targetId];
+        if ((zone === "before" || zone === "after") && (!targetNode || targetNode.parent_id === null)) {
+          zone = "child"; // root has no siblings to insert next to
+        }
+        dropTarget = { id: targetId, zone, pos: tpos };
+        break;
+      }
+    }
+
+    if (dropTarget) {
+      const t = dropTarget;
+      highlight.style.display = "";
+      highlight.setAttribute("class", "node-drop-zone-highlight zone-" + t.zone);
+      if (t.zone === "before") {
+        highlight.setAttribute("x", t.pos.x - NODE_W / 2 - 4);
+        highlight.setAttribute("y", t.pos.y - NODE_H / 2 - 10);
+        highlight.setAttribute("width", NODE_W + 8);
+        highlight.setAttribute("height", 6);
+      } else if (t.zone === "after") {
+        highlight.setAttribute("x", t.pos.x - NODE_W / 2 - 4);
+        highlight.setAttribute("y", t.pos.y + NODE_H / 2 + 4);
+        highlight.setAttribute("width", NODE_W + 8);
+        highlight.setAttribute("height", 6);
+      } else {
+        highlight.setAttribute("x", t.pos.x - NODE_W / 2 - 4);
+        highlight.setAttribute("y", t.pos.y - NODE_H / 2 - 4);
+        highlight.setAttribute("width", NODE_W + 8);
+        highlight.setAttribute("height", NODE_H + 8);
+      }
+      hintLabel.hidden = false;
+      hintLabel.textContent = DROP_ZONE_LABELS[t.zone];
+      hintLabel.style.left = `${moveEvent.clientX + 16}px`;
+      hintLabel.style.top = `${moveEvent.clientY + 16}px`;
+    } else {
+      highlight.style.display = "none";
+      hintLabel.hidden = true;
+    }
+  };
+
+  const onUp = async () => {
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+    if (ghost) ghost.remove();
+    if (highlight) highlight.remove();
+    if (hintLabel) hintLabel.remove();
+    if (!dragging) return;
+    nodeDragJustHappened = true;
+    setTimeout(() => (nodeDragJustHappened = false), 0);
+
+    if (!dropTarget) {
+      renderCanvas();
+      return;
+    }
+    const t = dropTarget;
+    if (t.zone === "reference" || t.zone === "dependency") {
+      pushUndoSnapshot(t.zone === "dependency" ? "Create Dependency" : "Create Reference");
+      const res = await fetch(`/api/projects/${projectId}/references`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: nodeId,
+          to: t.id,
+          reference_type: t.zone === "dependency" ? "Dependency" : null,
+        }),
+      });
+      if (!res.ok) {
+        undoStack.pop();
+        updateUndoRedoButtons();
+      }
+      await loadProject();
+      return;
+    }
+
+    const newParentId = t.zone === "child" ? t.id : project.nodes[t.id].parent_id;
+    pushUndoSnapshot(t.zone === "child" ? "Become Child" : "Become Parallel Component");
+    const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/reparent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ new_parent_id: newParentId }),
+    });
+    if (!res.ok) {
+      undoStack.pop();
+      updateUndoRedoButtons();
+      const err = await res.json().catch(() => ({}));
+      alert(err.detail || "Couldn't move this component there.");
+      renderCanvas();
+      return;
+    }
+    await loadProject();
+    focusNode(nodeId);
   };
 
   document.addEventListener("mousemove", onMove);
@@ -2364,6 +2579,7 @@ function drawNode(node, pos, faded = false) {
   }
 
   group.addEventListener("click", (e) => {
+    if (nodeDragJustHappened) return;
     if (refMode) {
       e.preventDefault();
       e.stopPropagation();
@@ -2384,6 +2600,14 @@ function drawNode(node, pos, faded = false) {
     e.stopPropagation();
     openContextMenu(node.id, e.clientX, e.clientY);
   });
+
+  if (!node.is_group && node.parent_id !== null) {
+    group.addEventListener("mousedown", (e) => {
+      if (e.button !== 0 || refMode) return;
+      startNodeReparentDrag(e, node.id, pos);
+    });
+    group.style.cursor = "grab";
+  }
 
   group.addEventListener("mouseenter", (e) => {
     if (refMode) return;
@@ -2509,6 +2733,139 @@ window.addEventListener("blur", () => closeContextMenu());
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeContextMenu();
 });
+
+function openQuickPicker(options, clientX, clientY, onPick) {
+  closeContextMenu();
+  const menu = document.createElement("div");
+  menu.className = "context-menu";
+  for (const opt of options) {
+    menu.appendChild(contextMenuItem(opt, () => onPick(opt)));
+  }
+  menu.style.left = `${clientX}px`;
+  menu.style.top = `${clientY}px`;
+  document.body.appendChild(menu);
+  openContextMenuEl = menu;
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) menu.style.left = `${Math.max(4, window.innerWidth - rect.width - 4)}px`;
+  if (rect.bottom > window.innerHeight) menu.style.top = `${Math.max(4, window.innerHeight - rect.height - 4)}px`;
+}
+
+// ---------- Floating node toolbar ----------
+// Figma/Mural-style: a small toolbar hovers next to whichever node is currently selected,
+// tracking it as the canvas pans/zooms, so the most common edits (color, status, priority,
+// delete, convert, documentation) don't require opening the full Inspector.
+let floatingToolbarEl = null;
+
+function closeFloatingNodeToolbar() {
+  if (floatingToolbarEl) {
+    floatingToolbarEl.remove();
+    floatingToolbarEl = null;
+  }
+}
+
+function floatingToolbarBtn(text, title, onClick) {
+  const b = document.createElement("button");
+  b.className = "floating-toolbar-btn";
+  b.textContent = text;
+  b.title = title;
+  b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    onClick(e);
+  });
+  return b;
+}
+
+function updateFloatingNodeToolbar(rect) {
+  const node = focusedNodeId ? project.nodes[focusedNodeId] : null;
+  if (
+    refMode ||
+    selectedNodeIds.size > 1 ||
+    !node ||
+    node.is_group ||
+    document.body.classList.contains("presentation-active")
+  ) {
+    closeFloatingNodeToolbar();
+    return;
+  }
+  const pos = lastVisiblePositions.get(focusedNodeId);
+  if (!pos) {
+    closeFloatingNodeToolbar();
+    return;
+  }
+  const screenX = rect.left + lastViewW / 2 + panOffsetX + (pos.x - lastViewW / 2) * zoomScale;
+  const screenY = rect.top + lastViewH / 2 + panOffsetY + (pos.y - lastViewH / 2) * zoomScale;
+
+  if (!floatingToolbarEl) {
+    floatingToolbarEl = document.createElement("div");
+    floatingToolbarEl.className = "floating-node-toolbar";
+    document.body.appendChild(floatingToolbarEl);
+  }
+  floatingToolbarEl.innerHTML = "";
+
+  floatingToolbarEl.appendChild(
+    floatingToolbarBtn("🎨", "Change Color", () => {
+      const colorInput = document.createElement("input");
+      colorInput.type = "color";
+      colorInput.value = node.custom_color || CLASSIFICATION_COLORS[node.classification] || "#64748b";
+      colorInput.style.position = "fixed";
+      colorInput.style.left = "-9999px";
+      document.body.appendChild(colorInput);
+      colorInput.addEventListener("change", () => {
+        patchNodeById(focusedNodeId, { custom_color: colorInput.value });
+        colorInput.remove();
+      });
+      colorInput.click();
+    })
+  );
+  floatingToolbarEl.appendChild(
+    floatingToolbarBtn("●", "Set Status", (e) => {
+      const CLEAR = "— Clear —";
+      openQuickPicker(
+        [CLEAR, "Planned", "In Development", "Done", "Blocked", "Deprecated"],
+        e.clientX,
+        e.clientY,
+        (opt) => patchNodeById(focusedNodeId, { status: opt === CLEAR ? "" : opt })
+      );
+    })
+  );
+  floatingToolbarEl.appendChild(
+    floatingToolbarBtn("!", "Set Priority", (e) => {
+      const CLEAR = "— Clear —";
+      openQuickPicker([CLEAR, "Low", "Medium", "High", "Critical"], e.clientX, e.clientY, (opt) =>
+        patchNodeById(focusedNodeId, { priority: opt === CLEAR ? "" : opt })
+      );
+    })
+  );
+  floatingToolbarEl.appendChild(
+    floatingToolbarBtn("📝", "Documentation", () => {
+      inspectorActiveTab = "inspector";
+      render();
+      const textarea = inspectorContent.querySelector("textarea");
+      if (textarea) textarea.focus();
+    })
+  );
+  floatingToolbarEl.appendChild(
+    floatingToolbarBtn("→", "Convert to Planning Object", async () => {
+      pushUndoSnapshot("Convert to Planning Object");
+      const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/convert-to-object`, {
+        method: "POST",
+      });
+      const obj = await res.json();
+      await loadProject();
+      setAppMode("concept");
+      selectedConceptObjectId = obj.id;
+      renderCanvas();
+    })
+  );
+  if (node.parent_id !== null) {
+    floatingToolbarEl.appendChild(
+      floatingToolbarBtn("🗑", "Delete", () => deleteNodeFlow(focusedNodeId))
+    );
+  }
+
+  floatingToolbarEl.style.left = `${screenX}px`;
+  floatingToolbarEl.style.top = `${screenY - (NODE_H / 2) * zoomScale - 8}px`;
+}
 
 async function patchNodeById(nodeId, payload) {
   await fetch(`/api/projects/${projectId}/nodes/${nodeId}`, {
@@ -3506,9 +3863,39 @@ function enterPresentationMode() {
   presentationBar.hidden = false;
 }
 
+let storyModeInterval = null;
+
+function stopStoryMode() {
+  if (storyModeInterval) {
+    clearInterval(storyModeInterval);
+    storyModeInterval = null;
+  }
+  presentStoryBtn.textContent = "▶ Story Mode";
+  presentStoryBtn.classList.remove("active");
+}
+
+function toggleStoryMode() {
+  if (storyModeInterval) {
+    stopStoryMode();
+    return;
+  }
+  presentStoryBtn.textContent = "⏸ Story Mode";
+  presentStoryBtn.classList.add("active");
+  storyModeInterval = setInterval(() => {
+    const order = storyOrder();
+    const idx = order.indexOf(focusedNodeId);
+    if (idx === -1 || idx >= order.length - 1) {
+      stopStoryMode();
+      return;
+    }
+    focusNode(order[idx + 1]);
+  }, 4000);
+}
+
 function exitPresentationMode() {
   if (!presentationMode) return;
   presentationMode = false;
+  stopStoryMode();
   if (prePresentationState && !prePresentationState.outlineCollapsed) {
     outlinePane.classList.remove("collapsed");
     editorPanesEl.classList.remove("outline-collapsed");
@@ -3524,14 +3911,27 @@ function exitPresentationMode() {
 
 presentEnterBtn.addEventListener("click", enterPresentationMode);
 presentExitBtn.addEventListener("click", exitPresentationMode);
-presentPrevNodeBtn.addEventListener("click", presentPrevNode);
-presentNextNodeBtn.addEventListener("click", presentNextNode);
-presentPrevLevelBtn.addEventListener("click", presentPrevLevel);
-presentNextLevelBtn.addEventListener("click", presentNextLevel);
+presentPrevNodeBtn.addEventListener("click", () => {
+  stopStoryMode();
+  presentPrevNode();
+});
+presentNextNodeBtn.addEventListener("click", () => {
+  stopStoryMode();
+  presentNextNode();
+});
+presentPrevLevelBtn.addEventListener("click", () => {
+  stopStoryMode();
+  presentPrevLevel();
+});
+presentNextLevelBtn.addEventListener("click", () => {
+  stopStoryMode();
+  presentNextLevel();
+});
 presentBranchBtn.addEventListener("click", fitBranch);
 presentZoomTopicBtn.addEventListener("click", () => {
   if (focusedNodeId) zoomToNode(focusedNodeId);
 });
+presentStoryBtn.addEventListener("click", toggleStoryMode);
 
 document.addEventListener("keydown", (e) => {
   if (!presentationMode) return;
@@ -3541,16 +3941,23 @@ document.addEventListener("keydown", (e) => {
     exitPresentationMode();
   } else if (e.key === "ArrowRight") {
     e.preventDefault();
+    stopStoryMode();
     presentNextNode();
   } else if (e.key === "ArrowLeft") {
     e.preventDefault();
+    stopStoryMode();
     presentPrevNode();
   } else if (e.key === "ArrowDown") {
     e.preventDefault();
+    stopStoryMode();
     presentNextLevel();
   } else if (e.key === "ArrowUp") {
     e.preventDefault();
+    stopStoryMode();
     presentPrevLevel();
+  } else if (e.key === " ") {
+    e.preventDefault();
+    toggleStoryMode();
   }
 });
 
@@ -4278,36 +4685,6 @@ function renderOverviewTab(container, node) {
     b.addEventListener("click", onClick);
     return b;
   };
-  btnRow.appendChild(
-    mkBtn("⇥ Move Under Selected", "Nest this component beneath the component above it", async () => {
-      pushUndoSnapshot("Move Under Selected");
-      const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/indent`, { method: "POST" });
-      if (!res.ok) {
-        undoStack.pop();
-        updateUndoRedoButtons();
-        alert("Can't move under selected: no preceding component at this level.");
-      }
-      await loadProject();
-    })
-  );
-  btnRow.appendChild(
-    mkBtn("⇤ Move Up One Level", "Move this component up to its parent's level", async () => {
-      pushUndoSnapshot("Move Up One Level");
-      const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/outdent`, { method: "POST" });
-      if (!res.ok) {
-        undoStack.pop();
-        updateUndoRedoButtons();
-        alert("Can't move up one level: already at the top.");
-      }
-      await loadProject();
-    })
-  );
-  btnRow.appendChild(mkBtn("+ Add Component", "Add a component beneath this one", () => addChild(focusedNodeId)));
-  btnRow.appendChild(
-    mkBtn("+ Add Parallel Component", "Add a component alongside this one, at the same level", () =>
-      addSiblingBelow(focusedNodeId)
-    )
-  );
   if (node.parent_id !== null) {
     btnRow.appendChild(
       mkBtn("↑ Move up", "Move earlier among its siblings", async () => {
