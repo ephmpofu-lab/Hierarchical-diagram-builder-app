@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Diagram Builder — Editor</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <h1 id="projectName">Loading…</h1>
+    <a class="btn" href="index.html">Back to library</a>
+  </div>
+
+  <div class="editor-stub">
+    Editor coming in Phase 3 (outline pane), Phase 4 (canvas), and beyond.<br>
+    Project ID: <code id="projectId"></code>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const projectId = params.get("project");
+    document.getElementById("projectId").textContent = projectId || "(missing)";
+    if (projectId) {
+      fetch(`/api/projects/${projectId}`)
+        .then((res) => (res.ok ? res.json() : Promise.reject()))
+        .then((project) => {
+          document.getElementById("projectName").textContent = project.name;
+        })
+        .catch(() => {
+          document.getElementById("projectName").textContent = "Project not found";
+        });
+    }
+  </script>
+</body>
+</html>
