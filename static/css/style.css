@@ -12,9 +12,9 @@
   --accent-bg: rgba(37, 99, 235, 0.16);
   --accent-text: #93c5fd;
 
-  --success: #16a34a;
-  --success-bg: rgba(22, 163, 74, 0.16);
-  --success-text: #4ade80;
+  --success: #059669;
+  --success-bg: rgba(5, 150, 105, 0.16);
+  --success-text: #34d399;
 
   --warning: #f59e0b;
   --warning-bg: rgba(245, 158, 11, 0.16);
@@ -47,9 +47,9 @@
   --accent-bg: #dbeafe;
   --accent-text: #1d4ed8;
 
-  --success: #16a34a;
-  --success-bg: #dcfce7;
-  --success-text: #166534;
+  --success: #059669;
+  --success-bg: #d1fae5;
+  --success-text: #065f46;
 
   --warning: #f59e0b;
   --warning-bg: #fef3c7;
