@@ -156,6 +156,15 @@ def api_indent_node(project_id: str, node_id: str):
     return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node_id))
 
 
+@router.post("/projects/{project_id}/nodes/{node_id}/arrange-children", response_model=NodeWithLevel)
+def api_arrange_children(project_id: str, node_id: str):
+    project = storage.load_project(project_id)
+    tree.arrange_children(project, node_id)
+    storage.save_project(project)
+    node = project.nodes[node_id]
+    return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node_id))
+
+
 @router.post("/projects/{project_id}/nodes/{node_id}/outdent", response_model=NodeWithLevel)
 def api_outdent_node(project_id: str, node_id: str):
     project = storage.load_project(project_id)

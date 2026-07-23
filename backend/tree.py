@@ -50,8 +50,11 @@ def add_node(
     from .models import Node
 
     parent = get_node_or_404(project, parent_id)
-    default_x = parent.canvas_x + len(parent.children) * 170
-    default_y = parent.canvas_y + 150
+    max_per_row = 5
+    index = len(parent.children)
+    row, col = divmod(index, max_per_row)
+    default_x = parent.canvas_x + col * 170
+    default_y = parent.canvas_y + 150 + row * 130
     new_node = Node(id=node_id, label=label, parent_id=parent_id, canvas_x=default_x, canvas_y=default_y)
     project.nodes[node_id] = new_node
     if insert_after is not None:
@@ -149,6 +152,25 @@ def move_node_position(project: Project, node_id: str, canvas_x: float, canvas_y
     node = get_node_or_404(project, node_id)
     node.canvas_x = canvas_x
     node.canvas_y = canvas_y
+
+
+def arrange_children(project: Project, node_id: str) -> None:
+    """Re-lay-out a node's direct children into a wrapped grid centered under it,
+    instead of whatever scattered positions they've accumulated (e.g. from a bulk import
+    or a lot of manual dragging). Does not touch grandchildren."""
+    node = get_node_or_404(project, node_id)
+    max_per_row = 5
+    count = len(node.children)
+    if count == 0:
+        return
+    rows = (count + max_per_row - 1) // max_per_row
+    for index, child_id in enumerate(node.children):
+        row, col = divmod(index, max_per_row)
+        cols_in_this_row = min(max_per_row, count - row * max_per_row)
+        row_offset_x = -(cols_in_this_row - 1) * 170 / 2
+        child = project.nodes[child_id]
+        child.canvas_x = node.canvas_x + row_offset_x + col * 170
+        child.canvas_y = node.canvas_y + 150 + row * 130
 
 
 def indent_node(project: Project, node_id: str) -> None:
@@ -393,7 +415,12 @@ def parse_outline_text(text: str) -> TemplateNode:
     for line in raw_lines:
         tag_match = _LEVEL_TAG_RE.search(line)
         working = _LEVEL_TAG_RE.sub("", line) if tag_match else line
-        raw_indent = len(working) - len(working.lstrip(" \t"))
+        # Count the *entire* leading run of whitespace/box-drawing/bullet characters as
+        # indent width, not just literal spaces — ASCII tree art ("│   ├── Item") signals
+        # depth through repeated fixed-width prefixes made of "│", "─", "├", "└", etc.,
+        # and treating those as plain non-indent characters flattens the whole structure.
+        bullet_match = _BULLET_STRIP_RE.match(working)
+        raw_indent = len(bullet_match.group(0)) if bullet_match else 0
         label = _BULLET_STRIP_RE.sub("", working).strip()
         if not label:
             continue
