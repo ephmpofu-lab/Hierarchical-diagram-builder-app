@@ -345,8 +345,15 @@ function renderNode(nodeId) {
   const row = document.createElement("div");
   row.className = "outline-row" + (nodeId === focusedNodeId ? " focused" : "");
   row.dataset.id = nodeId;
-  row.style.paddingLeft = `${8 + (node.level - 1) * 20}px`;
-  if (!node.is_group) row.style.borderLeftColor = levelTintColor(node.level);
+  // Coloured hierarchy connector guides instead of a flat left-border bar: one vertical
+  // rail per ancestor level, tinted the same way as that level's canvas nodes, so depth
+  // reads as a connected tree structure rather than a per-row accent stripe.
+  for (let lvl = 1; lvl < node.level; lvl++) {
+    const guide = document.createElement("span");
+    guide.className = "tree-guide";
+    guide.style.borderLeftColor = levelTintColor(lvl);
+    row.appendChild(guide);
+  }
 
   const toggle = document.createElement("span");
   toggle.className = "toggle";

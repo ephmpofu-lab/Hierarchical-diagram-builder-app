@@ -985,7 +985,14 @@ body.presentation-active .editor-panes {
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 14px;
-  border-left: 3px solid transparent;
+}
+
+.tree-guide {
+  align-self: stretch;
+  flex-shrink: 0;
+  width: 14px;
+  border-left: 1.5px solid var(--border);
+  opacity: 0.7;
 }
 
 .outline-row:hover {
