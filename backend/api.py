@@ -7,6 +7,7 @@ from . import storage, tree
 from .models import (
     Comment,
     CommentCreate,
+    MoveSiblingRequest,
     NodeCreate,
     NodePosition,
     NodeUpdate,
@@ -97,8 +98,8 @@ def api_delete_project(project_id: str):
 def api_add_node(project_id: str, body: NodeCreate):
     project = storage.load_project(project_id)
     node_id = str(uuid.uuid4())
-    tree.add_node(project, body.parent_id, body.label, node_id, body.insert_after)
-    tree.log_activity(project, f"Added node '{body.label}'")
+    tree.add_node(project, body.parent_id, body.label, node_id, body.insert_after, body.is_group)
+    tree.log_activity(project, f"Added {'group' if body.is_group else 'node'} '{body.label}'")
     storage.save_project(project)
     node = project.nodes[node_id]
     return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node_id))
@@ -123,9 +124,19 @@ def api_update_node(project_id: str, node_id: str, body: NodeUpdate):
         body.owner,
         body.shape,
         body.group_children,
+        body.is_group,
     )
     if body.label is not None and body.label != old_label:
         tree.log_activity(project, f"Renamed '{old_label}' to '{body.label}'")
+    storage.save_project(project)
+    node = project.nodes[node_id]
+    return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node_id))
+
+
+@router.post("/projects/{project_id}/nodes/{node_id}/move-sibling", response_model=NodeWithLevel)
+def api_move_sibling(project_id: str, node_id: str, body: MoveSiblingRequest):
+    project = storage.load_project(project_id)
+    tree.move_sibling(project, node_id, body.direction)
     storage.save_project(project)
     node = project.nodes[node_id]
     return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node_id))

@@ -28,6 +28,7 @@ class Node(BaseModel):
     comments: List[Comment] = Field(default_factory=list)
     shape: str = "rect"
     group_children: bool = False
+    is_group: bool = False
 
 
 class Reference(BaseModel):
@@ -90,6 +91,7 @@ class NodeCreate(BaseModel):
     parent_id: str
     label: str = "New node"
     insert_after: Optional[str] = None
+    is_group: bool = False
 
 
 class NodeUpdate(BaseModel):
@@ -105,6 +107,11 @@ class NodeUpdate(BaseModel):
     owner: Optional[str] = None
     shape: Optional[str] = None
     group_children: Optional[bool] = None
+    is_group: Optional[bool] = None
+
+
+class MoveSiblingRequest(BaseModel):
+    direction: str  # "up" or "down"
 
 
 class ReparentRequest(BaseModel):

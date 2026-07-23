@@ -16,7 +16,10 @@ def find_root_id(project: Project) -> str:
 
 
 def compute_level(project: Project, node_id: str) -> int:
-    """Depth from root, root = level 1. Walks parent_id chain."""
+    """Depth from root, root = level 1. Walks parent_id chain. Group nodes (is_group=True)
+    are level-transparent: organizing a node's children into a group never changes the
+    level number its real descendants show, since a group isn't a real architecture layer,
+    just a display-time grouping of items that already belong to the same level."""
     level = 1
     seen = set()
     current = project.nodes.get(node_id)
@@ -26,10 +29,12 @@ def compute_level(project: Project, node_id: str) -> int:
         if current.id in seen:
             raise HTTPException(status_code=500, detail="Cycle detected in tree")
         seen.add(current.id)
-        current = project.nodes.get(current.parent_id)
-        if current is None:
+        parent = project.nodes.get(current.parent_id)
+        if parent is None:
             raise HTTPException(status_code=500, detail="Broken parent reference")
-        level += 1
+        if not parent.is_group:
+            level += 1
+        current = parent
     return level
 
 
@@ -46,6 +51,7 @@ def add_node(
     label: str,
     node_id: str,
     insert_after: Optional[str] = None,
+    is_group: bool = False,
 ) -> None:
     from .models import Node
 
@@ -55,7 +61,9 @@ def add_node(
     row, col = divmod(index, max_per_row)
     default_x = parent.canvas_x + col * 170
     default_y = parent.canvas_y + 150 + row * 130
-    new_node = Node(id=node_id, label=label, parent_id=parent_id, canvas_x=default_x, canvas_y=default_y)
+    new_node = Node(
+        id=node_id, label=label, parent_id=parent_id, canvas_x=default_x, canvas_y=default_y, is_group=is_group
+    )
     project.nodes[node_id] = new_node
     if insert_after is not None:
         if insert_after not in parent.children:
@@ -126,6 +134,7 @@ def rename_node(
     owner: Optional[str] = None,
     shape: Optional[str] = None,
     group_children: Optional[bool] = None,
+    is_group: Optional[bool] = None,
 ) -> None:
     node = get_node_or_404(project, node_id)
     if label is not None:
@@ -152,6 +161,27 @@ def rename_node(
         node.shape = shape
     if group_children is not None:
         node.group_children = group_children
+    if is_group is not None:
+        node.is_group = is_group
+
+
+def move_sibling(project: Project, node_id: str, direction: str) -> None:
+    """Reorder node_id one position earlier ("up") or later ("down") among its siblings."""
+    node = get_node_or_404(project, node_id)
+    if node.parent_id is None:
+        raise HTTPException(status_code=400, detail="Cannot reorder the root node")
+    parent = project.nodes[node.parent_id]
+    idx = parent.children.index(node_id)
+    if direction == "up":
+        if idx == 0:
+            raise HTTPException(status_code=400, detail="Already first among its siblings")
+        parent.children[idx - 1], parent.children[idx] = parent.children[idx], parent.children[idx - 1]
+    elif direction == "down":
+        if idx == len(parent.children) - 1:
+            raise HTTPException(status_code=400, detail="Already last among its siblings")
+        parent.children[idx + 1], parent.children[idx] = parent.children[idx], parent.children[idx + 1]
+    else:
+        raise HTTPException(status_code=400, detail="direction must be 'up' or 'down'")
 
 
 def move_node_position(project: Project, node_id: str, canvas_x: float, canvas_y: float) -> None:
