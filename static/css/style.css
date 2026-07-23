@@ -201,6 +201,10 @@ button {
   min-width: 200px;
 }
 
+.dropdown-menu[hidden] {
+  display: none;
+}
+
 .dropdown-menu button {
   border: none;
   background: none;
@@ -625,6 +629,10 @@ button {
   align-items: center;
   justify-content: center;
   z-index: 100;
+}
+
+.modal-backdrop[hidden] {
+  display: none;
 }
 
 .modal {
