@@ -31,6 +31,7 @@ class Node(BaseModel):
     is_group: bool = False
     classification: Optional[str] = None
     custom_color: Optional[str] = None
+    planning_status: Optional[str] = None
 
 
 class Reference(BaseModel):
@@ -112,6 +113,7 @@ class NodeUpdate(BaseModel):
     is_group: Optional[bool] = None
     classification: Optional[str] = None
     custom_color: Optional[str] = None
+    planning_status: Optional[str] = None
 
 
 class MoveSiblingRequest(BaseModel):

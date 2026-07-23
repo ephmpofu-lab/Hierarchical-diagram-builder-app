@@ -137,6 +137,7 @@ def rename_node(
     is_group: Optional[bool] = None,
     classification: Optional[str] = None,
     custom_color: Optional[str] = None,
+    planning_status: Optional[str] = None,
 ) -> None:
     node = get_node_or_404(project, node_id)
     if label is not None:
@@ -169,6 +170,8 @@ def rename_node(
         node.classification = classification
     if custom_color is not None:
         node.custom_color = custom_color
+    if planning_status is not None:
+        node.planning_status = planning_status
 
 
 def move_sibling(project: Project, node_id: str, direction: str) -> None:

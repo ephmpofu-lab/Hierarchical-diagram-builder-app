@@ -37,6 +37,41 @@ const CLASSIFICATION_BADGES = {
   Monitoring: "MON",
   Infrastructure: "INF",
 };
+const CLASSIFICATION_ICONS = {
+  "AI Agent": "🤖",
+  Workflow: "⚙",
+  Database: "🗄",
+  API: "🔌",
+  UI: "🖥",
+  Decision: "◆",
+  Configuration: "🔧",
+  Storage: "📦",
+  Queue: "➜",
+  Security: "🔒",
+  Validation: "✓",
+  Service: "⚡",
+  Monitoring: "📊",
+  Infrastructure: "🏗",
+};
+
+// Planning status is distinct from the freeform `status` field (Planned/In Development/
+// Done/Blocked/Deprecated) — this is the fixed 5-state progress tracker that turns the
+// architecture tree itself into a planning board (see PLANNING_ENHANCEMENTS notes).
+const PLANNING_STATUSES = ["Not Started", "In Progress", "Completed", "Needs Review", "Blocked"];
+const PLANNING_STATUS_ICONS = {
+  "Not Started": "○",
+  "In Progress": "◐",
+  Completed: "✓",
+  "Needs Review": "⚠",
+  Blocked: "⛔",
+};
+const PLANNING_STATUS_COLORS = {
+  "Not Started": "#64748b",
+  "In Progress": "#2563eb",
+  Completed: "#16a34a",
+  "Needs Review": "#f59e0b",
+  Blocked: "#dc2626",
+};
 
 const outlineTree = document.getElementById("outlineTree");
 const projectNameEl = document.getElementById("projectName");
@@ -140,7 +175,45 @@ projectNameEl.addEventListener("click", async () => {
 projectNameEl.style.cursor = "pointer";
 projectNameEl.title = "Click to rename project";
 
+let progressCache = new Map();
+
+// One bottom-up pass over the whole tree, computing each node's rollup over its FULL
+// subtree (not just direct children) so progress is meaningful at any level of nesting.
+// is_group nodes are organizational (level-transparent) and don't count as work items
+// themselves, but their own children still roll up through them into their parent.
+function computeAllProgress() {
+  const cache = new Map();
+  function walk(id) {
+    const n = project.nodes[id];
+    const stats = { total: 0, completed: 0, inProgress: 0, needsReview: 0, blocked: 0, notStarted: 0 };
+    for (const childId of n.children) {
+      const child = project.nodes[childId];
+      const childStats = walk(childId);
+      if (!child.is_group) {
+        stats.total++;
+        if (child.planning_status === "Completed") stats.completed++;
+        else if (child.planning_status === "In Progress") stats.inProgress++;
+        else if (child.planning_status === "Needs Review") stats.needsReview++;
+        else if (child.planning_status === "Blocked") stats.blocked++;
+        else stats.notStarted++;
+      }
+      stats.total += childStats.total;
+      stats.completed += childStats.completed;
+      stats.inProgress += childStats.inProgress;
+      stats.needsReview += childStats.needsReview;
+      stats.blocked += childStats.blocked;
+      stats.notStarted += childStats.notStarted;
+    }
+    stats.percent = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+    cache.set(id, stats);
+    return stats;
+  }
+  if (rootId && project.nodes[rootId]) walk(rootId);
+  return cache;
+}
+
 function render() {
+  if (project) progressCache = computeAllProgress();
   renderOutline();
   renderBreadcrumb();
   renderCanvas();
@@ -1287,6 +1360,45 @@ function drawNode(node, pos, faded = false) {
     group.appendChild(dot);
   }
 
+  if (!node.is_group && node.planning_status) {
+    const planBadge = document.createElementNS(SVG_NS, "g");
+    planBadge.setAttribute("class", "planning-badge");
+    const planCircle = document.createElementNS(SVG_NS, "circle");
+    planCircle.setAttribute("cx", pos.x - NODE_W / 2 + 9);
+    planCircle.setAttribute("cy", pos.y + NODE_H / 2 - 8);
+    planCircle.setAttribute("r", 7);
+    planCircle.setAttribute("fill", PLANNING_STATUS_COLORS[node.planning_status] || "var(--text-muted)");
+    const planIcon = document.createElementNS(SVG_NS, "text");
+    planIcon.setAttribute("class", "planning-badge-text");
+    planIcon.setAttribute("x", pos.x - NODE_W / 2 + 9);
+    planIcon.setAttribute("y", pos.y + NODE_H / 2 - 8);
+    planIcon.textContent = PLANNING_STATUS_ICONS[node.planning_status] || "";
+    planBadge.appendChild(planCircle);
+    planBadge.appendChild(planIcon);
+    group.appendChild(planBadge);
+  }
+
+  const progress = progressCache.get(node.id);
+  if (!node.is_group && progress && progress.total > 0) {
+    const barY = pos.y + NODE_H / 2 + 4;
+    const track = document.createElementNS(SVG_NS, "rect");
+    track.setAttribute("class", "progress-track");
+    track.setAttribute("x", pos.x - NODE_W / 2);
+    track.setAttribute("y", barY);
+    track.setAttribute("width", NODE_W);
+    track.setAttribute("height", 3);
+    track.setAttribute("rx", 1.5);
+    const fill = document.createElementNS(SVG_NS, "rect");
+    fill.setAttribute("class", "progress-fill");
+    fill.setAttribute("x", pos.x - NODE_W / 2);
+    fill.setAttribute("y", barY);
+    fill.setAttribute("width", Math.max(2, (NODE_W * progress.percent) / 100));
+    fill.setAttribute("height", 3);
+    fill.setAttribute("rx", 1.5);
+    group.appendChild(track);
+    group.appendChild(fill);
+  }
+
   group.addEventListener("click", (e) => {
     if (refMode) {
       e.preventDefault();
@@ -2283,6 +2395,73 @@ function renderInspector() {
   else renderCommentsTab(tabContent, node);
 }
 
+function infoPlanningStatusValue(node) {
+  const wrap = document.createElement("div");
+  wrap.className = "info-value-with-dot";
+  const swatch = document.createElement("span");
+  swatch.className = "classification-swatch";
+  const activeColor = PLANNING_STATUS_COLORS[node.planning_status];
+  swatch.style.background = activeColor || "transparent";
+  swatch.style.borderColor = activeColor || "var(--border)";
+  swatch.textContent = PLANNING_STATUS_ICONS[node.planning_status] || "";
+  const select = document.createElement("select");
+  select.className = "info-select";
+  const noneOpt = document.createElement("option");
+  noneOpt.value = "";
+  noneOpt.textContent = "—";
+  select.appendChild(noneOpt);
+  for (const opt of PLANNING_STATUSES) {
+    const o = document.createElement("option");
+    o.value = opt;
+    o.textContent = `${PLANNING_STATUS_ICONS[opt]} ${opt}`;
+    if (node.planning_status === opt) o.selected = true;
+    select.appendChild(o);
+  }
+  select.addEventListener("change", () => patchNode({ planning_status: select.value }));
+  wrap.appendChild(swatch);
+  wrap.appendChild(select);
+  return wrap;
+}
+
+function renderProgressSummary(nodeId) {
+  const stats = progressCache.get(nodeId);
+  const wrap = document.createElement("div");
+  wrap.className = "progress-summary";
+  if (!stats || stats.total === 0) {
+    wrap.textContent = "No trackable children yet.";
+    wrap.classList.add("inspector-empty-note");
+    return wrap;
+  }
+  const line = document.createElement("div");
+  line.className = "progress-summary-line";
+  line.textContent = `${stats.completed} / ${stats.total} Complete — ${stats.percent}%`;
+  const bar = document.createElement("div");
+  bar.className = "progress-summary-bar";
+  const fill = document.createElement("div");
+  fill.className = "progress-summary-fill";
+  fill.style.width = `${stats.percent}%`;
+  bar.appendChild(fill);
+  const breakdown = document.createElement("div");
+  breakdown.className = "progress-summary-breakdown";
+  const parts = [
+    ["Completed", stats.completed],
+    ["In Progress", stats.inProgress],
+    ["Needs Review", stats.needsReview],
+    ["Blocked", stats.blocked],
+    ["Not Started", stats.notStarted],
+  ];
+  for (const [label, count] of parts) {
+    if (count === 0) continue;
+    const part = document.createElement("span");
+    part.textContent = `${PLANNING_STATUS_ICONS[label]} ${label}: ${count}`;
+    breakdown.appendChild(part);
+  }
+  wrap.appendChild(line);
+  wrap.appendChild(bar);
+  wrap.appendChild(breakdown);
+  return wrap;
+}
+
 function renderOverviewTab(container, node) {
   const parentNode = node.parent_id ? project.nodes[node.parent_id] : null;
   const infoTable = document.createElement("div");
@@ -2290,7 +2469,13 @@ function renderOverviewTab(container, node) {
   infoTable.appendChild(infoRow("Parent", infoStaticValue(parentNode ? parentNode.label : "— (root)")));
   infoTable.appendChild(infoRow("Children", infoStaticValue(String(node.children.length))));
   infoTable.appendChild(infoRow("Level", infoStaticValue(String(node.level))));
+  infoTable.appendChild(infoRow("Planning Status", infoPlanningStatusValue(node)));
   container.appendChild(infoTable);
+
+  const progressField = field("Progress");
+  progressField.appendChild(renderProgressSummary(node.id));
+  container.appendChild(progressField);
+  container.appendChild(document.createElement("hr")).className = "inspector-divider";
 
   const btnRow = document.createElement("div");
   btnRow.className = "btn-row";
@@ -2386,6 +2571,7 @@ function infoClassificationValue(node) {
   swatch.className = "classification-swatch";
   swatch.style.background = activeColor || "transparent";
   swatch.style.borderColor = activeColor || "var(--border)";
+  swatch.textContent = CLASSIFICATION_ICONS[node.classification] || "";
   const select = document.createElement("select");
   select.className = "info-select";
   const noneOpt = document.createElement("option");
@@ -2395,7 +2581,7 @@ function infoClassificationValue(node) {
   for (const opt of CLASSIFICATIONS) {
     const o = document.createElement("option");
     o.value = opt;
-    o.textContent = opt;
+    o.textContent = `${CLASSIFICATION_ICONS[opt]} ${opt}`;
     if (node.classification === opt) o.selected = true;
     select.appendChild(o);
   }
