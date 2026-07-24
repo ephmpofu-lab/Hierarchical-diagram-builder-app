@@ -44,7 +44,10 @@ def load_project(project_id: str) -> Project:
     path = _project_path(project_id)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Project not found")
-    data = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Project file is corrupted: {e}")
     return Project.model_validate(data)
 
 
@@ -52,10 +55,16 @@ def save_project(project: Project) -> None:
     PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
     project.updated_at = _now()
     path = _project_path(project.id)
-    path.write_text(
+    # Write to a temp file and rename over the target — Path.replace() is an atomic
+    # os-level rename on both POSIX and Windows, so a reader never sees a half-written or
+    # torn file even if two saves for the same project overlap (endpoints are sync `def`,
+    # so FastAPI runs them in a thread pool — concurrent saves are genuinely possible).
+    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path.write_text(
         json.dumps(project.model_dump(by_alias=True), indent=2),
         encoding="utf-8",
     )
+    tmp_path.replace(path)
 
 
 def create_project(name: str) -> Project:

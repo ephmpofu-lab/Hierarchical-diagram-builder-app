@@ -303,8 +303,14 @@ if (!projectId) {
 
 async function loadProject() {
   const res = await fetch(`/api/projects/${projectId}`);
-  if (!res.ok) {
+  if (res.status === 404) {
     projectNameEl.textContent = "Project not found";
+    return;
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    projectNameEl.textContent = "Couldn't load this project";
+    alert(err.detail || "This project couldn't be loaded (a server error occurred). Your data has not been deleted.");
     return;
   }
   project = await res.json();
@@ -410,16 +416,31 @@ function updateEmptyCanvasPrompt() {
   emptyCanvasPrompt.hidden = !isEmpty;
 }
 
+// Serialized: focusNode does a PUT (expandAncestors) then a GET (loadProject), and is called
+// from many places (clicks, keyboard nav, search, Presentation Mode's auto-play timer). If a
+// second call started before the first finished, two overlapping saves for the same project
+// could race — the backend's save is now atomic so that can no longer corrupt the file, but
+// the calls would still stomp on each other's in-progress state, so a second call while one is
+// already in flight is simply ignored rather than queued (nav is idempotent — being a beat
+// late to the next click/tick is harmless; overlapping is not).
+let focusNodeInFlight = false;
+
 async function focusNode(nodeId) {
-  focusedNodeId = nodeId;
-  panOffsetX = 0;
-  panOffsetY = 0;
-  expandedGroupOverflow = false;
-  zoomScale = 1;
-  zoomLevelEl.textContent = "100%";
-  await expandAncestors(nodeId);
-  await loadProject();
-  fitToView();
+  if (focusNodeInFlight) return;
+  focusNodeInFlight = true;
+  try {
+    focusedNodeId = nodeId;
+    panOffsetX = 0;
+    panOffsetY = 0;
+    expandedGroupOverflow = false;
+    zoomScale = 1;
+    zoomLevelEl.textContent = "100%";
+    await expandAncestors(nodeId);
+    await loadProject();
+    fitToView();
+  } finally {
+    focusNodeInFlight = false;
+  }
 }
 
 async function expandAncestors(nodeId) {
@@ -4827,6 +4848,27 @@ function renderHealthFooter(report) {
   }
 }
 
+// Explains exactly what's driving the score, since a bare number invites "why is this what
+// it is" with no way to check — hygiene issues (notes/owners/etc.) are weighted as a % of
+// the tree (see build_validation_report in tree.py), so this mirrors that in plain language
+// rather than just repeating the raw counts.
+function healthScoreExplanation(report) {
+  const lines = [
+    "Score starts at 100 and subtracts weighted penalties.",
+    "Documentation/ownership gaps count as a % of all nodes; structural defects count per instance (capped).",
+    "",
+    `Duplicate labels: ${report.duplicate_labels.length}`,
+    `Circular references: ${report.circular_references.length}`,
+    `Large modules (>10 children): ${report.large_modules.length}`,
+    `Single-child nodes: ${report.single_child_nodes.length}`,
+    `Missing notes: ${report.missing_notes.length}`,
+    `Missing owners: ${report.missing_owners.length}`,
+    `Orphan nodes: ${report.orphan_nodes.length}`,
+    `Broken references: ${report.broken_references.length}`,
+  ];
+  return lines.join("\n");
+}
+
 // Shared by the full-report modal (92px) and the compact Inspector footer (48px) — same
 // gauge, just a different size, so the two views never drift into inconsistent visuals.
 function buildHealthGauge(report, size) {
@@ -4840,6 +4882,7 @@ function buildHealthGauge(report, size) {
   gaugeWrap.className = "health-gauge-wrap " + ratingClass + (size < 80 ? " small" : "");
   gaugeWrap.style.width = `${size}px`;
   gaugeWrap.style.height = `${size}px`;
+  gaugeWrap.title = healthScoreExplanation(report);
 
   const svg = document.createElementNS(SVG_NS, "svg");
   svg.setAttribute("width", size);
@@ -5135,7 +5178,11 @@ importConfirmBtn.addEventListener("click", async () => {
     const newNode = await res.json();
     closeImportModal();
     focusedNodeId = newNode.id;
-    await loadProject();
+    // A bulk-imported subtree's default positions come from per-parent grid math applied
+    // recursively — reasonable node-by-node, but nothing ties siblings across different
+    // parents to a shared per-level row, so a big import reliably looks jumbled until
+    // Auto Arrange runs. Run it automatically so the result is never a mess by default.
+    await autoArrangeLayout();
   } catch (err) {
     alert("Import failed: could not reach the server.");
   } finally {

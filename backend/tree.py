@@ -603,17 +603,29 @@ def build_validation_report(project: Project) -> ValidationReport:
     avg_depth = round(sum(depths) / len(depths), 2) if depths else 0.0
     max_depth = max(depths) if depths else 0
 
+    # Hygiene issues (documentation/ownership/shape) are weighted as a PROPORTION of the
+    # tree, not a flat count per node — a 200-node architecture where every node happens to
+    # be missing notes is exactly as "undocumented" as a 5-node one in the same state, and
+    # scoring it worse just for being bigger actively punishes building more architecture.
+    # Structural defects (cycles, orphans, broken references) are real regardless of tree
+    # size, so they stay count-weighted, but capped per category so a couple of real defects
+    # in a large tree can't alone crater the score to zero.
+    total_nodes = len(project.nodes) or 1
+
+    def pct(count: int) -> float:
+        return count / total_nodes
+
     penalty = (
-        5 * len(duplicate_labels)
-        + 15 * len(circular_references)
-        + 3 * len(large_modules)
-        + 2 * len(single_child)
-        + 1 * len(missing_notes)
-        + 2 * len(missing_owners)
-        + 10 * len(orphan_nodes)
-        + 10 * len(broken_references)
+        20 * pct(len(duplicate_labels))
+        + min(30, 15 * len(circular_references))
+        + 10 * pct(len(large_modules))
+        + 10 * pct(len(single_child))
+        + 15 * pct(len(missing_notes))
+        + 15 * pct(len(missing_owners))
+        + min(25, 12 * len(orphan_nodes))
+        + min(25, 12 * len(broken_references))
     )
-    score = max(0, min(100, 100 - penalty))
+    score = max(0, min(100, round(100 - penalty)))
     if score >= 90:
         rating = "Excellent"
     elif score >= 75:
