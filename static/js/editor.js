@@ -116,7 +116,6 @@ const snapGridCheckbox = document.getElementById("snapGridCheckbox");
 const animateFlowCheckbox = document.getElementById("animateFlowCheckbox");
 const layoutMenuBtn = document.getElementById("layoutMenuBtn");
 const layoutMenu = document.getElementById("layoutMenu");
-const menuUnlockLayoutBtn = document.getElementById("menuUnlockLayoutBtn");
 const menuAutoArrangeBtn = document.getElementById("menuAutoArrangeBtn");
 const menuZoomInBtn = document.getElementById("menuZoomInBtn");
 const menuZoomOutBtn = document.getElementById("menuZoomOutBtn");
@@ -264,15 +263,11 @@ function updateSelectionToolbar() {
     count === 1
       ? "Draw a relationship from this node to another — click the target node next"
       : "Select exactly one node to start a connection";
-  const canArrange = layoutUnlocked && viewMode === "full" && count >= 2;
-  selAlignBtn.disabled = !canArrange;
-  selDistributeBtn.disabled = !canArrange;
-  selAlignBtn.title = canArrange
-    ? "Align selected nodes"
-    : "Align selected nodes — requires Unlock Layout (Full Architecture view) and 2+ selected nodes";
-  selDistributeBtn.title = canArrange
-    ? "Distribute selected nodes evenly"
-    : "Distribute selected nodes evenly — requires Unlock Layout (Full Architecture view) and 2+ selected nodes";
+  const canAlign = count >= 2;
+  selAlignBtn.disabled = !canAlign;
+  selDistributeBtn.disabled = !canAlign;
+  selAlignBtn.title = canAlign ? "Align selected nodes" : "Select 2+ nodes to align";
+  selDistributeBtn.title = canAlign ? "Distribute selected nodes evenly" : "Select 2+ nodes to distribute";
 }
 
 const ROW_GAP = 130;
@@ -295,8 +290,6 @@ async function loadProject() {
   rootId = Object.values(project.nodes).find((n) => n.parent_id === null).id;
   projectNameEl.textContent = project.name;
   if (!focusedNodeId) focusedNodeId = rootId;
-  layoutUnlocked = !!project.layout_unlocked;
-  updateUnlockLayoutButton();
   render();
 }
 
@@ -921,21 +914,25 @@ function straightPath(from, to) {
   return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
 }
 
-// Places `siblings` in a row alongside the already-positioned `activeId` node (which stays
-// put), fanning outward left/right of it, and marks each as faded context — visible, but
-// dimmed, so ancestor context is never fully hidden even though it isn't the active branch.
-function layoutSiblingRow(siblings, activeId, y, positions, fadedIds) {
-  // Soft-cap even faded context rows so an ancestor with hundreds of siblings doesn't
-  // blow out the layout — this is context, not the thing being worked on. Returns the
-  // capped list actually placed, so callers can group edges to exactly these nodes.
+// Every node's position is now its own stored canvas_x/canvas_y — real and persistent, the
+// same absolute space Full Architecture always used, so a node dragged anywhere stays there
+// regardless of which node is later focused. Focus Mode's job is purely a *filter*: which
+// ancestors/children/faded-context siblings are shown at all — "focusing" a node is a camera
+// move (see fitToView/fitToBounds), never a position recompute. Auto Arrange is how you get
+// back to the tidy deterministic layout on demand.
+function nodePos(node) {
+  return { x: node.canvas_x, y: node.canvas_y };
+}
+
+// Soft-caps context siblings so an ancestor with hundreds of children doesn't blow out the
+// layout — this is context, not the thing being worked on. Returns the capped list actually
+// placed, so callers can group edges to exactly these nodes.
+function placeContextSiblings(siblings, positions, fadedIds) {
   const capped = siblings.length > MAX_UNGROUPED_VISIBLE ? siblings.slice(0, MAX_UNGROUPED_VISIBLE) : siblings;
-  const activeX = positions.get(activeId).x;
-  capped.forEach((sib, i) => {
-    const side = i % 2 === 0 ? 1 : -1;
-    const rank = Math.floor(i / 2) + 1;
-    positions.set(sib.id, { x: activeX + side * rank * (NODE_W + COL_GAP), y });
+  for (const sib of capped) {
+    positions.set(sib.id, nodePos(sib));
     fadedIds.add(sib.id);
-  });
+  }
   return capped;
 }
 
@@ -964,38 +961,32 @@ function computeCanvasLayout(viewW, viewH) {
   const fadedIds = new Set();
   const contextGroups = []; // {fromId, siblings: Node[]} — drawn via the same trunk+bus connector, dimmed
 
-  positions.set(focus.id, { x: viewW / 2, y: viewH / 2 });
+  positions.set(focus.id, nodePos(focus));
 
   // Every ancestor sits on the direct path (full opacity); every OTHER child of that
   // ancestor (i.e. its siblings at that level) renders faded alongside it, never omitted.
   ancestorChain.forEach((ancestor, i) => {
-    const y = viewH / 2 - (i + 1) * ROW_GAP;
-    positions.set(ancestor.id, { x: viewW / 2, y });
+    positions.set(ancestor.id, nodePos(ancestor));
     const childOnPath = i === 0 ? focus.id : ancestorChain[i - 1].id;
     const siblings = ancestor.children.filter((id) => id !== childOnPath).map((id) => project.nodes[id]);
-    const placed = layoutSiblingRow(siblings, ancestor.id, y, positions, fadedIds);
+    const placed = placeContextSiblings(siblings, positions, fadedIds);
     if (placed.length > 0) contextGroups.push({ fromId: ancestor.id, siblings: placed });
   });
 
   if (parent) {
     const focusSiblings = parent.children.filter((id) => id !== focus.id).map((id) => project.nodes[id]);
-    const placed = layoutSiblingRow(focusSiblings, focus.id, viewH / 2, positions, fadedIds);
+    const placed = placeContextSiblings(focusSiblings, positions, fadedIds);
     if (placed.length > 0) contextGroups.push({ fromId: parent.id, siblings: placed });
   }
 
-  const n = visibleChildren.length;
-  const rowOffsetX = n > 0 ? -((n - 1) * (NODE_W + COL_GAP)) / 2 : 0;
-  visibleChildren.forEach((child, i) => {
-    positions.set(child.id, {
-      x: viewW / 2 + rowOffsetX + i * (NODE_W + COL_GAP),
-      y: viewH / 2 + ROW_GAP,
-    });
+  visibleChildren.forEach((child) => {
+    positions.set(child.id, nodePos(child));
   });
 
-  let minX = viewW / 2 - NODE_W / 2;
-  let maxX = viewW / 2 + NODE_W / 2;
-  let minY = (ancestorChain.length > 0 ? viewH / 2 - ancestorChain.length * ROW_GAP : viewH / 2) - NODE_H / 2;
-  let maxY = viewH / 2 + NODE_H / 2;
+  let minX = focus.canvas_x - NODE_W / 2;
+  let maxX = focus.canvas_x + NODE_W / 2;
+  let minY = focus.canvas_y - NODE_H / 2;
+  let maxY = focus.canvas_y + NODE_H / 2;
   for (const pos of positions.values()) {
     minX = Math.min(minX, pos.x - NODE_W / 2);
     maxX = Math.max(maxX, pos.x + NODE_W / 2);
@@ -1200,25 +1191,11 @@ function computeFullArchitectureLayout(viewW, viewH) {
   }
   walk(rootId);
 
+  // Always the node's own stored position — same reasoning as Focus Mode (see nodePos above).
   const positions = new Map();
-  const levels = [...levelBuckets.keys()].sort((a, b) => a - b);
-  levels.forEach((level, rowIndex) => {
-    const nodesInRow = levelBuckets.get(level);
-    if (layoutUnlocked) {
-      // Unlock Layout: position is whatever the user last dragged it to (persisted on the
-      // node itself), not the computed row/column grid — the architecture is unaffected.
-      for (const node of nodesInRow) {
-        positions.set(node.id, { x: node.canvas_x, y: node.canvas_y });
-      }
-      return;
-    }
-    const n = nodesInRow.length;
-    const rowWidth = n * NODE_W + Math.max(0, n - 1) * COL_GAP;
-    const startX = viewW / 2 - rowWidth / 2 + NODE_W / 2;
-    nodesInRow.forEach((node, i) => {
-      positions.set(node.id, { x: startX + i * (NODE_W + COL_GAP), y: 60 + rowIndex * ROW_GAP });
-    });
-  });
+  for (const nodes of levelBuckets.values()) {
+    for (const node of nodes) positions.set(node.id, nodePos(node));
+  }
 
   let minX = Infinity;
   let maxX = -Infinity;
@@ -1238,6 +1215,39 @@ function computeFullArchitectureLayout(viewW, viewH) {
   }
 
   return { positions, childrenByParent, overflowByParent, bounds: { minX, maxX, minY, maxY } };
+}
+
+// Used only by Auto Arrange: what the deterministic level-row grid would look like, without
+// reading or touching anyone's actual stored position. Auto Arrange then persists this back
+// as everyone's new stored position.
+function computeDeterministicFullLayout(viewW, viewH) {
+  const levelBuckets = new Map();
+  const visited = new Set();
+  function walk(nodeId) {
+    if (visited.has(nodeId)) return;
+    visited.add(nodeId);
+    const node = project.nodes[nodeId];
+    if (!levelBuckets.has(node.level)) levelBuckets.set(node.level, []);
+    levelBuckets.get(node.level).push(node);
+    if (node.collapsed) return;
+    const shown =
+      node.children.length > MAX_UNGROUPED_VISIBLE ? node.children.slice(0, MAX_UNGROUPED_VISIBLE) : node.children;
+    for (const childId of shown) walk(childId);
+  }
+  walk(rootId);
+
+  const positions = new Map();
+  const levels = [...levelBuckets.keys()].sort((a, b) => a - b);
+  levels.forEach((level, rowIndex) => {
+    const nodesInRow = levelBuckets.get(level);
+    const n = nodesInRow.length;
+    const rowWidth = n * NODE_W + Math.max(0, n - 1) * COL_GAP;
+    const startX = viewW / 2 - rowWidth / 2 + NODE_W / 2;
+    nodesInRow.forEach((node, i) => {
+      positions.set(node.id, { x: startX + i * (NODE_W + COL_GAP), y: 60 + rowIndex * ROW_GAP });
+    });
+  });
+  return positions;
 }
 
 function renderFullArchitectureCanvas(viewW, viewH) {
@@ -1296,7 +1306,6 @@ let selectedConceptObjectId = null;
 let conceptDragState = null;
 let showConceptGrid = false;
 let snapToConceptGrid = false;
-let layoutUnlocked = false; // mirrors project.layout_unlocked — see setLayoutUnlocked()
 const CONCEPT_GRID_SIZE = 20;
 
 function snapConceptValue(v) {
@@ -2548,22 +2557,9 @@ function startEdgeEndpointDrag(e, fixedPos, excludeId, onDrop) {
   document.addEventListener("mouseup", onUp);
 }
 
-const DROP_ZONE_LABELS = {
-  child: "⬇ Become Child",
-  before: "⇤ Become Parallel Component",
-  after: "⇥ Become Parallel Component",
-  reference: "⇢ Create Reference  (hold Alt)",
-  dependency: "⇢ Create Dependency  (Alt+Shift)",
-};
-
-// Dragging a node's body previews the drop outcome live (Mural/Figma-style direct
-// manipulation) instead of requiring Move Up/Down/Indent/Outdent buttons: drop in the
-// middle of another node to reparent under it, near its top/bottom edge to become its
-// sibling, or hold Alt (Alt+Shift for a Dependency) to draw a reference link instead of
-// reparenting. Architecture Mode's layout stays deterministic — the ghost is just a
-// drag preview; the real position is always recomputed from the tree after the drop.
-// Unlock Layout is active: dragging a node just moves it (visual model only, via the
-// existing per-node position endpoint) instead of previewing a reparent/reference drop.
+// Dragging a node's body always just moves it (position is always absolute and
+// persistent — see Phase 1 of the fix plan). Reparenting happens exclusively via the
+// connection-handle drag → chooser → "Hierarchy".
 function startNodeFreeDrag(e, nodeId) {
   e.preventDefault();
   e.stopPropagation();
@@ -2609,158 +2605,6 @@ function startNodeFreeDrag(e, nodeId) {
       });
     }
   };
-  document.addEventListener("mousemove", onMove);
-  document.addEventListener("mouseup", onUp);
-}
-
-function startNodeReparentDrag(e, nodeId, startPos) {
-  const rect = canvasSvg.getBoundingClientRect();
-  const startClientX = e.clientX;
-  const startClientY = e.clientY;
-  const excludeIds = new Set(collectSubtreeIds(nodeId));
-  let dragging = false;
-  let ghost = null;
-  let highlight = null;
-  let hintLabel = null;
-  let dropTarget = null;
-
-  const toPretransform = (clientX, clientY) => ({
-    x: lastViewW / 2 + (clientX - rect.left - lastViewW / 2 - panOffsetX) / zoomScale,
-    y: lastViewH / 2 + (clientY - rect.top - lastViewH / 2 - panOffsetY) / zoomScale,
-  });
-
-  const beginDrag = () => {
-    dragging = true;
-    const viewportEl = canvasSvg.querySelector(":scope > g");
-    if (!viewportEl) return;
-    ghost = document.createElementNS(SVG_NS, "rect");
-    ghost.setAttribute("class", "node-drag-ghost");
-    ghost.setAttribute("width", NODE_W);
-    ghost.setAttribute("height", NODE_H);
-    ghost.setAttribute("rx", 10);
-    viewportEl.appendChild(ghost);
-    highlight = document.createElementNS(SVG_NS, "rect");
-    highlight.setAttribute("class", "node-drop-zone-highlight");
-    highlight.setAttribute("rx", 8);
-    highlight.style.display = "none";
-    viewportEl.appendChild(highlight);
-    hintLabel = document.createElement("div");
-    hintLabel.className = "drop-hint-label";
-    hintLabel.hidden = true;
-    document.body.appendChild(hintLabel);
-  };
-
-  const onMove = (moveEvent) => {
-    if (!dragging) {
-      if (Math.abs(moveEvent.clientX - startClientX) < 5 && Math.abs(moveEvent.clientY - startClientY) < 5) return;
-      beginDrag();
-    }
-    const p = toPretransform(moveEvent.clientX, moveEvent.clientY);
-    ghost.setAttribute("x", p.x - NODE_W / 2);
-    ghost.setAttribute("y", p.y - NODE_H / 2);
-
-    dropTarget = null;
-    for (const [targetId, tpos] of lastVisiblePositions.entries()) {
-      if (excludeIds.has(targetId)) continue;
-      if (Math.abs(p.x - tpos.x) <= NODE_W / 2 && Math.abs(p.y - tpos.y) <= NODE_H / 2) {
-        // Centre of the node = Become Child; left/right edge = Become Parallel Component.
-        // Reference/Dependency are always a deliberate modifier-key action, never a drop
-        // location, so they can never happen by accident in a dense architecture.
-        const relX = (p.x - tpos.x) / (NODE_W / 2);
-        let zone = relX < -0.35 ? "before" : relX > 0.35 ? "after" : "child";
-        if (moveEvent.altKey) zone = moveEvent.shiftKey ? "dependency" : "reference";
-        const targetNode = project.nodes[targetId];
-        if ((zone === "before" || zone === "after") && (!targetNode || targetNode.parent_id === null)) {
-          zone = "child"; // root has no siblings to insert next to
-        }
-        dropTarget = { id: targetId, zone, pos: tpos };
-        break;
-      }
-    }
-
-    if (dropTarget) {
-      const t = dropTarget;
-      highlight.style.display = "";
-      highlight.setAttribute("class", "node-drop-zone-highlight zone-" + t.zone);
-      if (t.zone === "before") {
-        highlight.setAttribute("x", t.pos.x - NODE_W / 2 - 10);
-        highlight.setAttribute("y", t.pos.y - NODE_H / 2 - 4);
-        highlight.setAttribute("width", 6);
-        highlight.setAttribute("height", NODE_H + 8);
-      } else if (t.zone === "after") {
-        highlight.setAttribute("x", t.pos.x + NODE_W / 2 + 4);
-        highlight.setAttribute("y", t.pos.y - NODE_H / 2 - 4);
-        highlight.setAttribute("width", 6);
-        highlight.setAttribute("height", NODE_H + 8);
-      } else {
-        highlight.setAttribute("x", t.pos.x - NODE_W / 2 - 4);
-        highlight.setAttribute("y", t.pos.y - NODE_H / 2 - 4);
-        highlight.setAttribute("width", NODE_W + 8);
-        highlight.setAttribute("height", NODE_H + 8);
-      }
-      hintLabel.hidden = false;
-      hintLabel.textContent = DROP_ZONE_LABELS[t.zone];
-      hintLabel.style.left = `${moveEvent.clientX + 16}px`;
-      hintLabel.style.top = `${moveEvent.clientY + 16}px`;
-    } else {
-      highlight.style.display = "none";
-      hintLabel.hidden = true;
-    }
-  };
-
-  const onUp = async () => {
-    document.removeEventListener("mousemove", onMove);
-    document.removeEventListener("mouseup", onUp);
-    if (ghost) ghost.remove();
-    if (highlight) highlight.remove();
-    if (hintLabel) hintLabel.remove();
-    if (!dragging) return;
-    nodeDragJustHappened = true;
-    setTimeout(() => (nodeDragJustHappened = false), 0);
-
-    if (!dropTarget) {
-      renderCanvas();
-      return;
-    }
-    const t = dropTarget;
-    if (t.zone === "reference" || t.zone === "dependency") {
-      pushUndoSnapshot(t.zone === "dependency" ? "Create Dependency" : "Create Reference");
-      const res = await fetch(`/api/projects/${projectId}/references`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          from: nodeId,
-          to: t.id,
-          reference_type: t.zone === "dependency" ? "Dependency" : null,
-        }),
-      });
-      if (!res.ok) {
-        undoStack.pop();
-        updateUndoRedoButtons();
-      }
-      await loadProject();
-      return;
-    }
-
-    const newParentId = t.zone === "child" ? t.id : project.nodes[t.id].parent_id;
-    pushUndoSnapshot(t.zone === "child" ? "Become Child" : "Become Parallel Component");
-    const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/reparent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ new_parent_id: newParentId }),
-    });
-    if (!res.ok) {
-      undoStack.pop();
-      updateUndoRedoButtons();
-      const err = await res.json().catch(() => ({}));
-      alert(err.detail || "Couldn't move this component there.");
-      renderCanvas();
-      return;
-    }
-    await loadProject();
-    focusNode(nodeId);
-  };
-
   document.addEventListener("mousemove", onMove);
   document.addEventListener("mouseup", onUp);
 }
@@ -2984,16 +2828,12 @@ function drawNode(node, pos, faded = false) {
     }
   });
 
-  if (!node.is_group && node.parent_id !== null && !node.locked) {
+  if (!node.is_group && !node.locked) {
     group.addEventListener("mousedown", (e) => {
       if (e.button !== 0 || refMode) return;
-      if (layoutUnlocked && viewMode === "full") {
-        startNodeFreeDrag(e, node.id);
-      } else {
-        startNodeReparentDrag(e, node.id, pos);
-      }
+      startNodeFreeDrag(e, node.id);
     });
-    group.style.cursor = layoutUnlocked && viewMode === "full" ? "move" : "grab";
+    group.style.cursor = "move";
   }
 
   group.addEventListener("mouseenter", (e) => {
@@ -3531,7 +3371,6 @@ function openContextMenu(nodeId, clientX, clientY) {
 function openMultiSelectContextMenu(clientX, clientY) {
   closeContextMenu();
   const count = selectedNodeIds.size;
-  const canArrange = layoutUnlocked && viewMode === "full";
   const menu = document.createElement("div");
   menu.className = "context-menu";
 
@@ -3540,24 +3379,22 @@ function openMultiSelectContextMenu(clientX, clientY) {
   menu.appendChild(contextMenuItem("▤ Group", groupSelectedNodes));
   menu.appendChild(contextMenuItem("Ungroup", ungroupSelectedNodes));
   menu.appendChild(contextMenuItem("⧉ Duplicate", duplicateSelectedNodes));
-  if (canArrange) {
+  menu.appendChild(
+    contextMenuSubmenu(
+      "Align",
+      ["Left", "Center", "Right", "Top", "Middle", "Bottom"],
+      (opt) =>
+        alignSelectedNodes(
+          { Left: "left", Center: "center-h", Right: "right", Top: "top", Middle: "center-v", Bottom: "bottom" }[opt]
+        )
+    )
+  );
+  if (count >= 3) {
     menu.appendChild(
-      contextMenuSubmenu(
-        "Align",
-        ["Left", "Center", "Right", "Top", "Middle", "Bottom"],
-        (opt) =>
-          alignSelectedNodes(
-            { Left: "left", Center: "center-h", Right: "right", Top: "top", Middle: "center-v", Bottom: "bottom" }[opt]
-          )
+      contextMenuSubmenu("Distribute", ["Horizontally", "Vertically"], (opt) =>
+        distributeSelectedNodes(opt === "Horizontally")
       )
     );
-    if (count >= 3) {
-      menu.appendChild(
-        contextMenuSubmenu("Distribute", ["Horizontally", "Vertically"], (opt) =>
-          distributeSelectedNodes(opt === "Horizontally")
-        )
-      );
-    }
   }
   menu.appendChild(contextMenuSeparator());
   menu.appendChild(contextMenuItem("🗑 Delete", deleteSelectedNodes, { danger: true }));
@@ -3944,11 +3781,7 @@ function openCanvasContextMenu(clientX, clientY) {
 
   menu.appendChild(contextMenuSeparator());
 
-  if (layoutUnlocked) {
-    menu.appendChild(contextMenuItem("⤾ Auto Arrange", autoArrangeLayout));
-  } else {
-    menu.appendChild(contextMenuItem("🔓 Unlock Layout", () => setLayoutUnlocked(true)));
-  }
+  menu.appendChild(contextMenuItem("⤾ Auto Arrange", autoArrangeLayout));
   menu.appendChild(contextMenuItem("▶ Presentation Mode", enterPresentationMode));
   menu.appendChild(
     contextMenuElementSubmenu("⚙ Canvas Settings", [
@@ -4273,41 +4106,19 @@ fullArchModeBtn.addEventListener("click", () => setViewMode("full"));
 // default) or from each node's own stored canvas_x/canvas_y (unlocked, freely draggable).
 // Only meaningful in Full Architecture view — Focus Mode always recenters on the focused
 // node, so a persisted free position wouldn't mean anything there.
-function updateUnlockLayoutButton() {
-  menuUnlockLayoutBtn.hidden = layoutUnlocked;
-  menuAutoArrangeBtn.hidden = !layoutUnlocked;
-}
-
-async function setLayoutUnlocked(unlocked) {
-  if (unlocked && viewMode !== "full") setViewMode("full");
-  layoutUnlocked = unlocked;
-  updateUnlockLayoutButton();
-  updateSelectionToolbar();
-  renderCanvas();
-  await fetch(`/api/projects/${projectId}/layout-unlocked`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ unlocked }),
-  });
-}
-menuUnlockLayoutBtn.addEventListener("click", () => {
-  layoutMenu.hidden = true;
-  setLayoutUnlocked(true);
-});
 menuAutoArrangeBtn.addEventListener("click", () => {
   layoutMenu.hidden = true;
   autoArrangeLayout();
 });
 
+// Nodes are always freely draggable now — Auto Arrange is just an explicit "put everyone back
+// on the deterministic grid" action, available any time, not an exit from a locked mode.
 async function autoArrangeLayout() {
   pushUndoSnapshot("Auto Arrange");
   const rect = canvasSvg.getBoundingClientRect();
   const viewW = rect.width || 800;
   const viewH = rect.height || 500;
-  const wasUnlocked = layoutUnlocked;
-  layoutUnlocked = false; // compute the deterministic layout regardless of the current toggle
-  const { positions } = computeFullArchitectureLayout(viewW, viewH);
-  layoutUnlocked = wasUnlocked;
+  const positions = computeDeterministicFullLayout(viewW, viewH);
   for (const [nodeId, pos] of positions.entries()) {
     const node = project.nodes[nodeId];
     node.canvas_x = pos.x;
@@ -4318,7 +4129,7 @@ async function autoArrangeLayout() {
       body: JSON.stringify({ canvas_x: pos.x, canvas_y: pos.y }),
     });
   }
-  await setLayoutUnlocked(false);
+  await loadProject();
 }
 
 animateFlowCheckbox.addEventListener("change", () => {

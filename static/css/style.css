@@ -1009,43 +1009,6 @@ body.presentation-active .editor-panes {
   fill: var(--text-muted);
 }
 
-.node-drag-ghost {
-  fill: var(--accent);
-  fill-opacity: 0.18;
-  stroke: var(--accent);
-  stroke-width: 1.5;
-  stroke-dasharray: 4 3;
-  pointer-events: none;
-}
-
-.node-drop-zone-highlight {
-  fill: none;
-  stroke-width: 2;
-  pointer-events: none;
-}
-
-.node-drop-zone-highlight.zone-child {
-  stroke: var(--accent);
-  fill: var(--accent);
-  fill-opacity: 0.1;
-}
-
-.node-drop-zone-highlight.zone-before,
-.node-drop-zone-highlight.zone-after {
-  stroke: none;
-  fill: var(--accent);
-}
-
-.node-drop-zone-highlight.zone-reference {
-  stroke: #64748b;
-  stroke-dasharray: 3 2;
-}
-
-.node-drop-zone-highlight.zone-dependency {
-  stroke: #10b981;
-  stroke-dasharray: 3 2;
-}
-
 .canvas-svg .node-connection-handle {
   fill: var(--surface);
   stroke: var(--accent);
@@ -1071,19 +1034,6 @@ body.presentation-active .editor-panes {
 .canvas-svg .relationship-drag-line {
   stroke-dasharray: 5 4;
   pointer-events: none;
-}
-
-.drop-hint-label {
-  position: fixed;
-  z-index: 200;
-  background: var(--text);
-  color: var(--bg);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 4px 9px;
-  border-radius: var(--radius-sm);
-  pointer-events: none;
-  white-space: nowrap;
 }
 
 .canvas-svg .ref-tag {
