@@ -123,6 +123,8 @@ const menuZoomOutBtn = document.getElementById("menuZoomOutBtn");
 const settingsMenuBtn = document.getElementById("settingsMenuBtn");
 const settingsMenu = document.getElementById("settingsMenu");
 const insertBtn = document.getElementById("insertBtn");
+const emptyCanvasPrompt = document.getElementById("emptyCanvasPrompt");
+const emptyCanvasBtn = document.getElementById("emptyCanvasBtn");
 const insertMenu = document.getElementById("insertMenu");
 const collapseAllBtn = document.getElementById("collapseAllBtn");
 const expandBranchBtn = document.getElementById("expandBranchBtn");
@@ -350,6 +352,16 @@ function render() {
   renderMinimap();
   renderInspector();
   refreshHealthPanel();
+  updateEmptyCanvasPrompt();
+}
+
+// Shown only on a genuinely empty project (just the root, nothing placed yet) — the
+// permanent Insert button stays the single source of truth; this just makes it impossible
+// to miss the first time, then disappears the moment anything exists and never comes back.
+function updateEmptyCanvasPrompt() {
+  const isEmpty =
+    project && rootId && project.nodes[rootId].children.length === 0 && project.concept_objects.length === 0;
+  emptyCanvasPrompt.hidden = !isEmpty;
 }
 
 async function focusNode(nodeId) {
@@ -1297,6 +1309,7 @@ insertBtn.addEventListener("click", (e) => {
   settingsMenu.hidden = true;
   insertMenu.hidden = !wasHidden;
 });
+emptyCanvasBtn.addEventListener("click", () => insertBtn.click());
 insertMenu.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-insert]");
   if (!btn) return;

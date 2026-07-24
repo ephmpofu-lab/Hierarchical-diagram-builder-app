@@ -18,7 +18,7 @@
         <div id="searchResults" class="search-results" hidden></div>
       </div>
       <div class="dropdown-wrap">
-        <button id="insertBtn" class="btn btn-small" title="Add an architecture component or a free-form object to the canvas — same picker as right-click">+ Insert ▾</button>
+        <button id="insertBtn" class="btn btn-primary" title="Add an architecture component or a free-form object to the canvas — same picker as right-click">+ Insert ▾</button>
         <div id="insertMenu" class="dropdown-menu insert-menu" hidden>
           <div class="dropdown-section-label">Architecture</div>
           <button data-insert="node">◆ New Architecture Node <span class="menu-shortcut">N</span></button>
@@ -171,6 +171,10 @@
       <div class="canvas-svg-wrap">
         <svg id="canvasSvg" class="canvas-svg"></svg>
         <svg id="minimapSvg" class="minimap-svg"></svg>
+        <div id="emptyCanvasPrompt" class="empty-canvas-prompt" hidden>
+          <button id="emptyCanvasBtn" class="btn btn-primary">+ Insert your first component</button>
+          <p>or right-click anywhere on the canvas</p>
+        </div>
       </div>
     </div>
 
