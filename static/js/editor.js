@@ -298,21 +298,44 @@ async function loadProject() {
   render();
 }
 
-projectNameEl.addEventListener("click", async () => {
+// Double-click to rename in place, same as nodes and outline rows — no more prompt() dialog.
+projectNameEl.addEventListener("dblclick", () => {
   if (!project) return;
-  const name = prompt("Rename project:", project.name);
-  if (name === null) return;
-  const trimmed = name.trim();
-  if (!trimmed || trimmed === project.name) return;
-  await fetch(`/api/projects/${projectId}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: trimmed }),
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "project-name-input";
+  input.value = project.name;
+  projectNameEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  const commit = async (save) => {
+    input.removeEventListener("blur", onBlur);
+    const trimmed = input.value.trim();
+    input.replaceWith(projectNameEl); // always restore the real element first
+    if (save && trimmed && trimmed !== project.name) {
+      await fetch(`/api/projects/${projectId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      await loadProject(); // updates projectNameEl.textContent now that it's back in the DOM
+    }
+  };
+  const onBlur = () => commit(true);
+  input.addEventListener("blur", onBlur);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      input.blur();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      commit(false);
+    }
   });
-  loadProject();
 });
-projectNameEl.style.cursor = "pointer";
-projectNameEl.title = "Click to rename project";
+projectNameEl.style.cursor = "text";
+projectNameEl.title = "Double-click to rename project";
 
 let progressCache = new Map();
 
@@ -500,7 +523,11 @@ function renderNode(nodeId) {
   });
   row.addEventListener("contextmenu", (e) => {
     e.preventDefault();
-    openContextMenu(nodeId, e.clientX, e.clientY);
+    if (selectedNodeIds.size > 1 && selectedNodeIds.has(nodeId)) {
+      openMultiSelectContextMenu(e.clientX, e.clientY);
+    } else {
+      openContextMenu(nodeId, e.clientX, e.clientY);
+    }
   });
 
   wrapper.appendChild(row);
@@ -2935,7 +2962,11 @@ function drawNode(node, pos, faded = false) {
   group.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    openContextMenu(node.id, e.clientX, e.clientY);
+    if (selectedNodeIds.size > 1 && selectedNodeIds.has(node.id)) {
+      openMultiSelectContextMenu(e.clientX, e.clientY);
+    } else {
+      openContextMenu(node.id, e.clientX, e.clientY);
+    }
   });
 
   if (!node.is_group && node.parent_id !== null && !node.locked) {
@@ -2963,7 +2994,7 @@ function drawNode(node, pos, faded = false) {
   group.addEventListener("dblclick", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    zoomToNode(node.id);
+    startNodeCanvasRename(node.id, pos);
   });
 
   // Connection handles: only on the currently-selected node, one per edge. Dragging from a
@@ -3479,6 +3510,57 @@ function openContextMenu(nodeId, clientX, clientY) {
   if (rect.bottom > window.innerHeight) menu.style.top = `${Math.max(4, window.innerHeight - rect.height - 4)}px`;
 }
 
+// Right-clicking a node that's part of a larger multi-selection shows the bulk-action menu
+// instead of that one node's own menu — matches Miro/Mural, where right-click respects
+// whatever's currently selected rather than always acting on a single object.
+function openMultiSelectContextMenu(clientX, clientY) {
+  closeContextMenu();
+  const count = selectedNodeIds.size;
+  const canArrange = layoutUnlocked && viewMode === "full";
+  const menu = document.createElement("div");
+  menu.className = "context-menu";
+
+  menu.appendChild(contextMenuItem(`${count} selected`, () => {}, { disabled: true }));
+  menu.appendChild(contextMenuSeparator());
+  menu.appendChild(contextMenuItem("▤ Group", groupSelectedNodes));
+  menu.appendChild(contextMenuItem("Ungroup", ungroupSelectedNodes));
+  menu.appendChild(contextMenuItem("⧉ Duplicate", duplicateSelectedNodes));
+  if (canArrange) {
+    menu.appendChild(
+      contextMenuSubmenu(
+        "Align",
+        ["Left", "Center", "Right", "Top", "Middle", "Bottom"],
+        (opt) =>
+          alignSelectedNodes(
+            { Left: "left", Center: "center-h", Right: "right", Top: "top", Middle: "center-v", Bottom: "bottom" }[opt]
+          )
+      )
+    );
+    if (count >= 3) {
+      menu.appendChild(
+        contextMenuSubmenu("Distribute", ["Horizontally", "Vertically"], (opt) =>
+          distributeSelectedNodes(opt === "Horizontally")
+        )
+      );
+    }
+  }
+  menu.appendChild(contextMenuSeparator());
+  menu.appendChild(contextMenuItem("🗑 Delete", deleteSelectedNodes, { danger: true }));
+  menu.appendChild(contextMenuItem("Clear Selection", () => {
+    clearSelection();
+    renderCanvas();
+  }));
+
+  menu.style.left = `${clientX}px`;
+  menu.style.top = `${clientY}px`;
+  document.body.appendChild(menu);
+  openContextMenuEl = menu;
+
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) menu.style.left = `${Math.max(4, window.innerWidth - rect.width - 4)}px`;
+  if (rect.bottom > window.innerHeight) menu.style.top = `${Math.max(4, window.innerHeight - rect.height - 4)}px`;
+}
+
 window.addEventListener("resize", () => {
   if (project) renderCanvas();
 });
@@ -3594,6 +3676,50 @@ window.addEventListener("mouseup", (e) => {
 canvasSvg.addEventListener("auxclick", (e) => {
   if (e.button === 1) e.preventDefault();
 });
+
+// Double-clicking a node on the canvas renames it in place (Miro/Figma-style direct text
+// editing) instead of zooming — zoom-to-node is still reachable via Presentation Mode's
+// Zoom to Topic, this just frees up double-click for the more expected behavior.
+function startNodeCanvasRename(nodeId, pos) {
+  const node = project.nodes[nodeId];
+  if (node.locked) return;
+  const rect = canvasSvg.getBoundingClientRect();
+  const localX = lastViewW / 2 + panOffsetX + zoomScale * (pos.x - lastViewW / 2);
+  const localY = lastViewH / 2 + panOffsetY + zoomScale * (pos.y - lastViewH / 2);
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "node-rename-overlay";
+  input.value = node.label;
+  input.style.left = `${rect.left + localX - (NODE_W * zoomScale) / 2}px`;
+  input.style.top = `${rect.top + localY - (NODE_H * zoomScale) / 2}px`;
+  input.style.width = `${NODE_W * zoomScale}px`;
+  input.style.height = `${NODE_H * zoomScale}px`;
+  document.body.appendChild(input);
+  input.focus();
+  input.select();
+
+  const commit = async () => {
+    input.removeEventListener("blur", commit);
+    if (input.parentNode) input.remove();
+    const trimmed = input.value.trim();
+    if (trimmed && trimmed !== node.label) {
+      pushUndoSnapshot("Rename node");
+      await patchNodeById(nodeId, { label: trimmed });
+    }
+  };
+  input.addEventListener("blur", commit);
+  input.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Escape") {
+      input.removeEventListener("blur", commit);
+      input.remove();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      input.blur();
+    }
+  });
+}
 
 function zoomToNode(nodeId) {
   focusedNodeId = nodeId;
@@ -3947,7 +4073,9 @@ selStatusMenu.addEventListener("click", async (e) => {
   await loadProject();
 });
 
-selGroupBtn.addEventListener("click", async () => {
+// Selection bulk actions — shared functions so the selection toolbar AND the multi-select
+// right-click menu (below) invoke exactly one implementation each, never two.
+async function groupSelectedNodes() {
   const ids = [...selectedNodeIds];
   if (ids.length < 2) {
     alert("Select at least two nodes that share the same parent to group them.");
@@ -3977,9 +4105,9 @@ selGroupBtn.addEventListener("click", async () => {
   clearSelection();
   await loadProject();
   focusNode(groupNode.id);
-});
+}
 
-selUngroupBtn.addEventListener("click", async () => {
+async function ungroupSelectedNodes() {
   const ids = [...selectedNodeIds].filter((id) => project.nodes[id].is_group);
   if (ids.length === 0) {
     alert("Select at least one group to ungroup.");
@@ -3991,9 +4119,9 @@ selUngroupBtn.addEventListener("click", async () => {
   }
   clearSelection();
   await loadProject();
-});
+}
 
-selDuplicateBtn.addEventListener("click", async () => {
+async function duplicateSelectedNodes() {
   const ids = [...selectedNodeIds];
   pushUndoSnapshot("Duplicate selected");
   let lastNode = null;
@@ -4005,9 +4133,9 @@ selDuplicateBtn.addEventListener("click", async () => {
   clearSelection();
   await loadProject();
   if (lastNode) focusNode(lastNode.id);
-});
+}
 
-selDeleteBtn.addEventListener("click", async () => {
+async function deleteSelectedNodes() {
   const ids = [...selectedNodeIds].filter((id) => project.nodes[id].parent_id !== null);
   if (ids.length === 0) {
     alert("The root node cannot be deleted.");
@@ -4022,23 +4150,14 @@ selDeleteBtn.addEventListener("click", async () => {
   }
   clearSelection();
   await loadProject();
-});
+}
 
 // Align / Distribute only make sense once positions are free (Unlock Layout, Full
-// Architecture view) — updateSelectionToolbar() disables these buttons otherwise.
-selAlignBtn.addEventListener("click", (e) => {
-  e.stopPropagation();
-  if (selAlignBtn.disabled) return;
-  selAlignMenu.hidden = !selAlignMenu.hidden;
-});
-selAlignMenu.addEventListener("click", async (e) => {
-  const btn = e.target.closest("button[data-align]");
-  if (!btn) return;
-  selAlignMenu.hidden = true;
-  const ids = [...selectedNodeIds];
-  const nodes = ids.map((id) => project.nodes[id]);
+// Architecture view) — updateSelectionToolbar() disables the toolbar buttons otherwise, and
+// the multi-select context menu below hides them entirely rather than showing them disabled.
+async function alignSelectedNodes(mode) {
+  const nodes = [...selectedNodeIds].map((id) => project.nodes[id]);
   pushUndoSnapshot("Align selected");
-  const mode = btn.dataset.align;
   let target;
   if (mode === "left") target = Math.min(...nodes.map((n) => n.canvas_x - NODE_W / 2));
   else if (mode === "right") target = Math.max(...nodes.map((n) => n.canvas_x + NODE_W / 2));
@@ -4060,18 +4179,9 @@ selAlignMenu.addEventListener("click", async (e) => {
     });
   }
   renderCanvas();
-});
+}
 
-selDistributeBtn.addEventListener("click", (e) => {
-  e.stopPropagation();
-  if (selDistributeBtn.disabled) return;
-  selDistributeMenu.hidden = !selDistributeMenu.hidden;
-});
-selDistributeMenu.addEventListener("click", async (e) => {
-  const btn = e.target.closest("button[data-distribute]");
-  if (!btn) return;
-  selDistributeMenu.hidden = true;
-  const horizontal = btn.dataset.distribute === "horizontal";
+async function distributeSelectedNodes(horizontal) {
   const nodes = [...selectedNodeIds].map((id) => project.nodes[id]);
   if (nodes.length < 3) {
     alert("Distribute needs at least 3 selected nodes.");
@@ -4094,6 +4204,35 @@ selDistributeMenu.addEventListener("click", async (e) => {
     });
   }
   renderCanvas();
+}
+
+selGroupBtn.addEventListener("click", groupSelectedNodes);
+selUngroupBtn.addEventListener("click", ungroupSelectedNodes);
+selDuplicateBtn.addEventListener("click", duplicateSelectedNodes);
+selDeleteBtn.addEventListener("click", deleteSelectedNodes);
+
+selAlignBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (selAlignBtn.disabled) return;
+  selAlignMenu.hidden = !selAlignMenu.hidden;
+});
+selAlignMenu.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-align]");
+  if (!btn) return;
+  selAlignMenu.hidden = true;
+  alignSelectedNodes(btn.dataset.align);
+});
+
+selDistributeBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (selDistributeBtn.disabled) return;
+  selDistributeMenu.hidden = !selDistributeMenu.hidden;
+});
+selDistributeMenu.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-distribute]");
+  if (!btn) return;
+  selDistributeMenu.hidden = true;
+  distributeSelectedNodes(btn.dataset.distribute === "horizontal");
 });
 document.addEventListener("click", (e) => {
   if (!selAlignMenu.hidden && !selAlignMenu.contains(e.target) && e.target !== selAlignBtn) selAlignMenu.hidden = true;

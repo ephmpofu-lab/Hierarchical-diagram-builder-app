@@ -105,6 +105,19 @@ button {
   letter-spacing: -0.01em;
 }
 
+.project-name-input {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 6px;
+  min-width: 160px;
+}
+
 .topbar-actions {
   display: flex;
   align-items: center;
@@ -343,6 +356,20 @@ button {
   stroke: var(--surface);
   stroke-width: 1.5;
   cursor: nwse-resize;
+}
+
+.node-rename-overlay {
+  position: fixed;
+  z-index: 170;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  padding: 4px 8px;
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
 }
 
 .concept-text-edit-overlay {
