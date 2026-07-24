@@ -266,6 +266,7 @@ function toggleNodeSelection(nodeId) {
 
 function clearSelection() {
   selectedNodeIds = new Set();
+  selectedConceptObjectIds = new Set();
   updateSelectionToolbar();
 }
 
@@ -1056,6 +1057,10 @@ function renderCanvas() {
       selectedConceptObjectId = null;
       changed = true;
     }
+    if (selectedConceptObjectIds.size > 0) {
+      selectedConceptObjectIds = new Set();
+      changed = true;
+    }
     if (changed) renderCanvas();
   };
 
@@ -1358,10 +1363,19 @@ function renderFullArchitectureCanvas(viewW, viewH) {
 // There is no mode toggle; "structured vs free" is a property of each object, not a
 // workspace-wide switch.
 let selectedConceptObjectId = null;
+// Mirrors selectedNodeIds — Shift/Ctrl+click or lasso-select into this Set for bulk actions
+// (group/ungroup/duplicate/delete/move-together) on free objects.
+let selectedConceptObjectIds = new Set();
 let conceptDragState = null;
 let showConceptGrid = false;
 let snapToConceptGrid = false;
 const CONCEPT_GRID_SIZE = 20;
+
+function toggleConceptObjectSelection(objId) {
+  if (selectedConceptObjectIds.has(objId)) selectedConceptObjectIds.delete(objId);
+  else selectedConceptObjectIds.add(objId);
+  renderCanvas();
+}
 
 function snapConceptValue(v) {
   return snapToConceptGrid ? Math.round(v / CONCEPT_GRID_SIZE) * CONCEPT_GRID_SIZE : v;
@@ -1533,7 +1547,10 @@ function drawConceptObject(obj) {
   const group = document.createElementNS(SVG_NS, "g");
   group.setAttribute(
     "class",
-    "concept-object" + (selectedConceptObjectId === obj.id ? " selected" : "") + (obj.locked ? " locked" : "")
+    "concept-object" +
+      (selectedConceptObjectId === obj.id ? " selected" : "") +
+      (selectedConceptObjectIds.has(obj.id) ? " multi-selected" : "") +
+      (obj.locked ? " locked" : "")
   );
   group.dataset.id = obj.id;
 
@@ -1724,7 +1741,12 @@ function drawConceptObject(obj) {
       handleRefModeClick(obj.id);
       return;
     }
+    if (e.shiftKey || e.ctrlKey || e.metaKey) {
+      toggleConceptObjectSelection(obj.id);
+      return;
+    }
     selectedConceptObjectId = obj.id;
+    if (!selectedConceptObjectIds.has(obj.id)) selectedConceptObjectIds = new Set([obj.id]);
     startConceptDrag(e, obj.id, "move");
     renderCanvas();
   });
@@ -1735,6 +1757,10 @@ function drawConceptObject(obj) {
   group.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (selectedConceptObjectIds.size > 1 && selectedConceptObjectIds.has(obj.id)) {
+      openConceptMultiSelectContextMenu(e.clientX, e.clientY);
+      return;
+    }
     selectedConceptObjectId = obj.id;
     openConceptObjectContextMenu(obj.id, e.clientX, e.clientY);
   });
@@ -1745,7 +1771,18 @@ function drawConceptObject(obj) {
 function startConceptDrag(e, objId, mode) {
   const obj = project.concept_objects.find((o) => o.id === objId);
   if (!obj || obj.locked) return;
-  pushUndoSnapshot(mode === "resize" ? "Resize" : "Move");
+  // Move Together: dragging any selected object when 2+ are selected moves the whole group,
+  // preserving their relative positions — same idea as startNodeFreeDrag. Resize always
+  // stays single-object.
+  const groupIds =
+    mode === "move" && selectedConceptObjectIds.has(objId) && selectedConceptObjectIds.size > 1
+      ? [...selectedConceptObjectIds]
+      : [objId];
+  pushUndoSnapshot(mode === "resize" ? "Resize" : groupIds.length > 1 ? "Move selection" : "Move");
+  const startPositions = groupIds
+    .map((id) => project.concept_objects.find((o) => o.id === id))
+    .filter((o) => o && !o.locked)
+    .map((o) => ({ id: o.id, obj: o, startX: o.x, startY: o.y }));
   conceptDragState = {
     id: objId,
     startClientX: e.clientX,
@@ -1760,12 +1797,14 @@ function startConceptDrag(e, objId, mode) {
     if (!conceptDragState) return;
     const dx = (moveEvent.clientX - conceptDragState.startClientX) / zoomScale;
     const dy = (moveEvent.clientY - conceptDragState.startClientY) / zoomScale;
-    const liveObj = project.concept_objects.find((o) => o.id === conceptDragState.id);
-    if (!liveObj) return;
     if (mode === "move") {
-      liveObj.x = snapConceptValue(conceptDragState.startX + dx);
-      liveObj.y = snapConceptValue(conceptDragState.startY + dy);
+      for (const p of startPositions) {
+        p.obj.x = snapConceptValue(p.startX + dx);
+        p.obj.y = snapConceptValue(p.startY + dy);
+      }
     } else {
+      const liveObj = project.concept_objects.find((o) => o.id === conceptDragState.id);
+      if (!liveObj) return;
       liveObj.width = snapConceptValue(Math.max(30, conceptDragState.startW + dx));
       liveObj.height = snapConceptValue(Math.max(20, conceptDragState.startH + dy));
     }
@@ -1774,15 +1813,28 @@ function startConceptDrag(e, objId, mode) {
   const onUp = async () => {
     document.removeEventListener("mousemove", onMove);
     document.removeEventListener("mouseup", onUp);
-    const liveObj = project.concept_objects.find((o) => o.id === objId);
     const dragState = conceptDragState;
     conceptDragState = null;
-    if (!liveObj || !dragState) return;
-    const unchanged =
-      liveObj.x === dragState.startX &&
-      liveObj.y === dragState.startY &&
-      liveObj.width === dragState.startW &&
-      liveObj.height === dragState.startH;
+    if (!dragState) return;
+    if (mode === "move") {
+      const moved = startPositions.some((p) => p.obj.x !== p.startX || p.obj.y !== p.startY);
+      if (!moved) {
+        undoStack.pop();
+        updateUndoRedoButtons();
+        return;
+      }
+      for (const p of startPositions) {
+        await fetch(`/api/projects/${projectId}/concept-objects/${p.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ x: p.obj.x, y: p.obj.y }),
+        });
+      }
+      return;
+    }
+    const liveObj = project.concept_objects.find((o) => o.id === objId);
+    if (!liveObj) return;
+    const unchanged = liveObj.width === dragState.startW && liveObj.height === dragState.startH;
     if (unchanged) {
       undoStack.pop();
       updateUndoRedoButtons();
@@ -1791,7 +1843,7 @@ function startConceptDrag(e, objId, mode) {
     await fetch(`/api/projects/${projectId}/concept-objects/${objId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ x: liveObj.x, y: liveObj.y, width: liveObj.width, height: liveObj.height }),
+      body: JSON.stringify({ width: liveObj.width, height: liveObj.height }),
     });
   };
   document.addEventListener("mousemove", onMove);
@@ -1964,6 +2016,111 @@ function openConceptObjectContextMenu(objId, clientX, clientY) {
       },
       { danger: true, disabled: obj.locked }
     )
+  );
+
+  menu.style.left = `${clientX}px`;
+  menu.style.top = `${clientY}px`;
+  document.body.appendChild(menu);
+  openContextMenuEl = menu;
+
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) menu.style.left = `${Math.max(4, window.innerWidth - rect.width - 4)}px`;
+  if (rect.bottom > window.innerHeight) menu.style.top = `${Math.max(4, window.innerHeight - rect.height - 4)}px`;
+}
+
+// ---------- Free-object bulk selection actions ----------
+// Mirrors the node multi-select actions (openMultiSelectContextMenu / groupSelectedNodes /
+// etc.) but "group" here just tags a shared group_id rather than reparenting under a new
+// node — free objects have no hierarchy to nest into.
+
+async function groupSelectedConceptObjects() {
+  const ids = [...selectedConceptObjectIds];
+  if (ids.length < 2) {
+    alert("Select at least two objects to group them.");
+    return;
+  }
+  pushUndoSnapshot("Group objects");
+  const groupId = ids[0]; // reuse the first selected object's own id as the shared group id
+  for (const id of ids) {
+    await fetch(`/api/projects/${projectId}/concept-objects/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group_id: groupId }),
+    });
+  }
+  await loadProject();
+}
+
+async function ungroupSelectedConceptObjects() {
+  const ids = [...selectedConceptObjectIds].filter((id) => {
+    const obj = project.concept_objects.find((o) => o.id === id);
+    return obj && obj.group_id;
+  });
+  if (ids.length === 0) {
+    alert("None of the selected objects are grouped.");
+    return;
+  }
+  pushUndoSnapshot("Ungroup objects");
+  for (const id of ids) {
+    await fetch(`/api/projects/${projectId}/concept-objects/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group_id: "" }),
+    });
+  }
+  await loadProject();
+}
+
+async function duplicateSelectedConceptObjects() {
+  const ids = [...selectedConceptObjectIds];
+  pushUndoSnapshot("Duplicate selected");
+  let lastObj = null;
+  for (const id of ids) {
+    const res = await fetch(`/api/projects/${projectId}/concept-objects/${id}/duplicate`, { method: "POST" });
+    lastObj = await res.json();
+  }
+  clearSelection();
+  await loadProject();
+  if (lastObj) selectedConceptObjectId = lastObj.id;
+}
+
+async function deleteSelectedConceptObjects() {
+  const ids = [...selectedConceptObjectIds].filter((id) => {
+    const obj = project.concept_objects.find((o) => o.id === id);
+    return obj && !obj.locked;
+  });
+  if (ids.length === 0) {
+    alert("The selected objects are locked.");
+    return;
+  }
+  const confirmed = confirm(`Delete ${ids.length} selected object${ids.length === 1 ? "" : "s"}?`);
+  if (!confirmed) return;
+  pushUndoSnapshot("Delete selected");
+  for (const id of ids) {
+    await fetch(`/api/projects/${projectId}/concept-objects/${id}`, { method: "DELETE" });
+  }
+  clearSelection();
+  await loadProject();
+}
+
+function openConceptMultiSelectContextMenu(clientX, clientY) {
+  closeContextMenu();
+  const count = selectedConceptObjectIds.size;
+  const menu = document.createElement("div");
+  menu.className = "context-menu";
+
+  menu.appendChild(contextMenuItem(`${count} selected`, () => {}, { disabled: true }));
+  menu.appendChild(contextMenuSeparator());
+  menu.appendChild(contextMenuItem("▤ Group", groupSelectedConceptObjects));
+  menu.appendChild(contextMenuItem("Ungroup", ungroupSelectedConceptObjects));
+  menu.appendChild(contextMenuItem("⧉ Duplicate", duplicateSelectedConceptObjects));
+  menu.appendChild(contextMenuSeparator());
+  menu.appendChild(contextMenuItem("🗑 Delete", deleteSelectedConceptObjects, { danger: true }));
+  menu.appendChild(
+    contextMenuItem("Clear Selection", () => {
+      clearSelection();
+      renderCanvas();
+    })
   );
 
   menu.style.left = `${clientX}px`;
@@ -3897,19 +4054,27 @@ window.addEventListener("mouseup", (e) => {
   }
 
   const svgRect = canvasSvg.getBoundingClientRect();
+  const toScreen = (contentX, contentY) => ({
+    x: svgRect.left + lastViewW / 2 + panOffsetX + zoomScale * (contentX - lastViewW / 2),
+    y: svgRect.top + lastViewH / 2 + panOffsetY + zoomScale * (contentY - lastViewH / 2),
+  });
+  const inBox = (p) => p.x >= boxLeft && p.x <= boxRight && p.y >= boxTop && p.y <= boxBottom;
+
   const hits = [];
   for (const [nodeId, pos] of lastVisiblePositions.entries()) {
-    const localX = lastViewW / 2 + panOffsetX + zoomScale * (pos.x - lastViewW / 2);
-    const localY = lastViewH / 2 + panOffsetY + zoomScale * (pos.y - lastViewH / 2);
-    const screenX = svgRect.left + localX;
-    const screenY = svgRect.top + localY;
-    if (screenX >= boxLeft && screenX <= boxRight && screenY >= boxTop && screenY <= boxBottom) {
-      hits.push(nodeId);
-    }
+    if (inBox(toScreen(pos.x, pos.y))) hits.push(nodeId);
   }
-  if (hits.length === 0) return;
-  if (!e.shiftKey) selectedNodeIds = new Set();
+  const objectHits = [];
+  for (const obj of project.concept_objects) {
+    if (inBox(toScreen(obj.x + obj.width / 2, obj.y + obj.height / 2))) objectHits.push(obj.id);
+  }
+  if (hits.length === 0 && objectHits.length === 0) return;
+  if (!e.shiftKey) {
+    selectedNodeIds = new Set();
+    selectedConceptObjectIds = new Set();
+  }
   for (const id of hits) selectedNodeIds.add(id);
+  for (const id of objectHits) selectedConceptObjectIds.add(id);
   updateSelectionToolbar();
   renderCanvas();
 });

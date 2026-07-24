@@ -433,6 +433,7 @@ def api_update_concept_object(project_id: str, object_id: str, body: ConceptObje
         body.border_style,
         body.z_index,
         body.locked,
+        body.group_id,
     )
     storage.save_project(project)
     return obj

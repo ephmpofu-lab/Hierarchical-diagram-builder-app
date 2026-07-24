@@ -69,6 +69,7 @@ def update_object(
     border_style: Optional[str] = None,
     z_index: Optional[int] = None,
     locked: Optional[bool] = None,
+    group_id: Optional[str] = None,
 ) -> ConceptObject:
     obj = get_object_or_404(project, object_id)
     is_moving_or_resizing = x is not None or y is not None or width is not None or height is not None
@@ -94,6 +95,8 @@ def update_object(
         obj.locked = locked
     if z_index is not None:
         obj.z_index = z_index
+    if group_id is not None:
+        obj.group_id = group_id or None  # empty string clears the group
     return obj
 
 

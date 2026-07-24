@@ -107,6 +107,7 @@ class ConceptObject(BaseModel):
     border_style: str = "solid"  # solid | dashed | none
     z_index: int = 0
     locked: bool = False
+    group_id: Optional[str] = None
 
 
 class ConceptObjectCreate(BaseModel):
@@ -130,6 +131,7 @@ class ConceptObjectUpdate(BaseModel):
     border_style: Optional[str] = None
     z_index: Optional[int] = None
     locked: Optional[bool] = None
+    group_id: Optional[str] = None
 
 
 class ConvertToNodeRequest(BaseModel):

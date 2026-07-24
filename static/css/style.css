@@ -331,6 +331,12 @@ button {
   stroke-width: 2.5 !important;
 }
 
+.canvas-svg .concept-object.multi-selected .concept-shape {
+  stroke: var(--accent) !important;
+  stroke-width: 2.5 !important;
+  stroke-dasharray: 4 2;
+}
+
 .canvas-svg .concept-object-text {
   font-size: 13px;
   fill: var(--text);
