@@ -284,11 +284,20 @@ function updateSelectionToolbar() {
     count === 1
       ? "Draw a relationship from this node to another — click the target node next"
       : "Select exactly one node to start a connection";
-  const canAlign = count >= 2;
+  // Align/Distribute write canvas_x/canvas_y, which only Focus Mode reads — in Full
+  // Architecture the layout is always recomputed live, so an edit there would have no
+  // lasting visible effect.
+  const canAlign = count >= 2 && viewMode !== "full";
   selAlignBtn.disabled = !canAlign;
   selDistributeBtn.disabled = !canAlign;
-  selAlignBtn.title = canAlign ? "Align selected nodes" : "Select 2+ nodes to align";
-  selDistributeBtn.title = canAlign ? "Distribute selected nodes evenly" : "Select 2+ nodes to distribute";
+  selAlignBtn.title =
+    viewMode === "full" ? "Switch to Focus Mode to align nodes" : canAlign ? "Align selected nodes" : "Select 2+ nodes to align";
+  selDistributeBtn.title =
+    viewMode === "full"
+      ? "Switch to Focus Mode to distribute nodes"
+      : canAlign
+        ? "Distribute selected nodes evenly"
+        : "Select 2+ nodes to distribute";
 }
 
 const ROW_GAP = 130;
@@ -1231,35 +1240,72 @@ function renderFocusCanvas(viewW, viewH) {
   lastViewH = viewH;
 }
 
-// Full Architecture mode: every non-collapsed node in the project, laid out one row per
-// hierarchy level, nothing faded. This is the "show me everything at once" counterpart to
-// Focus Mode's single-branch-plus-context view.
-function computeFullArchitectureLayout(viewW, viewH) {
-  const levelBuckets = new Map();
-  const childrenByParent = new Map(); // parentId -> Node[] shown, drawn as one trunk+bus group
-  const visited = new Set();
-  const overflowByParent = new Map();
+// Recursive subtree layout: every parent lays out its own children's subtrees packed
+// tightly side by side, then centers itself over them. This is the core fix for "which
+// child belongs to which parent" — a branch is always positioned within its actual parent's
+// own span, never smeared across a shared row alongside unrelated nodes at the same depth,
+// and the canvas only grows as wide as the real branching requires at each point, not as
+// wide as the total node count anywhere in the whole tree (a flat one-row-per-level layout's
+// failure mode: exponentially wide, and ownership only readable by cross-checking the
+// Outline). Y still tracks depth (matching the L1/L2/L3 badges and breadcrumb everywhere
+// else in the app) — only X packing changed, from "one shared row" to "recursive per-parent."
+const SUBTREE_GAP = 40;
 
-  function walk(nodeId) {
-    if (visited.has(nodeId)) return;
+function computeSubtreeLayout(viewW) {
+  const childrenByParent = new Map(); // parentId -> Node[] shown, drawn as one trunk+bus group
+  const overflowByParent = new Map();
+  const widths = new Map();
+  const visited = new Set();
+
+  function computeWidth(nodeId) {
+    if (visited.has(nodeId)) return NODE_W;
     visited.add(nodeId);
     const node = project.nodes[nodeId];
-    if (!levelBuckets.has(node.level)) levelBuckets.set(node.level, []);
-    levelBuckets.get(node.level).push(node);
-    if (node.collapsed) return;
-    const children = node.children;
-    const shown = children.length > MAX_UNGROUPED_VISIBLE ? children.slice(0, MAX_UNGROUPED_VISIBLE) : children;
-    if (children.length > shown.length) overflowByParent.set(nodeId, children.length - shown.length);
-    if (shown.length > 0) childrenByParent.set(nodeId, shown.map((id) => project.nodes[id]));
-    for (const childId of shown) walk(childId);
+    if (node.collapsed || node.children.length === 0) {
+      widths.set(nodeId, NODE_W);
+      return NODE_W;
+    }
+    const shown =
+      node.children.length > MAX_UNGROUPED_VISIBLE ? node.children.slice(0, MAX_UNGROUPED_VISIBLE) : node.children;
+    if (node.children.length > shown.length) overflowByParent.set(nodeId, node.children.length - shown.length);
+    childrenByParent.set(nodeId, shown.map((id) => project.nodes[id]));
+    let total = 0;
+    for (const childId of shown) total += computeWidth(childId);
+    total += Math.max(0, shown.length - 1) * SUBTREE_GAP;
+    const width = Math.max(NODE_W, total);
+    widths.set(nodeId, width);
+    return width;
   }
-  walk(rootId);
+  computeWidth(rootId);
 
-  // Always the node's own stored position — same reasoning as Focus Mode (see nodePos above).
   const positions = new Map();
-  for (const nodes of levelBuckets.values()) {
-    for (const node of nodes) positions.set(node.id, nodePos(node));
+  function assignPositions(nodeId, centerX, depth) {
+    positions.set(nodeId, { x: centerX, y: 60 + depth * ROW_GAP });
+    const children = childrenByParent.get(nodeId);
+    if (!children) return;
+    const totalWidth =
+      children.reduce((sum, c) => sum + widths.get(c.id), 0) + Math.max(0, children.length - 1) * SUBTREE_GAP;
+    let cursor = centerX - totalWidth / 2;
+    for (const child of children) {
+      const w = widths.get(child.id);
+      assignPositions(child.id, cursor + w / 2, depth + 1);
+      cursor += w + SUBTREE_GAP;
+    }
   }
+  assignPositions(rootId, viewW / 2, 0);
+
+  return { positions, childrenByParent, overflowByParent };
+}
+
+// Full Architecture mode: every non-collapsed node in the project, recursively laid out by
+// ownership (see computeSubtreeLayout above), nothing faded. This is the "show me everything
+// at once" counterpart to Focus Mode's single-branch-plus-context view. Always recomputed
+// live from the hierarchy — this view never reads or writes anyone's stored canvas position,
+// so it can never drift into a scattered mess the way free-dragging can; Auto Arrange (below)
+// persists this same layout to storage so Focus Mode, which DOES read stored position, shows
+// a consistent picture once you step into any branch.
+function computeFullArchitectureLayout(viewW, viewH) {
+  const { positions, childrenByParent, overflowByParent } = computeSubtreeLayout(viewW);
 
   let minX = Infinity;
   let maxX = -Infinity;
@@ -1281,37 +1327,11 @@ function computeFullArchitectureLayout(viewW, viewH) {
   return { positions, childrenByParent, overflowByParent, bounds: { minX, maxX, minY, maxY } };
 }
 
-// Used only by Auto Arrange: what the deterministic level-row grid would look like, without
-// reading or touching anyone's actual stored position. Auto Arrange then persists this back
-// as everyone's new stored position.
+// Used only by Auto Arrange: persists computeSubtreeLayout's positions back to storage so
+// Focus Mode (which reads stored canvas_x/canvas_y) shows the same tidy, ownership-clear
+// arrangement Full Architecture always renders live.
 function computeDeterministicFullLayout(viewW, viewH) {
-  const levelBuckets = new Map();
-  const visited = new Set();
-  function walk(nodeId) {
-    if (visited.has(nodeId)) return;
-    visited.add(nodeId);
-    const node = project.nodes[nodeId];
-    if (!levelBuckets.has(node.level)) levelBuckets.set(node.level, []);
-    levelBuckets.get(node.level).push(node);
-    if (node.collapsed) return;
-    const shown =
-      node.children.length > MAX_UNGROUPED_VISIBLE ? node.children.slice(0, MAX_UNGROUPED_VISIBLE) : node.children;
-    for (const childId of shown) walk(childId);
-  }
-  walk(rootId);
-
-  const positions = new Map();
-  const levels = [...levelBuckets.keys()].sort((a, b) => a - b);
-  levels.forEach((level, rowIndex) => {
-    const nodesInRow = levelBuckets.get(level);
-    const n = nodesInRow.length;
-    const rowWidth = n * NODE_W + Math.max(0, n - 1) * COL_GAP;
-    const startX = viewW / 2 - rowWidth / 2 + NODE_W / 2;
-    nodesInRow.forEach((node, i) => {
-      positions.set(node.id, { x: startX + i * (NODE_W + COL_GAP), y: 60 + rowIndex * ROW_GAP });
-    });
-  });
-  return positions;
+  return computeSubtreeLayout(viewW).positions;
 }
 
 function renderFullArchitectureCanvas(viewW, viewH) {
@@ -3090,7 +3110,12 @@ function drawNode(node, pos, faded = false) {
     }
   });
 
-  if (!node.is_group && !node.locked) {
+  // Free dragging only means anything in Focus Mode, which reads each node's stored
+  // canvas_x/canvas_y. Full Architecture always recomputes the recursive layout live and
+  // never reads stored position, so a drag there would just snap back on the next render —
+  // dragging is disabled in that view rather than shipping a control that silently does
+  // nothing lasting.
+  if (!node.is_group && !node.locked && viewMode !== "full") {
     group.addEventListener("mousedown", (e) => {
       if (e.button !== 0 || refMode) return;
       startNodeFreeDrag(e, node.id);
@@ -3680,22 +3705,26 @@ function openMultiSelectContextMenu(clientX, clientY) {
   menu.appendChild(contextMenuItem("▤ Group", groupSelectedNodes));
   menu.appendChild(contextMenuItem("Ungroup", ungroupSelectedNodes));
   menu.appendChild(contextMenuItem("⧉ Duplicate", duplicateSelectedNodes));
-  menu.appendChild(
-    contextMenuSubmenu(
-      "Align",
-      ["Left", "Center", "Right", "Top", "Middle", "Bottom"],
-      (opt) =>
-        alignSelectedNodes(
-          { Left: "left", Center: "center-h", Right: "right", Top: "top", Middle: "center-v", Bottom: "bottom" }[opt]
-        )
-    )
-  );
-  if (count >= 3) {
+  // Align/Distribute write canvas_x/canvas_y, only meaningful where that's actually read
+  // back (Focus Mode) — Full Architecture always recomputes its layout live.
+  if (viewMode !== "full") {
     menu.appendChild(
-      contextMenuSubmenu("Distribute", ["Horizontally", "Vertically"], (opt) =>
-        distributeSelectedNodes(opt === "Horizontally")
+      contextMenuSubmenu(
+        "Align",
+        ["Left", "Center", "Right", "Top", "Middle", "Bottom"],
+        (opt) =>
+          alignSelectedNodes(
+            { Left: "left", Center: "center-h", Right: "right", Top: "top", Middle: "center-v", Bottom: "bottom" }[opt]
+          )
       )
     );
+    if (count >= 3) {
+      menu.appendChild(
+        contextMenuSubmenu("Distribute", ["Horizontally", "Vertically"], (opt) =>
+          distributeSelectedNodes(opt === "Horizontally")
+        )
+      );
+    }
   }
   menu.appendChild(contextMenuSeparator());
   menu.appendChild(contextMenuItem("🗑 Delete", deleteSelectedNodes, { danger: true }));
@@ -4439,8 +4468,10 @@ fullArchModeBtn.addEventListener("click", () => setViewMode("full"));
 
 railAutoArrangeBtn.addEventListener("click", () => autoArrangeLayout());
 
-// Nodes are always freely draggable now — Auto Arrange is just an explicit "put everyone back
-// on the deterministic grid" action, available any time, not an exit from a locked mode.
+// Full Architecture always shows the recursive layout live; this persists the same
+// positions to storage so Focus Mode (which reads stored canvas_x/canvas_y, and is where
+// free dragging actually means something) starts from a tidy arrangement instead of
+// whatever scattered positions accumulated from past drags, imports, or stale data.
 async function autoArrangeLayout() {
   pushUndoSnapshot("Auto Arrange");
   const rect = canvasSvg.getBoundingClientRect();
