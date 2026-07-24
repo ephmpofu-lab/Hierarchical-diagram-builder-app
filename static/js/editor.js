@@ -985,6 +985,7 @@ function renderCanvas() {
   canvasSvg.innerHTML = "";
   canvasSvg.classList.toggle("ref-mode-active", refMode);
   canvasSvg.appendChild(buildRefArrowDefs());
+  updateEmptyCanvasPrompt();
   if (!project || !focusedNodeId) {
     return;
   }
