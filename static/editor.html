@@ -71,6 +71,8 @@
           <div class="dropdown-divider"></div>
           <button id="menuZoomInBtn">+ Zoom In</button>
           <button id="menuZoomOutBtn">− Zoom Out</button>
+          <div class="dropdown-divider"></div>
+          <button id="clearCanvasBtn" class="danger">🗑 Clear Canvas…</button>
         </div>
       </div>
       <span id="zoomLevel" class="zoom-level" title="Current zoom level">100%</span>
@@ -231,6 +233,22 @@
       <div class="modal-actions">
         <button id="importCancelBtn" class="btn btn-small">Cancel</button>
         <button id="importConfirmBtn" class="btn btn-small btn-primary">Import under selected node</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="clearCanvasModal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header-row">
+        <strong>Clear Canvas?</strong>
+        <button id="clearCanvasXBtn" class="theme-toggle" title="Close">×</button>
+      </div>
+      <p id="clearCanvasSummary"></p>
+      <p>This cannot be undone once you leave this session. Type <code>DELETE</code> to confirm.</p>
+      <input id="clearCanvasInput" type="text" autocomplete="off" placeholder="Type DELETE">
+      <div class="modal-actions">
+        <button id="clearCanvasCancelBtn" class="btn btn-small">Cancel</button>
+        <button id="clearCanvasConfirmBtn" class="btn btn-small btn-danger" disabled>Clear Canvas</button>
       </div>
     </div>
   </div>

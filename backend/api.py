@@ -102,6 +102,18 @@ def api_delete_project(project_id: str):
     storage.delete_project(project_id)
 
 
+@router.post("/projects/{project_id}/clear", response_model=Project)
+def api_clear_project(project_id: str):
+    """Resets the project back to just its root node - deletes every other node, every
+    reference, and every free object. Gated client-side behind a type-to-confirm modal
+    since this is destructive and undo history doesn't survive a page reload."""
+    project = storage.load_project(project_id)
+    tree.clear_project(project)
+    tree.log_activity(project, "Cleared the canvas back to just the root")
+    storage.save_project(project)
+    return project
+
+
 @router.put("/projects/{project_id}/restore", response_model=Project)
 def api_restore_project(project_id: str, body: Project):
     """Overwrites the whole project with a client-supplied snapshot. Used by the editor's

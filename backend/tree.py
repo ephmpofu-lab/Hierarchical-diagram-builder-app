@@ -15,6 +15,18 @@ def find_root_id(project: Project) -> str:
     raise HTTPException(status_code=500, detail="Project has no root node")
 
 
+def clear_project(project: Project) -> None:
+    """Reset back to just the root node - deletes every other node, every reference, and
+    every free object. The root's own fields (label, notes, etc.) are left untouched, only
+    its children are cleared, so the project keeps its identity rather than becoming blank."""
+    root_id = find_root_id(project)
+    root = project.nodes[root_id]
+    root.children = []
+    project.nodes = {root_id: root}
+    project.references = []
+    project.concept_objects = []
+
+
 def compute_level(project: Project, node_id: str) -> int:
     """Depth from root, root = level 1. Walks parent_id chain. Group nodes (is_group=True)
     are level-transparent: organizing a node's children into a group never changes the

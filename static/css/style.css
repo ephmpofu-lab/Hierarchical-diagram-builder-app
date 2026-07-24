@@ -223,6 +223,10 @@ button {
   background: var(--surface-hover);
 }
 
+.dropdown-menu button.danger {
+  color: var(--danger-text);
+}
+
 .connector-panel {
   position: fixed;
   z-index: 160;
@@ -2169,6 +2173,19 @@ hr.inspector-divider {
   width: 26px;
   height: 26px;
   font-size: 16px;
+}
+
+.modal input[type="text"] {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 14px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  margin-bottom: 12px;
 }
 
 .import-modal textarea {

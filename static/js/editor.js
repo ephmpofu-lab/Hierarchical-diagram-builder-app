@@ -184,6 +184,13 @@ const importOutlineBtn = document.getElementById("importOutlineBtn");
 const importModal = document.getElementById("importModal");
 const importText = document.getElementById("importText");
 const importCancelBtn = document.getElementById("importCancelBtn");
+const clearCanvasBtn = document.getElementById("clearCanvasBtn");
+const clearCanvasModal = document.getElementById("clearCanvasModal");
+const clearCanvasSummary = document.getElementById("clearCanvasSummary");
+const clearCanvasInput = document.getElementById("clearCanvasInput");
+const clearCanvasXBtn = document.getElementById("clearCanvasXBtn");
+const clearCanvasCancelBtn = document.getElementById("clearCanvasCancelBtn");
+const clearCanvasConfirmBtn = document.getElementById("clearCanvasConfirmBtn");
 const importConfirmBtn = document.getElementById("importConfirmBtn");
 const importXBtn = document.getElementById("importXBtn");
 
@@ -4770,6 +4777,50 @@ function renderActivityLog() {
 function closeImportModal() {
   importModal.hidden = true;
 }
+
+// ---------- Clear Canvas ----------
+// Resets the project back to just the root node. Destructive and only undoable within the
+// current session (undo history isn't persisted across reloads), so it's gated behind a
+// type-DELETE-to-confirm modal rather than a plain confirm() dialog.
+function closeClearCanvasModal() {
+  clearCanvasModal.hidden = true;
+}
+
+clearCanvasBtn.addEventListener("click", () => {
+  if (!project) return;
+  layoutMenu.hidden = true;
+  const nodeCount = Object.keys(project.nodes).length - 1; // everything except root
+  const refCount = project.references.length;
+  const objectCount = project.concept_objects.length;
+  clearCanvasSummary.textContent =
+    `This will permanently delete ${nodeCount} component${nodeCount === 1 ? "" : "s"}, ` +
+    `${refCount} connector${refCount === 1 ? "" : "s"}, and ${objectCount} free object${objectCount === 1 ? "" : "s"}, ` +
+    `leaving only the root node.`;
+  clearCanvasInput.value = "";
+  clearCanvasConfirmBtn.disabled = true;
+  clearCanvasModal.hidden = false;
+  clearCanvasInput.focus();
+});
+clearCanvasXBtn.addEventListener("click", closeClearCanvasModal);
+clearCanvasCancelBtn.addEventListener("click", closeClearCanvasModal);
+clearCanvasInput.addEventListener("input", () => {
+  clearCanvasConfirmBtn.disabled = clearCanvasInput.value.trim().toUpperCase() !== "DELETE";
+});
+clearCanvasInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !clearCanvasConfirmBtn.disabled) clearCanvasConfirmBtn.click();
+});
+clearCanvasConfirmBtn.addEventListener("click", async () => {
+  if (clearCanvasConfirmBtn.disabled) return;
+  await fetch(`/api/projects/${projectId}/clear`, { method: "POST" });
+  closeClearCanvasModal();
+  undoStack = [];
+  redoStack = [];
+  updateUndoRedoButtons();
+  clearSelection();
+  selectedConceptObjectId = null;
+  focusedNodeId = null;
+  await loadProject();
+});
 
 importOutlineBtn.addEventListener("click", () => {
   if (!focusedNodeId) return;
