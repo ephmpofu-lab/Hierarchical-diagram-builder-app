@@ -1016,6 +1016,7 @@ body.presentation-active .editor-panes {
   opacity: 0;
   cursor: crosshair;
   transition: opacity 0.12s ease;
+  pointer-events: none;
 }
 
 .canvas-svg .node-group:hover .node-connection-handle,
@@ -1023,6 +1024,12 @@ body.presentation-active .editor-panes {
 .canvas-svg .concept-object:hover .node-connection-handle,
 .canvas-svg .concept-object.selected .node-connection-handle {
   opacity: 1;
+}
+
+.canvas-svg .node-connection-handle-hit {
+  fill: transparent;
+  cursor: crosshair;
+  pointer-events: all;
 }
 
 .canvas-svg .node-box.relationship-drop-target {
@@ -1808,6 +1815,23 @@ hr.inspector-divider {
 .empty-canvas-prompt .btn {
   pointer-events: auto;
   box-shadow: var(--shadow);
+}
+
+.connect-coach-mark {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  padding: 8px 10px 8px 14px;
+  font-size: 12.5px;
+  max-width: 340px;
 }
 
 .minimap-svg {

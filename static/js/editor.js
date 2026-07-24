@@ -124,6 +124,8 @@ const settingsMenu = document.getElementById("settingsMenu");
 const insertBtn = document.getElementById("insertBtn");
 const emptyCanvasPrompt = document.getElementById("emptyCanvasPrompt");
 const emptyCanvasBtn = document.getElementById("emptyCanvasBtn");
+const connectCoachMark = document.getElementById("connectCoachMark");
+const connectCoachMarkDismiss = document.getElementById("connectCoachMarkDismiss");
 const insertMenu = document.getElementById("insertMenu");
 const collapseAllBtn = document.getElementById("collapseAllBtn");
 const expandBranchBtn = document.getElementById("expandBranchBtn");
@@ -238,7 +240,22 @@ let selectedNodeIds = new Set();
 function selectOnly(nodeId) {
   selectedNodeIds = new Set([nodeId]);
   updateSelectionToolbar();
+  maybeShowConnectCoachMark();
 }
+
+// One-time coach mark pointing out the connection handles, shown the first time a node
+// is selected on any project. Dismissed permanently once the user clicks "Got it".
+const CONNECT_COACH_MARK_KEY = "skaido_seen_connect_coach_mark";
+
+function maybeShowConnectCoachMark() {
+  if (localStorage.getItem(CONNECT_COACH_MARK_KEY)) return;
+  connectCoachMark.hidden = false;
+}
+
+connectCoachMarkDismiss.addEventListener("click", () => {
+  localStorage.setItem(CONNECT_COACH_MARK_KEY, "1");
+  connectCoachMark.hidden = true;
+});
 
 function toggleNodeSelection(nodeId) {
   if (selectedNodeIds.has(nodeId)) selectedNodeIds.delete(nodeId);
@@ -1627,8 +1644,9 @@ function drawConceptObject(obj) {
   }
 
   // Free objects get the same connection handles as architecture nodes — shapes, sticky
-  // notes, images, etc. can all start a relationship, not just nodes.
-  if (selectedConceptObjectId === obj.id && !obj.locked && obj.type !== "divider" && obj.type !== "arrow") {
+  // notes, images, etc. can all start a relationship, not just nodes. Revealed on hover or
+  // selection (see CSS), not gated to selection-only, so hovering any object shows them.
+  if (!obj.locked && obj.type !== "divider" && obj.type !== "arrow") {
     const cx = obj.x + obj.width / 2;
     const cy = obj.y + obj.height / 2;
     const handleSpecs = [
@@ -1638,16 +1656,24 @@ function drawConceptObject(obj) {
       { x: obj.x + obj.width, y: cy },
     ];
     for (const hp of handleSpecs) {
+      const onHandleDown = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        startRelationshipDrag(e, obj.id, hp);
+      };
+      const hit = document.createElementNS(SVG_NS, "circle");
+      hit.setAttribute("class", "node-connection-handle-hit");
+      hit.setAttribute("cx", hp.x);
+      hit.setAttribute("cy", hp.y);
+      hit.setAttribute("r", 12);
+      hit.addEventListener("mousedown", onHandleDown);
+      group.appendChild(hit);
+
       const handle = document.createElementNS(SVG_NS, "circle");
       handle.setAttribute("class", "node-connection-handle");
       handle.setAttribute("cx", hp.x);
       handle.setAttribute("cy", hp.y);
-      handle.setAttribute("r", 5);
-      handle.addEventListener("mousedown", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        startRelationshipDrag(e, obj.id, hp);
-      });
+      handle.setAttribute("r", 6);
       group.appendChild(handle);
     }
   }
@@ -2852,10 +2878,12 @@ function drawNode(node, pos, faded = false) {
     startNodeCanvasRename(node.id, pos);
   });
 
-  // Connection handles: only on the currently-selected node, one per edge. Dragging from a
-  // handle creates a live connector and, on drop, a relationship-type chooser — this replaces
-  // needing to know a modifier-key shortcut to draw a Reference/Dependency/Data Flow link.
-  if (!node.is_group && !faded && node.id === focusedNodeId && selectedNodeIds.size <= 1) {
+  // Connection handles: one per edge, on every draggable node (revealed on hover or when
+  // the node is focused — see CSS). Dragging from a handle creates a live connector and, on
+  // drop, a relationship-type chooser — this replaces needing a modifier-key shortcut to draw
+  // a Reference/Dependency/Data Flow link. A larger invisible hit-ring sits under each visible
+  // dot so the drag reliably starts even when the click doesn't land pixel-perfect on it.
+  if (!node.is_group && !faded && !node.locked) {
     const handleSpecs = [
       { x: pos.x, y: pos.y - NODE_H / 2 },
       { x: pos.x, y: pos.y + NODE_H / 2 },
@@ -2863,16 +2891,24 @@ function drawNode(node, pos, faded = false) {
       { x: pos.x + NODE_W / 2, y: pos.y },
     ];
     for (const hp of handleSpecs) {
+      const onHandleDown = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        startRelationshipDrag(e, node.id, hp);
+      };
+      const hit = document.createElementNS(SVG_NS, "circle");
+      hit.setAttribute("class", "node-connection-handle-hit");
+      hit.setAttribute("cx", hp.x);
+      hit.setAttribute("cy", hp.y);
+      hit.setAttribute("r", 12);
+      hit.addEventListener("mousedown", onHandleDown);
+      group.appendChild(hit);
+
       const handle = document.createElementNS(SVG_NS, "circle");
       handle.setAttribute("class", "node-connection-handle");
       handle.setAttribute("cx", hp.x);
       handle.setAttribute("cy", hp.y);
-      handle.setAttribute("r", 5);
-      handle.addEventListener("mousedown", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        startRelationshipDrag(e, node.id, hp);
-      });
+      handle.setAttribute("r", 6);
       group.appendChild(handle);
     }
   }
