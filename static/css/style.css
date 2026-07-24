@@ -766,11 +766,6 @@ button {
   color: var(--text-muted);
 }
 
-.insert-menu {
-  max-height: 70vh;
-  overflow-y: auto;
-}
-
 .canvas-svg .faded-node {
   opacity: 0.35;
 }
@@ -837,7 +832,9 @@ body.presentation-active .inspector-pane,
 body.presentation-active .canvas-toolbar .canvas-controls,
 body.presentation-active .minimap-svg,
 body.presentation-active .selection-toolbar,
-body.presentation-active .ref-mode-banner {
+body.presentation-active .ref-mode-banner,
+body.presentation-active .tool-rail,
+body.presentation-active .zoom-cluster {
   display: none !important;
 }
 
@@ -901,6 +898,10 @@ body.presentation-active .editor-panes {
 
 .canvas-svg.panning {
   cursor: grabbing;
+}
+
+.canvas-svg.pan-tool-active {
+  cursor: grab;
 }
 
 .canvas-svg .viewport-group.smooth {
@@ -1850,6 +1851,82 @@ hr.inspector-divider {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow);
+}
+
+/* ---------- Floating tool rail + zoom cluster (Mural-style icon chrome) ---------- */
+
+.tool-rail {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  padding: 6px;
+}
+
+.rail-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
+}
+
+.rail-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 17px;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.rail-btn:hover {
+  background: var(--surface-hover);
+}
+
+.rail-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.rail-flyout {
+  top: 0;
+  left: calc(100% + 8px);
+  right: auto;
+  min-width: 180px;
+}
+
+.zoom-cluster {
+  position: absolute;
+  bottom: 44px;
+  right: 182px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  padding: 4px;
+}
+
+.zoom-cluster .rail-btn {
+  width: 28px;
+  height: 28px;
+  font-size: 15px;
 }
 
 .minimap-svg .mini-node {

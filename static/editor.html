@@ -18,48 +18,21 @@
         <div id="searchResults" class="search-results" hidden></div>
       </div>
       <div class="dropdown-wrap">
-        <button id="insertBtn" class="btn btn-primary" title="Add an architecture component or a free-form object to the canvas — same picker as right-click">+ Insert ▾</button>
-        <div id="insertMenu" class="dropdown-menu insert-menu" hidden>
-          <div class="dropdown-section-label">Architecture</div>
-          <button data-insert="node">◆ New Architecture Node <span class="menu-shortcut">N</span></button>
-          <div class="dropdown-divider"></div>
-          <div class="dropdown-section-label">Planning</div>
-          <button data-insert="sticky-note">🗒 Sticky Note <span class="menu-shortcut">S</span></button>
-          <button data-insert="text">A Text <span class="menu-shortcut">T</span></button>
-          <button data-insert="section-header">▬ Section Header</button>
-          <button data-insert="divider">─ Divider</button>
-          <div class="dropdown-divider"></div>
-          <div class="dropdown-section-label">Shapes</div>
-          <button data-insert="rectangle">▭ Rectangle <span class="menu-shortcut">R</span></button>
-          <button data-insert="rounded-rectangle">▢ Rounded Rectangle</button>
-          <button data-insert="circle">◯ Circle</button>
-          <button data-insert="diamond">◇ Diamond</button>
-          <button data-insert="hexagon">⬡ Hexagon</button>
-          <button data-insert="arrow">➜ Arrow</button>
-          <div class="dropdown-divider"></div>
-          <div class="dropdown-section-label">Media</div>
-          <button data-insert="image">🖼 Image</button>
-          <button data-insert="icon">★ Icon</button>
-          <div class="dropdown-divider"></div>
-          <button id="importOutlineBtn">⇩ Import Outline…</button>
-        </div>
-      </div>
-      <div class="dropdown-wrap">
-        <button id="exportBtn" class="btn" title="Export the current view or whole tree">Export ▾</button>
+        <button id="exportBtn" class="btn btn-small icon-only" title="Import an outline, or export the current view / whole tree">⇅</button>
         <div id="exportMenu" class="dropdown-menu" hidden>
-          <button data-export="svg">Canvas view as SVG</button>
-          <button data-export="md">Whole tree as Markdown</button>
-          <button data-export="json">Whole tree as JSON</button>
+          <button id="importOutlineBtn">⇧ Import Outline…</button>
+          <div class="dropdown-divider"></div>
+          <button data-export="svg">⇩ Canvas view as SVG</button>
+          <button data-export="md">⇩ Whole tree as Markdown</button>
+          <button data-export="json">⇩ Whole tree as JSON</button>
         </div>
       </div>
-      <button id="undoBtn" class="btn btn-small" title="Undo the last change (Ctrl+Z)" disabled>↶ Undo</button>
-      <button id="redoBtn" class="btn btn-small" title="Redo the last undone change (Ctrl+Shift+Z / Ctrl+Y)" disabled>↷ Redo</button>
+      <button id="undoBtn" class="btn btn-small icon-only" title="Undo the last change (Ctrl+Z)" disabled>↶</button>
+      <button id="redoBtn" class="btn btn-small icon-only" title="Redo the last undone change (Ctrl+Shift+Z / Ctrl+Y)" disabled>↷</button>
       <button id="presentEnterBtn" class="btn btn-small icon-only" title="Presentation Mode: hide all interface chrome and walk through the architecture as a guided story">▶</button>
       <div class="dropdown-wrap">
-        <button id="layoutMenuBtn" class="btn btn-small" title="Layout: arrangement and camera controls">Layout ▾</button>
+        <button id="layoutMenuBtn" class="btn btn-small icon-only" title="Layout: camera and structure controls">▦</button>
         <div id="layoutMenu" class="dropdown-menu" hidden>
-          <button id="menuAutoArrangeBtn" title="Nodes are always freely draggable — this recomputes and restores the default structured layout">⤾ Auto Arrange</button>
-          <div class="dropdown-divider"></div>
           <button id="fitSelectionBtn">Fit Selection</button>
           <button id="fitBranchBtn">Fit Branch</button>
           <button id="fitAllBtn">Fit / Center Architecture</button>
@@ -68,15 +41,11 @@
           <button id="expandBranchBtn">Expand Current Branch</button>
           <button id="expandToLevelBtn">Expand to Level…</button>
           <div class="dropdown-divider"></div>
-          <button id="menuZoomInBtn">+ Zoom In</button>
-          <button id="menuZoomOutBtn">− Zoom Out</button>
-          <div class="dropdown-divider"></div>
           <button id="clearCanvasBtn" class="danger">🗑 Clear Canvas…</button>
         </div>
       </div>
-      <span id="zoomLevel" class="zoom-level" title="Current zoom level">100%</span>
       <div class="dropdown-wrap">
-        <button id="settingsMenuBtn" class="btn btn-small" title="Display settings">Settings ▾</button>
+        <button id="settingsMenuBtn" class="btn btn-small icon-only" title="Display settings">⚙</button>
         <div id="settingsMenu" class="dropdown-menu" hidden>
           <button id="themeToggleBtn">🌓 Toggle Theme</button>
           <div class="dropdown-divider"></div>
@@ -93,7 +62,7 @@
           <label><input type="checkbox" data-filter="Blocked" checked> ⛔ Blocked</label>
         </div>
       </div>
-      <a class="btn" href="index.html" title="Back to the project library">Back to library</a>
+      <a class="btn btn-small icon-only" href="index.html" title="Back to the project library">⌂</a>
     </div>
   </div>
 
@@ -110,9 +79,9 @@
       <div class="canvas-toolbar">
         <div id="breadcrumb" class="breadcrumb"></div>
         <div class="canvas-controls">
-          <div class="view-mode-toggle" title="Focus Mode shows the ancestor chain plus this node's children, with other branches faded. Full Architecture shows the whole tree at once.">
-            <button id="focusModeBtn" class="btn btn-small active">Focus Mode</button>
-            <button id="fullArchModeBtn" class="btn btn-small">Full Architecture</button>
+          <div class="view-mode-toggle">
+            <button id="focusModeBtn" class="btn btn-small icon-only active" title="Focus Mode: shows the ancestor chain plus this node's children, with other branches faded">◎</button>
+            <button id="fullArchModeBtn" class="btn btn-small icon-only" title="Full Architecture: shows the whole tree at once">▦</button>
           </div>
         </div>
       </div>
@@ -172,6 +141,37 @@
       <div class="canvas-svg-wrap">
         <svg id="canvasSvg" class="canvas-svg"></svg>
         <svg id="minimapSvg" class="minimap-svg"></svg>
+        <div id="toolRail" class="tool-rail">
+          <button id="toolSelectBtn" class="rail-btn active" title="Select: click/drag to select and move things">↖</button>
+          <button id="toolPanBtn" class="rail-btn" title="Pan: click-drag anywhere to move around the canvas">✋</button>
+          <div class="rail-divider"></div>
+          <button data-insert="node" class="rail-btn" title="New Architecture Node (N)">◆</button>
+          <button data-insert="sticky-note" class="rail-btn" title="Sticky Note (S)">🗒</button>
+          <button data-insert="text" class="rail-btn" title="Text (T)">A</button>
+          <div class="dropdown-wrap">
+            <button id="shapesRailBtn" class="rail-btn" title="Shapes">▭</button>
+            <div id="shapesFlyout" class="dropdown-menu rail-flyout" hidden>
+              <button data-insert="rectangle">▭ Rectangle <span class="menu-shortcut">R</span></button>
+              <button data-insert="rounded-rectangle">▢ Rounded Rectangle</button>
+              <button data-insert="circle">◯ Circle</button>
+              <button data-insert="diamond">◇ Diamond</button>
+              <button data-insert="hexagon">⬡ Hexagon</button>
+              <button data-insert="arrow">➜ Arrow</button>
+              <div class="dropdown-divider"></div>
+              <button data-insert="divider">─ Divider</button>
+              <button data-insert="section-header">▬ Section Header</button>
+              <button data-insert="icon">★ Icon</button>
+            </div>
+          </div>
+          <button data-insert="image" class="rail-btn" title="Image">🖼</button>
+          <div class="rail-divider"></div>
+          <button id="railAutoArrangeBtn" class="rail-btn" title="Auto Arrange: recompute and restore the default structured layout">⤾</button>
+        </div>
+        <div id="zoomCluster" class="zoom-cluster">
+          <button id="clusterZoomOutBtn" class="rail-btn" title="Zoom Out">−</button>
+          <span id="zoomLevel" class="zoom-level" title="Current zoom level">100%</span>
+          <button id="clusterZoomInBtn" class="rail-btn" title="Zoom In">+</button>
+        </div>
         <div id="emptyCanvasPrompt" class="empty-canvas-prompt" hidden>
           <button id="emptyCanvasBtn" class="btn btn-small btn-primary" title="Add your first component — or right-click the canvas">+ Insert</button>
         </div>

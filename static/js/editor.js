@@ -116,17 +116,20 @@ const snapGridCheckbox = document.getElementById("snapGridCheckbox");
 const animateFlowCheckbox = document.getElementById("animateFlowCheckbox");
 const layoutMenuBtn = document.getElementById("layoutMenuBtn");
 const layoutMenu = document.getElementById("layoutMenu");
-const menuAutoArrangeBtn = document.getElementById("menuAutoArrangeBtn");
-const menuZoomInBtn = document.getElementById("menuZoomInBtn");
-const menuZoomOutBtn = document.getElementById("menuZoomOutBtn");
 const settingsMenuBtn = document.getElementById("settingsMenuBtn");
 const settingsMenu = document.getElementById("settingsMenu");
-const insertBtn = document.getElementById("insertBtn");
 const emptyCanvasPrompt = document.getElementById("emptyCanvasPrompt");
 const emptyCanvasBtn = document.getElementById("emptyCanvasBtn");
 const connectCoachMark = document.getElementById("connectCoachMark");
 const connectCoachMarkDismiss = document.getElementById("connectCoachMarkDismiss");
-const insertMenu = document.getElementById("insertMenu");
+const toolRail = document.getElementById("toolRail");
+const toolSelectBtn = document.getElementById("toolSelectBtn");
+const toolPanBtn = document.getElementById("toolPanBtn");
+const shapesRailBtn = document.getElementById("shapesRailBtn");
+const shapesFlyout = document.getElementById("shapesFlyout");
+const railAutoArrangeBtn = document.getElementById("railAutoArrangeBtn");
+const clusterZoomInBtn = document.getElementById("clusterZoomInBtn");
+const clusterZoomOutBtn = document.getElementById("clusterZoomOutBtn");
 const collapseAllBtn = document.getElementById("collapseAllBtn");
 const expandBranchBtn = document.getElementById("expandBranchBtn");
 const expandToLevelBtn = document.getElementById("expandToLevelBtn");
@@ -1434,39 +1437,34 @@ async function insertNewArchitectureNode() {
   if (parentId) await addChild(parentId);
 }
 
-function toggleInsertMenu() {
-  const wasHidden = insertMenu.hidden;
-  exportMenu.hidden = true;
-  layoutMenu.hidden = true;
-  settingsMenu.hidden = true;
-  insertMenu.hidden = !wasHidden;
-}
-insertBtn.addEventListener("click", (e) => {
-  e.stopPropagation();
-  toggleInsertMenu();
-});
+// The floating left tool rail (Mural-style icon rail) replaces the old text Insert dropdown.
+// Node/Sticky Note/Text/Image are one-click rail buttons; Shapes is the one flyout, bundling
+// the less-common object types (matches how Mural bundles its own shape picker behind one icon).
 emptyCanvasBtn.addEventListener("click", (e) => {
-  // Toggle directly rather than simulating a click on insertBtn — a simulated click bubbles
-  // back up through the ORIGINAL click's own bubble phase and re-triggers the "close menu on
-  // an outside click" listener below before the original event finishes, closing the menu in
-  // the same tick it opened. Calling the shared toggle function avoids the nested event
-  // entirely, and stopPropagation keeps the original click from reaching that listener too.
   e.stopPropagation();
-  toggleInsertMenu();
+  insertNewArchitectureNode();
 });
-insertMenu.addEventListener("click", (e) => {
+toolRail.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-insert]");
   if (!btn) return;
-  insertMenu.hidden = true;
+  shapesFlyout.hidden = true;
   if (btn.dataset.insert === "node") {
     insertNewArchitectureNode();
   } else {
     createConceptObject(btn.dataset.insert);
   }
 });
+shapesRailBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const wasHidden = shapesFlyout.hidden;
+  exportMenu.hidden = true;
+  layoutMenu.hidden = true;
+  settingsMenu.hidden = true;
+  shapesFlyout.hidden = !wasHidden;
+});
 document.addEventListener("click", (e) => {
-  if (!insertMenu.hidden && !insertBtn.contains(e.target) && !insertMenu.contains(e.target)) {
-    insertMenu.hidden = true;
+  if (!shapesFlyout.hidden && !shapesRailBtn.contains(e.target) && !shapesFlyout.contains(e.target)) {
+    shapesFlyout.hidden = true;
   }
 });
 
@@ -3766,11 +3764,11 @@ function viewportCenterClient() {
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
 
-menuZoomInBtn.addEventListener("click", () => {
+clusterZoomInBtn.addEventListener("click", () => {
   const c = viewportCenterClient();
   zoomAtPoint(zoomScale + ZOOM_STEP, c.x, c.y, true);
 });
-menuZoomOutBtn.addEventListener("click", () => {
+clusterZoomOutBtn.addEventListener("click", () => {
   const c = viewportCenterClient();
   zoomAtPoint(zoomScale - ZOOM_STEP, c.x, c.y, true);
 });
@@ -3795,14 +3793,42 @@ canvasSvg.addEventListener("mousedown", (e) => {
   panDragStart = { clientX: e.clientX, clientY: e.clientY, startX: panOffsetX, startY: panOffsetY };
   canvasSvg.classList.add("panning");
 });
+
+// Pan tool (rail's hand icon): a capture-phase listener so it runs BEFORE any node/object's
+// own mousedown handler and can stopPropagation to suspend them entirely — clicking anywhere,
+// including on top of content, just pans while this tool is active, matching Mural's Hand tool.
+let canvasTool = "select"; // "select" | "pan"
+
+function setCanvasTool(tool) {
+  canvasTool = tool;
+  toolSelectBtn.classList.toggle("active", tool === "select");
+  toolPanBtn.classList.toggle("active", tool === "pan");
+  canvasSvg.classList.toggle("pan-tool-active", tool === "pan");
+}
+toolSelectBtn.addEventListener("click", () => setCanvasTool("select"));
+toolPanBtn.addEventListener("click", () => setCanvasTool("pan"));
+
+canvasSvg.addEventListener(
+  "mousedown",
+  (e) => {
+    if (canvasTool !== "pan" || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    isPanning = true;
+    panDragStart = { clientX: e.clientX, clientY: e.clientY, startX: panOffsetX, startY: panOffsetY };
+    canvasSvg.classList.add("panning");
+  },
+  true
+);
+
 window.addEventListener("mousemove", (e) => {
   if (!isPanning || !panDragStart) return;
   panOffsetX = panDragStart.startX + (e.clientX - panDragStart.clientX);
   panOffsetY = panDragStart.startY + (e.clientY - panDragStart.clientY);
   renderCanvas();
 });
-window.addEventListener("mouseup", (e) => {
-  if (e.button !== 1 || !isPanning) return;
+window.addEventListener("mouseup", () => {
+  if (!isPanning) return;
   isPanning = false;
   panDragStart = null;
   canvasSvg.classList.remove("panning");
@@ -3958,7 +3984,7 @@ function closeToolbarMenus() {
   exportMenu.hidden = true;
   layoutMenu.hidden = true;
   settingsMenu.hidden = true;
-  insertMenu.hidden = true;
+  shapesFlyout.hidden = true;
   closeImportModal();
 }
 layoutMenuBtn.addEventListener("click", () => {
@@ -4008,7 +4034,7 @@ function updateSelectionBoxRect(clientX, clientY) {
 }
 
 canvasSvg.addEventListener("mousedown", (e) => {
-  if (e.button !== 0 || refMode || e.target !== canvasSvg) return;
+  if (e.button !== 0 || refMode || e.target !== canvasSvg || canvasTool === "pan") return;
   selectionBoxStart = { x: e.clientX, y: e.clientY };
   selectionBoxEl = document.createElement("div");
   selectionBoxEl.className = "selection-box";
@@ -4390,16 +4416,7 @@ function setViewMode(mode) {
 focusModeBtn.addEventListener("click", () => setViewMode("focus"));
 fullArchModeBtn.addEventListener("click", () => setViewMode("full"));
 
-// ---------- Unlock Layout / Auto Arrange ----------
-// The architecture (hierarchy, references) is always the source of truth; this only toggles
-// whether the CANVAS reads node position from the computed deterministic layout (locked,
-// default) or from each node's own stored canvas_x/canvas_y (unlocked, freely draggable).
-// Only meaningful in Full Architecture view — Focus Mode always recenters on the focused
-// node, so a persisted free position wouldn't mean anything there.
-menuAutoArrangeBtn.addEventListener("click", () => {
-  layoutMenu.hidden = true;
-  autoArrangeLayout();
-});
+railAutoArrangeBtn.addEventListener("click", () => autoArrangeLayout());
 
 // Nodes are always freely draggable now — Auto Arrange is just an explicit "put everyone back
 // on the deterministic grid" action, available any time, not an exit from a locked mode.
@@ -5090,7 +5107,7 @@ clearCanvasConfirmBtn.addEventListener("click", async () => {
 
 importOutlineBtn.addEventListener("click", () => {
   if (!focusedNodeId) return;
-  insertMenu.hidden = true;
+  exportMenu.hidden = true;
   importText.value = "";
   importModal.hidden = false;
   importText.focus();
@@ -5186,7 +5203,7 @@ exportBtn.addEventListener("click", () => {
   if (wasHidden) closeImportModal();
   layoutMenu.hidden = true;
   settingsMenu.hidden = true;
-  insertMenu.hidden = true;
+  shapesFlyout.hidden = true;
   exportMenu.hidden = !wasHidden;
 });
 
