@@ -1896,6 +1896,31 @@ hr.inspector-divider {
   background: var(--surface-hover);
 }
 
+/* Auto Arrange is the one labeled exception in an otherwise icon-only rail — "tidy the
+   layout" has no universally recognized glyph the way Select/Pan/shapes do, and an
+   icon-only treatment for it was confirmed unrecognizable by a real user in testing. */
+.rail-btn.rail-btn-labeled {
+  width: 36px;
+  height: auto;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 2px 4px;
+}
+
+.rail-btn-labeled .rail-btn-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.rail-btn-labeled .rail-btn-label {
+  font-family: -apple-system, 'Segoe UI', Inter, system-ui, sans-serif;
+  font-size: 8.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
 .rail-btn.active {
   background: var(--accent);
   color: #fff;
