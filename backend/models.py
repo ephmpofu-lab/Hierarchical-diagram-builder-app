@@ -39,12 +39,15 @@ class Reference(BaseModel):
     from_: str = Field(alias="from")
     to: str
     label: Optional[str] = None
-    reference_type: Optional[str] = None  # None | "Dependency" | "Warning" | "Broken"
+    reference_type: Optional[str] = None  # None | "Dependency" | "Warning" | "Broken" | "Data Flow" | "Optional"
     custom_color: Optional[str] = None
     thickness: Optional[str] = None  # "Thin" | "Normal" | "Thick"
     direction: Optional[str] = None  # "Forward" | "Backward" | "Both"
     animated: bool = False
     connector_hidden: bool = False
+    line_style: Optional[str] = None  # "solid" | "dashed" | "dotted"
+    opacity: Optional[float] = None  # 0-1, None means fully opaque
+    show_arrowhead: bool = True
 
     model_config = {"populate_by_name": True}
 
@@ -68,7 +71,9 @@ class ReferenceUpdate(BaseModel):
     direction: Optional[str] = None
     animated: Optional[bool] = None
     connector_hidden: Optional[bool] = None
-    reference_type: Optional[str] = None
+    line_style: Optional[str] = None
+    opacity: Optional[float] = None
+    show_arrowhead: Optional[bool] = None
 
     model_config = {"populate_by_name": True}
 

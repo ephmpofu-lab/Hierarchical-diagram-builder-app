@@ -124,6 +124,27 @@
           </div>
         </div>
         <button id="selGroupBtn" class="btn btn-small" title="Wrap the selected nodes (must share a parent) in a new group">Group</button>
+        <button id="selUngroupBtn" class="btn btn-small" title="Dissolve a selected group, moving its children up to the group's own parent">Ungroup</button>
+        <button id="selDuplicateBtn" class="btn btn-small" title="Duplicate every selected node (with its subtree) alongside the original">Duplicate</button>
+        <div class="dropdown-wrap">
+          <button id="selAlignBtn" class="btn btn-small" title="Align selected nodes — only available while Unlock Layout is active">Align ▾</button>
+          <div id="selAlignMenu" class="dropdown-menu" hidden>
+            <button data-align="left">⯇ Align Left</button>
+            <button data-align="center-h">↔ Align Center</button>
+            <button data-align="right">⯈ Align Right</button>
+            <button data-align="top">⯅ Align Top</button>
+            <button data-align="center-v">↕ Align Middle</button>
+            <button data-align="bottom">⯆ Align Bottom</button>
+          </div>
+        </div>
+        <div class="dropdown-wrap">
+          <button id="selDistributeBtn" class="btn btn-small" title="Distribute selected nodes evenly — only available while Unlock Layout is active">Distribute ▾</button>
+          <div id="selDistributeMenu" class="dropdown-menu" hidden>
+            <button data-distribute="horizontal">↔ Horizontally</button>
+            <button data-distribute="vertical">↕ Vertically</button>
+          </div>
+        </div>
+        <button id="selDeleteBtn" class="btn btn-small btn-danger" title="Delete every selected node">Delete</button>
         <button id="selClearBtn" class="btn btn-small" title="Clear the current selection">Clear</button>
       </div>
       <div id="presentationBar" class="presentation-bar" hidden>
@@ -144,28 +165,40 @@
 
     <div class="pane inspector-pane" id="inspectorPane">
       <div class="pane-header">
-        <div class="panel-mode-toggle">
-          <button id="inspectorModeBtn" class="panel-mode-btn" title="Details and editable fields for the currently selected node">Inspector</button>
-          <button id="healthModeBtn" class="panel-mode-btn active" title="Project-wide architecture score, validation issues, and recent changes">Health</button>
-        </div>
+        <span>Inspector</span>
         <button id="inspectorCollapseBtn" class="pane-collapse-btn" title="Collapse this panel for a distraction-free canvas">»</button>
       </div>
-      <div id="inspectorContent" class="inspector-content" hidden></div>
-      <div id="healthContent" class="health-content">
-        <div class="health-card">
-          <div class="pane-header" title="A single score (0-100) summarizing structural quality: duplicates, cycles, orphans, broken references, oversized modules, single-child levels, and missing owners/notes all subtract points. Why it matters: it is a quick proxy for how easy this architecture will be to navigate and maintain as it grows. How to improve: work through the Critical Issues first, then Warnings, then Suggestions below.">Architecture Health</div>
-          <div id="healthScore" class="health-score"></div>
-          <button id="viewFullReportBtn" class="btn btn-small" title="Expand every flagged category below at once instead of clicking each one open individually">View Full Report</button>
+      <div id="inspectorContent" class="inspector-content"></div>
+      <div id="healthFooter" class="health-footer" title="A quick structural-quality read at a glance. Click View Full Report for the complete breakdown.">
+        <div class="health-footer-header">
+          <span>Architecture Health</span>
+          <span id="healthFooterScore" class="health-footer-score"></span>
         </div>
-        <div class="health-card">
-          <div class="pane-header" title="Every validation rule, grouped by severity. Critical Issues are structural breakage (cycles, orphaned/unreachable nodes, dangling references) - these usually indicate a real bug and are worth fixing first. Warnings are quality problems (duplicate labels, oversized modules, missing owners) that make the architecture harder to work with but are not broken. Suggestions are soft style nits (single-child levels, missing notes). Click any row to expand it and jump straight to an affected node.">Validation Summary</div>
-          <div id="validationSummary" class="validation-list"></div>
-          <button id="runValidationBtn" class="btn btn-small" title="Re-scan the whole tree for issues right now — useful after a batch of edits, since this panel does not auto-refresh on every change">Run Validation</button>
-        </div>
-        <div class="health-card">
-          <div class="pane-header" title="A running log of structural changes: additions, deletions, renames, moves, and links. Why it matters: gives you an audit trail of what changed and when, without needing real version history. How to improve: nothing to fix here - it is read-only history.">Recent Changes</div>
-          <div id="activityList" class="activity-list"></div>
-        </div>
+        <div id="healthFooterSummary" class="health-footer-summary"></div>
+        <div id="healthFooterRecent" class="health-footer-recent"></div>
+        <button id="viewFullReportBtn" class="btn btn-small" title="Open the complete validation breakdown and full change history">View Full Report</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="healthReportModal" class="modal-backdrop" hidden>
+    <div class="modal health-report-modal">
+      <div class="modal-header-row">
+        <strong>Architecture Health — Full Report</strong>
+        <button id="healthReportCloseBtn" class="theme-toggle" title="Close">×</button>
+      </div>
+      <div class="health-card">
+        <div class="pane-header" title="A single score (0-100) summarizing structural quality: duplicates, cycles, orphans, broken references, oversized modules, single-child levels, and missing owners/notes all subtract points. Why it matters: it is a quick proxy for how easy this architecture will be to navigate and maintain as it grows. How to improve: work through the Critical Issues first, then Warnings, then Suggestions below.">Architecture Health</div>
+        <div id="healthScore" class="health-score"></div>
+        <button id="runValidationBtn" class="btn btn-small" title="Re-scan the whole tree for issues right now — useful after a batch of edits, since this panel does not auto-refresh on every change">Run Validation</button>
+      </div>
+      <div class="health-card">
+        <div class="pane-header" title="Every validation rule, grouped by severity. Critical Issues are structural breakage (cycles, orphaned/unreachable nodes, dangling references) - these usually indicate a real bug and are worth fixing first. Warnings are quality problems (duplicate labels, oversized modules, missing owners) that make the architecture harder to work with but are not broken. Suggestions are soft style nits (single-child levels, missing notes). Click any row to expand it and jump straight to an affected node.">Validation Summary</div>
+        <div id="validationSummary" class="validation-list"></div>
+      </div>
+      <div class="health-card">
+        <div class="pane-header" title="A running log of structural changes: additions, deletions, renames, moves, and links. Why it matters: gives you an audit trail of what changed and when, without needing real version history. How to improve: nothing to fix here - it is read-only history.">Recent Changes</div>
+        <div id="activityList" class="activity-list"></div>
       </div>
     </div>
   </div>

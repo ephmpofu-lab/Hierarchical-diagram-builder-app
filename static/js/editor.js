@@ -142,6 +142,13 @@ const selColorBtn = document.getElementById("selColorBtn");
 const selStatusBtn = document.getElementById("selStatusBtn");
 const selStatusMenu = document.getElementById("selStatusMenu");
 const selGroupBtn = document.getElementById("selGroupBtn");
+const selUngroupBtn = document.getElementById("selUngroupBtn");
+const selDuplicateBtn = document.getElementById("selDuplicateBtn");
+const selAlignBtn = document.getElementById("selAlignBtn");
+const selAlignMenu = document.getElementById("selAlignMenu");
+const selDistributeBtn = document.getElementById("selDistributeBtn");
+const selDistributeMenu = document.getElementById("selDistributeMenu");
+const selDeleteBtn = document.getElementById("selDeleteBtn");
 const selClearBtn = document.getElementById("selClearBtn");
 const focusModeBtn = document.getElementById("focusModeBtn");
 const fullArchModeBtn = document.getElementById("fullArchModeBtn");
@@ -160,9 +167,11 @@ const outlinePane = document.getElementById("outlinePane");
 const outlineCollapseBtn = document.getElementById("outlineCollapseBtn");
 const inspectorPane = document.getElementById("inspectorPane");
 const inspectorCollapseBtn = document.getElementById("inspectorCollapseBtn");
-const inspectorModeBtn = document.getElementById("inspectorModeBtn");
-const healthModeBtn = document.getElementById("healthModeBtn");
-const healthContent = document.getElementById("healthContent");
+const healthFooterScoreEl = document.getElementById("healthFooterScore");
+const healthFooterSummaryEl = document.getElementById("healthFooterSummary");
+const healthFooterRecentEl = document.getElementById("healthFooterRecent");
+const healthReportModal = document.getElementById("healthReportModal");
+const healthReportCloseBtn = document.getElementById("healthReportCloseBtn");
 const healthScoreEl = document.getElementById("healthScore");
 const viewFullReportBtn = document.getElementById("viewFullReportBtn");
 const validationSummaryEl = document.getElementById("validationSummary");
@@ -199,9 +208,6 @@ let showDependencies = false;
 let expandedGroupOverflow = false; // "show all" for progressive disclosure of many ungrouped children
 let lastValidationReport = null;
 let viewMode = "focus"; // "focus" | "full"
-// Health opens by default (the Canvas is the source of truth; the Inspector's job is to
-// surface project-wide signal first, editable node detail second).
-let inspectorPanelMode = "health"; // "inspector" | "health" — the right panel's top-level mode
 let activeStatusFilters = new Set(PLANNING_STATUSES);
 let nodeDragJustHappened = false; // suppresses the click-to-select that follows a drag's mouseup
 
@@ -241,6 +247,15 @@ function updateSelectionToolbar() {
   if (count > 0) {
     selectionCountEl.textContent = `${count} selected`;
   }
+  const canArrange = layoutUnlocked && viewMode === "full" && count >= 2;
+  selAlignBtn.disabled = !canArrange;
+  selDistributeBtn.disabled = !canArrange;
+  selAlignBtn.title = canArrange
+    ? "Align selected nodes"
+    : "Align selected nodes — requires Unlock Layout (Full Architecture view) and 2+ selected nodes";
+  selDistributeBtn.title = canArrange
+    ? "Distribute selected nodes evenly"
+    : "Distribute selected nodes evenly — requires Unlock Layout (Full Architecture view) and 2+ selected nodes";
 }
 
 const ROW_GAP = 130;
@@ -328,7 +343,7 @@ function render() {
   renderCanvas();
   renderMinimap();
   renderInspector();
-  if (inspectorPanelMode === "health") refreshHealthPanel();
+  refreshHealthPanel();
 }
 
 async function focusNode(nodeId) {
@@ -949,7 +964,6 @@ function renderCanvas() {
   canvasSvg.classList.toggle("ref-mode-active", refMode);
   canvasSvg.appendChild(buildRefArrowDefs());
   if (!project || !focusedNodeId) {
-    closeFloatingNodeToolbar();
     return;
   }
 
@@ -962,7 +976,6 @@ function renderCanvas() {
   } else {
     renderFocusCanvas(viewW, viewH);
   }
-  updateFloatingNodeToolbar(rect);
 
   canvasSvg.onclick = (e) => {
     if (e.target !== canvasSvg) return;
@@ -1969,8 +1982,15 @@ function buildRefArrowDefs() {
   return defs;
 }
 
-const REF_TYPE_CLASS = { Dependency: "type-dependency", Warning: "type-warning", Broken: "type-broken" };
+const REF_TYPE_CLASS = {
+  Dependency: "type-dependency",
+  Warning: "type-warning",
+  Broken: "type-broken",
+  "Data Flow": "type-data-flow",
+  Optional: "type-optional",
+};
 const REF_THICKNESS_WIDTH = { Thin: 1, Normal: 1.5, Thick: 2.5 };
+const REF_LINE_DASH = { dashed: "6 4", dotted: "2 3" };
 
 function drawRefEdge(from, to, ref) {
   const group = document.createElementNS(SVG_NS, "g");
@@ -1989,11 +2009,15 @@ function drawRefEdge(from, to, ref) {
   line.setAttribute("d", curvePath(from, to));
   line.style.strokeWidth = REF_THICKNESS_WIDTH[ref.thickness] || REF_THICKNESS_WIDTH.Normal;
   if (ref.custom_color) line.style.stroke = ref.custom_color;
+  if (REF_LINE_DASH[ref.line_style]) line.style.strokeDasharray = REF_LINE_DASH[ref.line_style];
+  if (typeof ref.opacity === "number") line.style.strokeOpacity = ref.opacity;
   const direction = ref.direction || "Forward";
   // #refArrow uses orient="auto-start-reverse", so the same marker definition flips
   // correctly whether it's attached as marker-start or marker-end.
-  if (direction === "Forward" || direction === "Both") line.setAttribute("marker-end", "url(#refArrow)");
-  if (direction === "Backward" || direction === "Both") line.setAttribute("marker-start", "url(#refArrow)");
+  if (ref.show_arrowhead !== false) {
+    if (direction === "Forward" || direction === "Both") line.setAttribute("marker-end", "url(#refArrow)");
+    if (direction === "Backward" || direction === "Both") line.setAttribute("marker-start", "url(#refArrow)");
+  }
   group.dataset.fromId = ref.from;
   group.dataset.toId = ref.to;
   group.dataset.x1 = from.x;
@@ -2013,6 +2037,8 @@ function drawRefEdge(from, to, ref) {
         ? "var(--warning-text)"
         : ref.reference_type === "Broken"
         ? "var(--danger-text)"
+        : ref.reference_type === "Data Flow"
+        ? "#0891b2"
         : "var(--text-muted)");
     group.appendChild(drawFlowParticle(curvePath(from, to), particleColor));
   }
@@ -2092,8 +2118,11 @@ function showConnectorPropertiesPanel(refId, clientX, clientY) {
   title.textContent = `${fromNode ? fromNode.label : "?"} → ${toNode ? toNode.label : "?"}`;
   panel.appendChild(title);
 
+  panel.appendChild(connectorPanelField("Source", infoStaticValue(fromNode ? fromNode.label : "?")));
+  panel.appendChild(connectorPanelField("Destination", infoStaticValue(toNode ? toNode.label : "?")));
+
   const typeSelect = document.createElement("select");
-  for (const opt of ["", "Dependency", "Warning", "Broken"]) {
+  for (const opt of ["", "Dependency", "Warning", "Broken", "Data Flow", "Optional"]) {
     const o = document.createElement("option");
     o.value = opt;
     o.textContent = opt || "Reference";
@@ -2155,6 +2184,40 @@ function showConnectorPropertiesPanel(refId, clientX, clientY) {
   }
   thicknessSelect.addEventListener("change", () => updateConnector(refId, { thickness: thicknessSelect.value }));
   panel.appendChild(connectorPanelField("Thickness", thicknessSelect));
+
+  const lineStyleSelect = document.createElement("select");
+  for (const opt of ["solid", "dashed", "dotted"]) {
+    const o = document.createElement("option");
+    o.value = opt;
+    o.textContent = opt[0].toUpperCase() + opt.slice(1);
+    if ((ref.line_style || "solid") === opt) o.selected = true;
+    lineStyleSelect.appendChild(o);
+  }
+  lineStyleSelect.addEventListener("change", () => updateConnector(refId, { line_style: lineStyleSelect.value }));
+  panel.appendChild(connectorPanelField("Line Style", lineStyleSelect));
+
+  const opacityInput = document.createElement("input");
+  opacityInput.type = "range";
+  opacityInput.min = "0.15";
+  opacityInput.max = "1";
+  opacityInput.step = "0.05";
+  opacityInput.value = typeof ref.opacity === "number" ? ref.opacity : 1;
+  opacityInput.addEventListener("change", () =>
+    updateConnector(refId, { opacity: parseFloat(opacityInput.value) })
+  );
+  panel.appendChild(connectorPanelField("Opacity", opacityInput));
+
+  const arrowheadLabel = document.createElement("label");
+  arrowheadLabel.className = "connector-panel-checkbox-row";
+  const arrowheadCheckbox = document.createElement("input");
+  arrowheadCheckbox.type = "checkbox";
+  arrowheadCheckbox.checked = ref.show_arrowhead !== false;
+  arrowheadCheckbox.addEventListener("change", () =>
+    updateConnector(refId, { show_arrowhead: arrowheadCheckbox.checked })
+  );
+  arrowheadLabel.appendChild(arrowheadCheckbox);
+  arrowheadLabel.appendChild(document.createTextNode(" Show arrowhead"));
+  panel.appendChild(arrowheadLabel);
 
   const animatedLabel = document.createElement("label");
   animatedLabel.className = "connector-panel-checkbox-row";
@@ -2323,20 +2386,28 @@ const DROP_ZONE_LABELS = {
 function startNodeFreeDrag(e, nodeId) {
   e.preventDefault();
   e.stopPropagation();
-  const node = project.nodes[nodeId];
-  pushUndoSnapshot("Move node");
+  // Move Together: dragging any selected node when 2+ are selected moves the whole group,
+  // preserving their relative positions.
+  const groupIds = selectedNodeIds.has(nodeId) && selectedNodeIds.size > 1 ? [...selectedNodeIds] : [nodeId];
+  const startPositions = groupIds.map((id) => ({
+    id,
+    node: project.nodes[id],
+    startX: project.nodes[id].canvas_x,
+    startY: project.nodes[id].canvas_y,
+  }));
+  pushUndoSnapshot(groupIds.length > 1 ? "Move selection" : "Move node");
   const startClientX = e.clientX;
   const startClientY = e.clientY;
-  const startX = node.canvas_x;
-  const startY = node.canvas_y;
   let moved = false;
 
   const onMove = (moveEvent) => {
     const dx = (moveEvent.clientX - startClientX) / zoomScale;
     const dy = (moveEvent.clientY - startClientY) / zoomScale;
     if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
-    node.canvas_x = startX + dx;
-    node.canvas_y = startY + dy;
+    for (const p of startPositions) {
+      p.node.canvas_x = p.startX + dx;
+      p.node.canvas_y = p.startY + dy;
+    }
     renderCanvas();
   };
   const onUp = async () => {
@@ -2349,11 +2420,13 @@ function startNodeFreeDrag(e, nodeId) {
       updateUndoRedoButtons();
       return;
     }
-    await fetch(`/api/projects/${projectId}/nodes/${nodeId}/position`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ canvas_x: node.canvas_x, canvas_y: node.canvas_y }),
-    });
+    for (const p of startPositions) {
+      await fetch(`/api/projects/${projectId}/nodes/${p.id}/position`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ canvas_x: p.node.canvas_x, canvas_y: p.node.canvas_y }),
+      });
+    }
   };
   document.addEventListener("mousemove", onMove);
   document.addEventListener("mouseup", onUp);
@@ -2377,7 +2450,6 @@ function startNodeReparentDrag(e, nodeId, startPos) {
 
   const beginDrag = () => {
     dragging = true;
-    closeFloatingNodeToolbar();
     const viewportEl = canvasSvg.querySelector(":scope > g");
     if (!viewportEl) return;
     ghost = document.createElementNS(SVG_NS, "rect");
@@ -2741,6 +2813,31 @@ function drawNode(node, pos, faded = false) {
     zoomToNode(node.id);
   });
 
+  // Connection handles: only on the currently-selected node, one per edge. Dragging from a
+  // handle creates a live connector and, on drop, a relationship-type chooser — this replaces
+  // needing to know a modifier-key shortcut to draw a Reference/Dependency/Data Flow link.
+  if (!node.is_group && !faded && node.id === focusedNodeId && selectedNodeIds.size <= 1) {
+    const handleSpecs = [
+      { x: pos.x, y: pos.y - NODE_H / 2 },
+      { x: pos.x, y: pos.y + NODE_H / 2 },
+      { x: pos.x - NODE_W / 2, y: pos.y },
+      { x: pos.x + NODE_W / 2, y: pos.y },
+    ];
+    for (const hp of handleSpecs) {
+      const handle = document.createElementNS(SVG_NS, "circle");
+      handle.setAttribute("class", "node-connection-handle");
+      handle.setAttribute("cx", hp.x);
+      handle.setAttribute("cy", hp.y);
+      handle.setAttribute("r", 5);
+      handle.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        startRelationshipDrag(e, node.id, hp);
+      });
+      group.appendChild(handle);
+    }
+  }
+
   return group;
 }
 
@@ -2866,120 +2963,117 @@ function openQuickPicker(options, clientX, clientY, onPick) {
   if (rect.bottom > window.innerHeight) menu.style.top = `${Math.max(4, window.innerHeight - rect.height - 4)}px`;
 }
 
-// ---------- Floating node toolbar ----------
-// Figma/Mural-style: a small toolbar hovers next to whichever node is currently selected,
-// tracking it as the canvas pans/zooms, so the most common edits (color, status, priority,
-// delete, convert, documentation) don't require opening the full Inspector.
-let floatingToolbarEl = null;
+// ---------- Relationship drag (connection handles) ----------
+// Dragging from a selected node's connection handle draws a live connector, highlights the
+// node currently under the cursor, and on drop opens a small chooser so the relationship
+// type is always a deliberate choice — never inferred from a modifier key the user has to
+// remember, and never triggered by accident.
+const RELATIONSHIP_TYPES = ["Hierarchy", "Reference", "Dependency", "Data Flow", "Optional", "Cancel"];
 
-function closeFloatingNodeToolbar() {
-  if (floatingToolbarEl) {
-    floatingToolbarEl.remove();
-    floatingToolbarEl = null;
-  }
-}
+function startRelationshipDrag(e, fromNodeId, originPos) {
+  const rect = canvasSvg.getBoundingClientRect();
+  const viewportEl = canvasSvg.querySelector(":scope > g");
+  const tempLine = document.createElementNS(SVG_NS, "line");
+  tempLine.setAttribute("class", "ref-edge relationship-drag-line");
+  tempLine.setAttribute("x1", originPos.x);
+  tempLine.setAttribute("y1", originPos.y);
+  tempLine.setAttribute("x2", originPos.x);
+  tempLine.setAttribute("y2", originPos.y);
+  if (viewportEl) viewportEl.appendChild(tempLine);
 
-function floatingToolbarBtn(text, title, onClick) {
-  const b = document.createElement("button");
-  b.className = "floating-toolbar-btn";
-  b.textContent = text;
-  b.title = title;
-  b.addEventListener("click", (e) => {
-    e.stopPropagation();
-    onClick(e);
+  let hoveredTargetId = null;
+  const clearHighlight = () => {
+    if (!hoveredTargetId) return;
+    const el = canvasSvg.querySelector(`.node-group[data-id="${hoveredTargetId}"] .node-box`);
+    if (el) el.classList.remove("relationship-drop-target");
+    hoveredTargetId = null;
+  };
+
+  const toPretransform = (clientX, clientY) => ({
+    x: lastViewW / 2 + (clientX - rect.left - lastViewW / 2 - panOffsetX) / zoomScale,
+    y: lastViewH / 2 + (clientY - rect.top - lastViewH / 2 - panOffsetY) / zoomScale,
   });
-  return b;
+
+  const onMove = (moveEvent) => {
+    const p = toPretransform(moveEvent.clientX, moveEvent.clientY);
+    tempLine.setAttribute("x2", p.x);
+    tempLine.setAttribute("y2", p.y);
+
+    let targetId = null;
+    for (const [nodeId, nodePos] of lastVisiblePositions.entries()) {
+      if (nodeId === fromNodeId) continue;
+      if (Math.abs(p.x - nodePos.x) <= NODE_W / 2 && Math.abs(p.y - nodePos.y) <= NODE_H / 2) {
+        targetId = nodeId;
+        break;
+      }
+    }
+    if (targetId !== hoveredTargetId) {
+      clearHighlight();
+      if (targetId) {
+        const el = canvasSvg.querySelector(`.node-group[data-id="${targetId}"] .node-box`);
+        if (el) el.classList.add("relationship-drop-target");
+        hoveredTargetId = targetId;
+      }
+    }
+  };
+
+  const onUp = async (upEvent) => {
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+    tempLine.remove();
+    clearHighlight();
+    if (!hoveredTargetId) return;
+    const targetId = hoveredTargetId;
+    openRelationshipChooser(upEvent.clientX, upEvent.clientY, async (type) => {
+      if (type === "Cancel") return;
+      if (type === "Hierarchy") {
+        pushUndoSnapshot("Become Child");
+        const res = await fetch(`/api/projects/${projectId}/nodes/${fromNodeId}/reparent`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ new_parent_id: targetId }),
+        });
+        if (!res.ok) {
+          undoStack.pop();
+          updateUndoRedoButtons();
+          const err = await res.json().catch(() => ({}));
+          alert(err.detail || "Couldn't create that relationship.");
+          return;
+        }
+        await loadProject();
+        focusNode(fromNodeId);
+        return;
+      }
+      pushUndoSnapshot(`Create ${type}`);
+      await fetch(`/api/projects/${projectId}/references`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from: fromNodeId, to: targetId, reference_type: type === "Reference" ? null : type }),
+      });
+      await loadProject();
+    });
+  };
+
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
 }
 
-function updateFloatingNodeToolbar(rect) {
-  const node = focusedNodeId ? project.nodes[focusedNodeId] : null;
-  if (
-    refMode ||
-    selectedNodeIds.size > 1 ||
-    !node ||
-    node.is_group ||
-    document.body.classList.contains("presentation-active")
-  ) {
-    closeFloatingNodeToolbar();
-    return;
+function openRelationshipChooser(clientX, clientY, onPick) {
+  closeContextMenu();
+  const menu = document.createElement("div");
+  menu.className = "context-menu";
+  for (const type of RELATIONSHIP_TYPES) {
+    if (type === "Cancel") menu.appendChild(contextMenuSeparator());
+    menu.appendChild(contextMenuItem(type, () => onPick(type), { danger: type === "Cancel" }));
   }
-  const pos = lastVisiblePositions.get(focusedNodeId);
-  if (!pos) {
-    closeFloatingNodeToolbar();
-    return;
-  }
-  const screenX = rect.left + lastViewW / 2 + panOffsetX + (pos.x - lastViewW / 2) * zoomScale;
-  const screenY = rect.top + lastViewH / 2 + panOffsetY + (pos.y - lastViewH / 2) * zoomScale;
+  menu.style.left = `${clientX}px`;
+  menu.style.top = `${clientY}px`;
+  document.body.appendChild(menu);
+  openContextMenuEl = menu;
 
-  if (!floatingToolbarEl) {
-    floatingToolbarEl = document.createElement("div");
-    floatingToolbarEl.className = "floating-node-toolbar";
-    document.body.appendChild(floatingToolbarEl);
-  }
-  floatingToolbarEl.innerHTML = "";
-
-  floatingToolbarEl.appendChild(
-    floatingToolbarBtn("🎨", "Change Color", () => {
-      const colorInput = document.createElement("input");
-      colorInput.type = "color";
-      colorInput.value = node.custom_color || CLASSIFICATION_COLORS[node.classification] || "#64748b";
-      colorInput.style.position = "fixed";
-      colorInput.style.left = "-9999px";
-      document.body.appendChild(colorInput);
-      colorInput.addEventListener("change", () => {
-        patchNodeById(focusedNodeId, { custom_color: colorInput.value });
-        colorInput.remove();
-      });
-      colorInput.click();
-    })
-  );
-  floatingToolbarEl.appendChild(
-    floatingToolbarBtn("●", "Set Lifecycle Stage", (e) => {
-      const CLEAR = "— Clear —";
-      openQuickPicker(
-        [CLEAR, "Planned", "In Development", "Done", "Blocked", "Deprecated"],
-        e.clientX,
-        e.clientY,
-        (opt) => patchNodeById(focusedNodeId, { status: opt === CLEAR ? "" : opt })
-      );
-    })
-  );
-  floatingToolbarEl.appendChild(
-    floatingToolbarBtn("!", "Set Priority", (e) => {
-      const CLEAR = "— Clear —";
-      openQuickPicker([CLEAR, "Low", "Medium", "High", "Critical"], e.clientX, e.clientY, (opt) =>
-        patchNodeById(focusedNodeId, { priority: opt === CLEAR ? "" : opt })
-      );
-    })
-  );
-  floatingToolbarEl.appendChild(
-    floatingToolbarBtn("📝", "Documentation", () => {
-      inspectorActiveTab = "inspector";
-      render();
-      const textarea = inspectorContent.querySelector("textarea");
-      if (textarea) textarea.focus();
-    })
-  );
-  floatingToolbarEl.appendChild(
-    floatingToolbarBtn("→", "Convert to Planning Object", async () => {
-      pushUndoSnapshot("Convert to Planning Object");
-      const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/convert-to-object`, {
-        method: "POST",
-      });
-      const obj = await res.json();
-      await loadProject();
-      selectedConceptObjectId = obj.id;
-      renderCanvas();
-    })
-  );
-  if (node.parent_id !== null) {
-    floatingToolbarEl.appendChild(
-      floatingToolbarBtn("🗑", "Delete", () => deleteNodeFlow(focusedNodeId))
-    );
-  }
-
-  floatingToolbarEl.style.left = `${screenX}px`;
-  floatingToolbarEl.style.top = `${screenY - (NODE_H / 2) * zoomScale - 8}px`;
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) menu.style.left = `${Math.max(4, window.innerWidth - rect.width - 4)}px`;
+  if (rect.bottom > window.innerHeight) menu.style.top = `${Math.max(4, window.innerHeight - rect.height - 4)}px`;
 }
 
 async function patchNodeById(nodeId, payload) {
@@ -3702,11 +3796,135 @@ selGroupBtn.addEventListener("click", async () => {
   focusNode(groupNode.id);
 });
 
+selUngroupBtn.addEventListener("click", async () => {
+  const ids = [...selectedNodeIds].filter((id) => project.nodes[id].is_group);
+  if (ids.length === 0) {
+    alert("Select at least one group to ungroup.");
+    return;
+  }
+  pushUndoSnapshot("Ungroup");
+  for (const id of ids) {
+    await fetch(`/api/projects/${projectId}/nodes/${id}?promote_children=true`, { method: "DELETE" });
+  }
+  clearSelection();
+  await loadProject();
+});
+
+selDuplicateBtn.addEventListener("click", async () => {
+  const ids = [...selectedNodeIds];
+  pushUndoSnapshot("Duplicate selected");
+  let lastNode = null;
+  for (const id of ids) {
+    if (project.nodes[id].parent_id === null) continue; // root can't be duplicated
+    const res = await fetch(`/api/projects/${projectId}/nodes/${id}/duplicate`, { method: "POST" });
+    lastNode = await res.json();
+  }
+  clearSelection();
+  await loadProject();
+  if (lastNode) focusNode(lastNode.id);
+});
+
+selDeleteBtn.addEventListener("click", async () => {
+  const ids = [...selectedNodeIds].filter((id) => project.nodes[id].parent_id !== null);
+  if (ids.length === 0) {
+    alert("The root node cannot be deleted.");
+    return;
+  }
+  const confirmed = confirm(`Delete ${ids.length} selected node${ids.length === 1 ? "" : "s"} and everything beneath them?`);
+  if (!confirmed) return;
+  pushUndoSnapshot("Delete selected");
+  for (const id of ids) {
+    if (!project.nodes[id]) continue; // already removed as a descendant of an earlier deletion this batch
+    await fetch(`/api/projects/${projectId}/nodes/${id}?promote_children=false`, { method: "DELETE" });
+  }
+  clearSelection();
+  await loadProject();
+});
+
+// Align / Distribute only make sense once positions are free (Unlock Layout, Full
+// Architecture view) — updateSelectionToolbar() disables these buttons otherwise.
+selAlignBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (selAlignBtn.disabled) return;
+  selAlignMenu.hidden = !selAlignMenu.hidden;
+});
+selAlignMenu.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-align]");
+  if (!btn) return;
+  selAlignMenu.hidden = true;
+  const ids = [...selectedNodeIds];
+  const nodes = ids.map((id) => project.nodes[id]);
+  pushUndoSnapshot("Align selected");
+  const mode = btn.dataset.align;
+  let target;
+  if (mode === "left") target = Math.min(...nodes.map((n) => n.canvas_x - NODE_W / 2));
+  else if (mode === "right") target = Math.max(...nodes.map((n) => n.canvas_x + NODE_W / 2));
+  else if (mode === "center-h") target = nodes.reduce((s, n) => s + n.canvas_x, 0) / nodes.length;
+  else if (mode === "top") target = Math.min(...nodes.map((n) => n.canvas_y - NODE_H / 2));
+  else if (mode === "bottom") target = Math.max(...nodes.map((n) => n.canvas_y + NODE_H / 2));
+  else target = nodes.reduce((s, n) => s + n.canvas_y, 0) / nodes.length; // center-v
+  for (const node of nodes) {
+    if (mode === "left") node.canvas_x = target + NODE_W / 2;
+    else if (mode === "right") node.canvas_x = target - NODE_W / 2;
+    else if (mode === "center-h") node.canvas_x = target;
+    else if (mode === "top") node.canvas_y = target + NODE_H / 2;
+    else if (mode === "bottom") node.canvas_y = target - NODE_H / 2;
+    else node.canvas_y = target;
+    await fetch(`/api/projects/${projectId}/nodes/${node.id}/position`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ canvas_x: node.canvas_x, canvas_y: node.canvas_y }),
+    });
+  }
+  renderCanvas();
+});
+
+selDistributeBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (selDistributeBtn.disabled) return;
+  selDistributeMenu.hidden = !selDistributeMenu.hidden;
+});
+selDistributeMenu.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-distribute]");
+  if (!btn) return;
+  selDistributeMenu.hidden = true;
+  const horizontal = btn.dataset.distribute === "horizontal";
+  const nodes = [...selectedNodeIds].map((id) => project.nodes[id]);
+  if (nodes.length < 3) {
+    alert("Distribute needs at least 3 selected nodes.");
+    return;
+  }
+  pushUndoSnapshot("Distribute selected");
+  nodes.sort((a, b) => (horizontal ? a.canvas_x - b.canvas_x : a.canvas_y - b.canvas_y));
+  const first = nodes[0];
+  const last = nodes[nodes.length - 1];
+  const span = horizontal ? last.canvas_x - first.canvas_x : last.canvas_y - first.canvas_y;
+  const step = span / (nodes.length - 1);
+  for (let i = 1; i < nodes.length - 1; i++) {
+    const node = nodes[i];
+    if (horizontal) node.canvas_x = first.canvas_x + step * i;
+    else node.canvas_y = first.canvas_y + step * i;
+    await fetch(`/api/projects/${projectId}/nodes/${node.id}/position`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ canvas_x: node.canvas_x, canvas_y: node.canvas_y }),
+    });
+  }
+  renderCanvas();
+});
+document.addEventListener("click", (e) => {
+  if (!selAlignMenu.hidden && !selAlignMenu.contains(e.target) && e.target !== selAlignBtn) selAlignMenu.hidden = true;
+  if (!selDistributeMenu.hidden && !selDistributeMenu.contains(e.target) && e.target !== selDistributeBtn) {
+    selDistributeMenu.hidden = true;
+  }
+});
+
 function setViewMode(mode) {
   if (viewMode === mode) return;
   viewMode = mode;
   focusModeBtn.classList.toggle("active", mode === "focus");
   fullArchModeBtn.classList.toggle("active", mode === "full");
+  updateSelectionToolbar();
   fitToView();
 }
 focusModeBtn.addEventListener("click", () => setViewMode("focus"));
@@ -3727,6 +3945,7 @@ async function setLayoutUnlocked(unlocked) {
   if (unlocked && viewMode !== "full") setViewMode("full");
   layoutUnlocked = unlocked;
   updateUnlockLayoutButton();
+  updateSelectionToolbar();
   renderCanvas();
   await fetch(`/api/projects/${projectId}/layout-unlocked`, {
     method: "PUT",
@@ -3919,18 +4138,7 @@ function renderMinimap() {
   });
 }
 
-// ---------- Right panel: Inspector / Health mode + collapsible side panels ----------
-
-function setInspectorPanelMode(mode) {
-  inspectorPanelMode = mode;
-  inspectorModeBtn.classList.toggle("active", mode === "inspector");
-  healthModeBtn.classList.toggle("active", mode === "health");
-  inspectorContent.hidden = mode !== "inspector";
-  healthContent.hidden = mode !== "health";
-  if (mode === "health") refreshHealthPanel();
-}
-inspectorModeBtn.addEventListener("click", () => setInspectorPanelMode("inspector"));
-healthModeBtn.addEventListener("click", () => setInspectorPanelMode("health"));
+// ---------- Right panel: collapsible side panels ----------
 
 const editorPanesEl = document.querySelector(".editor-panes");
 
@@ -4118,6 +4326,10 @@ viewFullReportBtn.addEventListener("click", async () => {
   ];
   for (const label of categoryLabels) expandedValidationRows.add(label);
   renderValidationSummary(lastValidationReport);
+  healthReportModal.hidden = false;
+});
+healthReportCloseBtn.addEventListener("click", () => {
+  healthReportModal.hidden = true;
 });
 
 async function refreshHealthPanel() {
@@ -4129,7 +4341,53 @@ async function refreshHealthPanel() {
   renderHealthScore(report);
   renderValidationSummary(report);
   renderActivityLog();
+  renderHealthFooter(report);
   if (inspectorActiveTab === "validation") renderInspector();
+}
+
+// Compact, always-visible summary at the bottom of the Inspector — full detail (per-category
+// breakdown, complete change history) only shows up in the modal opened by View Full Report,
+// so the Inspector stays focused on the selected node instead of a wall of validation rows.
+function renderHealthFooter(report) {
+  const ratingClass = "rating-" + report.rating.toLowerCase().replace(/\s+/g, "-");
+  healthFooterScoreEl.className = "health-footer-score " + ratingClass;
+  healthFooterScoreEl.textContent = `${report.score}%`;
+
+  const critical =
+    report.duplicate_labels.length +
+    report.circular_references.length +
+    report.orphan_nodes.length +
+    report.broken_references.length;
+  const warnings = report.large_modules.length + report.missing_owners.length;
+  const suggestions = report.single_child_nodes.length + report.missing_notes.length;
+
+  healthFooterSummaryEl.innerHTML = "";
+  const rows = [
+    [critical === 0 ? "✓" : "⛔", `${critical} Critical Issue${critical === 1 ? "" : "s"}`, critical > 0],
+    ["⚠", `${warnings} Warning${warnings === 1 ? "" : "s"}`, warnings > 0],
+    ["💡", `${suggestions} Suggestion${suggestions === 1 ? "" : "s"}`, false],
+  ];
+  for (const [icon, text, flagged] of rows) {
+    const row = document.createElement("div");
+    row.className = "health-footer-row" + (flagged ? " flagged" : "");
+    row.textContent = `${icon} ${text}`;
+    healthFooterSummaryEl.appendChild(row);
+  }
+
+  healthFooterRecentEl.innerHTML = "";
+  const recent = [...project.activity_log].reverse().slice(0, 5);
+  if (recent.length > 0) {
+    const label = document.createElement("div");
+    label.className = "health-footer-recent-label";
+    label.textContent = `Recent Changes (last ${recent.length})`;
+    healthFooterRecentEl.appendChild(label);
+    for (const entry of recent) {
+      const item = document.createElement("div");
+      item.className = "health-footer-recent-item";
+      item.textContent = entry.message;
+      healthFooterRecentEl.appendChild(item);
+    }
+  }
 }
 
 function renderHealthScore(report) {

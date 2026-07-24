@@ -313,6 +313,9 @@ def api_update_reference(project_id: str, reference_id: str, body: ReferenceUpda
         body.direction,
         body.animated,
         body.connector_hidden,
+        body.line_style,
+        body.opacity,
+        body.show_arrowhead,
     )
     tree.log_activity(
         project, f"Relinked reference to '{project.nodes[ref.from_].label}' -> '{project.nodes[ref.to].label}'"

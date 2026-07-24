@@ -327,6 +327,9 @@ def update_reference(
     direction: Optional[str] = None,
     animated: Optional[bool] = None,
     connector_hidden: Optional[bool] = None,
+    line_style: Optional[str] = None,
+    opacity: Optional[float] = None,
+    show_arrowhead: Optional[bool] = None,
 ) -> Reference:
     ref = next((r for r in project.references if r.id == reference_id), None)
     if ref is None:
@@ -353,6 +356,12 @@ def update_reference(
         ref.connector_hidden = connector_hidden
     if reference_type is not None:
         ref.reference_type = reference_type or None
+    if line_style is not None:
+        ref.line_style = line_style or None
+    if opacity is not None:
+        ref.opacity = opacity
+    if show_arrowhead is not None:
+        ref.show_arrowhead = show_arrowhead
     return ref
 
 
