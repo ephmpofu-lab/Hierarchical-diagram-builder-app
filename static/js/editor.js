@@ -1309,15 +1309,26 @@ async function insertNewArchitectureNode() {
   if (parentId) await addChild(parentId);
 }
 
-insertBtn.addEventListener("click", (e) => {
-  e.stopPropagation();
+function toggleInsertMenu() {
   const wasHidden = insertMenu.hidden;
   exportMenu.hidden = true;
   layoutMenu.hidden = true;
   settingsMenu.hidden = true;
   insertMenu.hidden = !wasHidden;
+}
+insertBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleInsertMenu();
 });
-emptyCanvasBtn.addEventListener("click", () => insertBtn.click());
+emptyCanvasBtn.addEventListener("click", (e) => {
+  // Toggle directly rather than simulating a click on insertBtn — a simulated click bubbles
+  // back up through the ORIGINAL click's own bubble phase and re-triggers the "close menu on
+  // an outside click" listener below before the original event finishes, closing the menu in
+  // the same tick it opened. Calling the shared toggle function avoids the nested event
+  // entirely, and stopPropagation keeps the original click from reaching that listener too.
+  e.stopPropagation();
+  toggleInsertMenu();
+});
 insertMenu.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-insert]");
   if (!btn) return;

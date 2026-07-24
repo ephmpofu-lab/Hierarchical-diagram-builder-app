@@ -1825,26 +1825,12 @@ hr.inspector-divider {
   position: absolute;
   top: 14px;
   left: 14px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
   pointer-events: none;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow);
-  padding: 6px 10px;
 }
 
 .empty-canvas-prompt .btn {
   pointer-events: auto;
-}
-
-.empty-canvas-prompt p {
-  margin: 0;
-  font-size: 12px;
-  color: var(--text-muted);
-  white-space: nowrap;
+  box-shadow: var(--shadow);
 }
 
 .minimap-svg {
