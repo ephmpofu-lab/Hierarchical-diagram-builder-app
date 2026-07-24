@@ -110,27 +110,27 @@ const searchWrap = document.querySelector(".search-wrap");
 const searchResults = document.getElementById("searchResults");
 const exportBtn = document.getElementById("exportBtn");
 const exportMenu = document.getElementById("exportMenu");
-const statusFilterBtn = document.getElementById("statusFilterBtn");
-const statusFilterMenu = document.getElementById("statusFilterMenu");
 const showDepsCheckbox = document.getElementById("showDepsCheckbox");
-const animateFlowBtn = document.getElementById("animateFlowBtn");
-const unlockLayoutBtn = document.getElementById("unlockLayoutBtn");
-const autoArrangeBtn = document.getElementById("autoArrangeBtn");
+const showGridCheckbox = document.getElementById("showGridCheckbox");
+const snapGridCheckbox = document.getElementById("snapGridCheckbox");
+const animateFlowCheckbox = document.getElementById("animateFlowCheckbox");
+const layoutMenuBtn = document.getElementById("layoutMenuBtn");
+const layoutMenu = document.getElementById("layoutMenu");
+const menuUnlockLayoutBtn = document.getElementById("menuUnlockLayoutBtn");
+const menuAutoArrangeBtn = document.getElementById("menuAutoArrangeBtn");
+const menuZoomInBtn = document.getElementById("menuZoomInBtn");
+const menuZoomOutBtn = document.getElementById("menuZoomOutBtn");
+const settingsMenuBtn = document.getElementById("settingsMenuBtn");
+const settingsMenu = document.getElementById("settingsMenu");
 const insertBtn = document.getElementById("insertBtn");
 const insertMenu = document.getElementById("insertMenu");
-const collapseExpandBtn = document.getElementById("collapseExpandBtn");
-const collapseExpandMenu = document.getElementById("collapseExpandMenu");
 const collapseAllBtn = document.getElementById("collapseAllBtn");
 const expandBranchBtn = document.getElementById("expandBranchBtn");
 const expandToLevelBtn = document.getElementById("expandToLevelBtn");
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
 const refModeBanner = document.getElementById("refModeBanner");
-const zoomInBtn = document.getElementById("zoomInBtn");
-const zoomOutBtn = document.getElementById("zoomOutBtn");
 const zoomLevelEl = document.getElementById("zoomLevel");
-const fitBtn = document.getElementById("fitBtn");
-const fitMenu = document.getElementById("fitMenu");
 const fitSelectionBtn = document.getElementById("fitSelectionBtn");
 const fitBranchBtn = document.getElementById("fitBranchBtn");
 const fitAllBtn = document.getElementById("fitAllBtn");
@@ -139,6 +139,7 @@ const selectionCountEl = document.getElementById("selectionCount");
 const selCollapseBtn = document.getElementById("selCollapseBtn");
 const selExpandBtn = document.getElementById("selExpandBtn");
 const selColorBtn = document.getElementById("selColorBtn");
+const selConnectBtn = document.getElementById("selConnectBtn");
 const selStatusBtn = document.getElementById("selStatusBtn");
 const selStatusMenu = document.getElementById("selStatusMenu");
 const selGroupBtn = document.getElementById("selGroupBtn");
@@ -167,7 +168,7 @@ const outlinePane = document.getElementById("outlinePane");
 const outlineCollapseBtn = document.getElementById("outlineCollapseBtn");
 const inspectorPane = document.getElementById("inspectorPane");
 const inspectorCollapseBtn = document.getElementById("inspectorCollapseBtn");
-const healthFooterScoreEl = document.getElementById("healthFooterScore");
+const healthFooterGaugeEl = document.getElementById("healthFooterGauge");
 const healthFooterSummaryEl = document.getElementById("healthFooterSummary");
 const healthFooterRecentEl = document.getElementById("healthFooterRecent");
 const healthReportModal = document.getElementById("healthReportModal");
@@ -247,6 +248,11 @@ function updateSelectionToolbar() {
   if (count > 0) {
     selectionCountEl.textContent = `${count} selected`;
   }
+  selConnectBtn.disabled = count !== 1;
+  selConnectBtn.title =
+    count === 1
+      ? "Draw a relationship from this node to another — click the target node next"
+      : "Select exactly one node to start a connection";
   const canArrange = layoutUnlocked && viewMode === "full" && count >= 2;
   selAlignBtn.disabled = !canArrange;
   selDistributeBtn.disabled = !canArrange;
@@ -863,6 +869,10 @@ function curvePath(from, to) {
   return `M ${from.x} ${from.y} C ${from.x} ${midY}, ${to.x} ${midY}, ${to.x} ${to.y}`;
 }
 
+function straightPath(from, to) {
+  return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
+}
+
 // Places `siblings` in a row alongside the already-positioned `activeId` node (which stays
 // put), fanning outward left/right of it, and marks each as faded context — visible, but
 // dimmed, so ancestor context is never fully hidden even though it isn't the active branch.
@@ -1056,16 +1066,21 @@ function renderFocusCanvas(viewW, viewH) {
 
   if (showDependencies) {
     const tagCounters = new Map();
+    // Free (concept) objects aren't scoped to Focus Mode's ancestor/children view — they
+    // always render, so a reference touching one is always visible on that end.
+    const endpointVisible = (id) => (project.nodes[id] ? visibleIds.has(id) : true);
+    const endpointPos = (id) => (project.nodes[id] ? positions.get(id) : canvasObjectCenter(id));
     for (const ref of project.references) {
       if (ref.connector_hidden) continue;
       // Only draw references touching the focused node itself — otherwise a node with many
       // children each carrying their own unrelated reference links turns into a wall of lines.
       if (ref.from !== focus.id && ref.to !== focus.id) continue;
-      const fromVisible = visibleIds.has(ref.from);
-      const toVisible = visibleIds.has(ref.to);
+      const fromVisible = endpointVisible(ref.from);
+      const toVisible = endpointVisible(ref.to);
       if (fromVisible && toVisible) {
-        const fromPos = positions.get(ref.from);
-        const toPos = positions.get(ref.to);
+        const fromPos = endpointPos(ref.from);
+        const toPos = endpointPos(ref.to);
+        if (!fromPos || !toPos) continue;
         refGroup.appendChild(drawRefEdge(fromPos, toPos, ref));
         if (selectedEdgeKey === edgeKey("ref", ref.id)) {
           refGroup.appendChild(drawRefHandle(fromPos, ref, "from"));
@@ -1074,13 +1089,13 @@ function renderFocusCanvas(viewW, viewH) {
       } else if (fromVisible || toVisible) {
         const visibleId = fromVisible ? ref.from : ref.to;
         const otherId = fromVisible ? ref.to : ref.from;
-        const otherNode = project.nodes[otherId];
-        if (!otherNode) continue;
+        const otherPos = endpointPos(visibleId);
+        if (!otherPos) continue;
         const index = tagCounters.get(visibleId) || 0;
         tagCounters.set(visibleId, index + 1);
         const arrow = fromVisible ? "→" : "←";
         refGroup.appendChild(
-          drawRefTag(positions.get(visibleId), `${arrow} ${otherNode.label}`, otherId, index, visibleId)
+          drawRefTag(otherPos, `${arrow} ${canvasObjectLabel(otherId)}`, otherId, index, visibleId)
         );
       }
     }
@@ -1244,6 +1259,7 @@ const CONCEPT_DEFAULT_COLORS = {
   "rounded-rectangle": "#2563eb",
   circle: "#0891b2",
   diamond: "#f59e0b",
+  hexagon: "#7c3aed",
   "sticky-note": "#fde68a",
   text: "#f1f5f9",
   arrow: "#64748b",
@@ -1259,6 +1275,7 @@ const INSERT_TYPES = [
   ["rounded-rectangle", "▢ Rounded Rectangle"],
   ["circle", "◯ Circle"],
   ["diamond", "◇ Diamond"],
+  ["hexagon", "⬡ Hexagon"],
   ["text", "A Text"],
   ["arrow", "➜ Arrow"],
   ["divider", "─ Divider"],
@@ -1274,7 +1291,11 @@ async function insertNewArchitectureNode() {
 
 insertBtn.addEventListener("click", (e) => {
   e.stopPropagation();
-  insertMenu.hidden = !insertMenu.hidden;
+  const wasHidden = insertMenu.hidden;
+  exportMenu.hidden = true;
+  layoutMenu.hidden = true;
+  settingsMenu.hidden = true;
+  insertMenu.hidden = !wasHidden;
 });
 insertMenu.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-insert]");
@@ -1412,6 +1433,22 @@ function drawConceptObject(obj) {
     );
     shape.setAttribute("fill", "var(--surface)");
     shape.setAttribute("stroke", color);
+  } else if (obj.type === "hexagon") {
+    const inset = obj.width * 0.25;
+    shape = document.createElementNS(SVG_NS, "polygon");
+    shape.setAttribute(
+      "points",
+      [
+        `${obj.x + inset},${obj.y}`,
+        `${obj.x + obj.width - inset},${obj.y}`,
+        `${obj.x + obj.width},${obj.y + obj.height / 2}`,
+        `${obj.x + obj.width - inset},${obj.y + obj.height}`,
+        `${obj.x + inset},${obj.y + obj.height}`,
+        `${obj.x},${obj.y + obj.height / 2}`,
+      ].join(" ")
+    );
+    shape.setAttribute("fill", "var(--surface)");
+    shape.setAttribute("stroke", color);
   } else if (obj.type === "divider") {
     shape = document.createElementNS(SVG_NS, "line");
     shape.setAttribute("x1", obj.x);
@@ -1517,6 +1554,32 @@ function drawConceptObject(obj) {
     lockBadge.setAttribute("y", obj.y + 10);
     lockBadge.textContent = "🔒";
     group.appendChild(lockBadge);
+  }
+
+  // Free objects get the same connection handles as architecture nodes — shapes, sticky
+  // notes, images, etc. can all start a relationship, not just nodes.
+  if (selectedConceptObjectId === obj.id && !obj.locked && obj.type !== "divider" && obj.type !== "arrow") {
+    const cx = obj.x + obj.width / 2;
+    const cy = obj.y + obj.height / 2;
+    const handleSpecs = [
+      { x: cx, y: obj.y },
+      { x: cx, y: obj.y + obj.height },
+      { x: obj.x, y: cy },
+      { x: obj.x + obj.width, y: cy },
+    ];
+    for (const hp of handleSpecs) {
+      const handle = document.createElementNS(SVG_NS, "circle");
+      handle.setAttribute("class", "node-connection-handle");
+      handle.setAttribute("cx", hp.x);
+      handle.setAttribute("cy", hp.y);
+      handle.setAttribute("r", 5);
+      handle.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        startRelationshipDrag(e, obj.id, hp);
+      });
+      group.appendChild(handle);
+    }
   }
 
   group.addEventListener("mousedown", (e) => {
@@ -1797,6 +1860,24 @@ function edgeKey(kind, id) {
   return `${kind}:${id}`;
 }
 
+// Connectors are not exclusive to architecture nodes — a reference's from/to id may belong
+// to a node OR a free (concept) object. These two helpers resolve either kind uniformly so
+// rendering/labeling code doesn't need to know which one it's looking at.
+function canvasObjectLabel(id) {
+  const node = project.nodes[id];
+  if (node) return node.label;
+  const obj = project.concept_objects.find((o) => o.id === id);
+  if (obj) return obj.text || obj.type;
+  return "?";
+}
+
+function canvasObjectCenter(id) {
+  if (lastVisiblePositions.has(id)) return lastVisiblePositions.get(id);
+  const obj = project.concept_objects.find((o) => o.id === id);
+  if (obj) return { x: obj.x + obj.width / 2, y: obj.y + obj.height / 2 };
+  return null;
+}
+
 function drawTreeBranches(focusPos, children, positions, faded = false) {
   const group = document.createElementNS(SVG_NS, "g");
   if (children.length === 0) return group;
@@ -1921,13 +2002,13 @@ function drawTreeEdge(from, to, fromId, toId, faded = false) {
   return group;
 }
 
-function drawFlowParticle(pathD, color) {
+function drawFlowParticle(pathD, color, speedSeconds) {
   const particle = document.createElementNS(SVG_NS, "circle");
   particle.setAttribute("class", "flow-particle");
   particle.setAttribute("r", 2.5);
   particle.style.fill = color;
   const anim = document.createElementNS(SVG_NS, "animateMotion");
-  anim.setAttribute("dur", "2.4s");
+  anim.setAttribute("dur", `${speedSeconds || 2.4}s`);
   anim.setAttribute("repeatCount", "indefinite");
   anim.setAttribute("path", pathD);
   particle.appendChild(anim);
@@ -1997,8 +2078,9 @@ function drawRefEdge(from, to, ref) {
   const key = edgeKey("ref", ref.id);
 
   const hitPath = document.createElementNS(SVG_NS, "path");
+  const pathFn = ref.curve_style === "straight" ? straightPath : curvePath;
   hitPath.setAttribute("class", "edge-hit");
-  hitPath.setAttribute("d", curvePath(from, to));
+  hitPath.setAttribute("d", pathFn(from, to));
 
   const typeClass = REF_TYPE_CLASS[ref.reference_type] || "";
   const line = document.createElementNS(SVG_NS, "path");
@@ -2006,7 +2088,7 @@ function drawRefEdge(from, to, ref) {
     "class",
     "ref-edge" + (typeClass ? ` ${typeClass}` : "") + (selectedEdgeKey === key ? " selected" : "")
   );
-  line.setAttribute("d", curvePath(from, to));
+  line.setAttribute("d", pathFn(from, to));
   line.style.strokeWidth = REF_THICKNESS_WIDTH[ref.thickness] || REF_THICKNESS_WIDTH.Normal;
   if (ref.custom_color) line.style.stroke = ref.custom_color;
   if (REF_LINE_DASH[ref.line_style]) line.style.strokeDasharray = REF_LINE_DASH[ref.line_style];
@@ -2029,18 +2111,20 @@ function drawRefEdge(from, to, ref) {
   group.appendChild(line);
 
   if (animateDataFlow || ref.animated) {
+    // Hierarchy blue, Reference purple, Dependency amber, Data Flow emerald, Error red —
+    // the animation should read as data actually flowing through the architecture.
     const particleColor =
       ref.custom_color ||
       (ref.reference_type === "Dependency"
-        ? "var(--success-text)"
+        ? "#d97706"
         : ref.reference_type === "Warning"
         ? "var(--warning-text)"
         : ref.reference_type === "Broken"
         ? "var(--danger-text)"
         : ref.reference_type === "Data Flow"
-        ? "#0891b2"
-        : "var(--text-muted)");
-    group.appendChild(drawFlowParticle(curvePath(from, to), particleColor));
+        ? "#10b981"
+        : "#a855f7");
+    group.appendChild(drawFlowParticle(pathFn(from, to), particleColor, ref.animation_speed));
   }
 
   group.addEventListener("click", (e) => {
@@ -2113,13 +2197,13 @@ function showConnectorPropertiesPanel(refId, clientX, clientY) {
 
   const title = document.createElement("div");
   title.className = "connector-panel-title";
-  const fromNode = project.nodes[ref.from];
-  const toNode = project.nodes[ref.to];
-  title.textContent = `${fromNode ? fromNode.label : "?"} → ${toNode ? toNode.label : "?"}`;
+  const fromLabel = canvasObjectLabel(ref.from);
+  const toLabel = canvasObjectLabel(ref.to);
+  title.textContent = `${fromLabel} → ${toLabel}`;
   panel.appendChild(title);
 
-  panel.appendChild(connectorPanelField("Source", infoStaticValue(fromNode ? fromNode.label : "?")));
-  panel.appendChild(connectorPanelField("Destination", infoStaticValue(toNode ? toNode.label : "?")));
+  panel.appendChild(connectorPanelField("Source", infoStaticValue(fromLabel)));
+  panel.appendChild(connectorPanelField("Destination", infoStaticValue(toLabel)));
 
   const typeSelect = document.createElement("select");
   for (const opt of ["", "Dependency", "Warning", "Broken", "Data Flow", "Optional"]) {
@@ -2196,6 +2280,17 @@ function showConnectorPropertiesPanel(refId, clientX, clientY) {
   lineStyleSelect.addEventListener("change", () => updateConnector(refId, { line_style: lineStyleSelect.value }));
   panel.appendChild(connectorPanelField("Line Style", lineStyleSelect));
 
+  const curveSelect = document.createElement("select");
+  for (const opt of ["curved", "straight"]) {
+    const o = document.createElement("option");
+    o.value = opt;
+    o.textContent = opt[0].toUpperCase() + opt.slice(1);
+    if ((ref.curve_style || "curved") === opt) o.selected = true;
+    curveSelect.appendChild(o);
+  }
+  curveSelect.addEventListener("change", () => updateConnector(refId, { curve_style: curveSelect.value }));
+  panel.appendChild(connectorPanelField("Shape", curveSelect));
+
   const opacityInput = document.createElement("input");
   opacityInput.type = "range";
   opacityInput.min = "0.15";
@@ -2228,6 +2323,18 @@ function showConnectorPropertiesPanel(refId, clientX, clientY) {
   animatedLabel.appendChild(animatedCheckbox);
   animatedLabel.appendChild(document.createTextNode(" Animate this connector"));
   panel.appendChild(animatedLabel);
+
+  const speedInput = document.createElement("input");
+  speedInput.type = "range";
+  speedInput.min = "0.6";
+  speedInput.max = "6";
+  speedInput.step = "0.2";
+  speedInput.value = ref.animation_speed || 2.4;
+  speedInput.title = "Faster on the left, slower on the right";
+  speedInput.addEventListener("change", () =>
+    updateConnector(refId, { animation_speed: parseFloat(speedInput.value) })
+  );
+  panel.appendChild(connectorPanelField("Animation Speed", speedInput));
 
   const visibleLabel = document.createElement("label");
   visibleLabel.className = "connector-panel-checkbox-row";
@@ -2611,7 +2718,12 @@ function drawRefTag(nodePos, text, targetId, index, anchorId) {
   group.appendChild(label);
   group.addEventListener("click", (e) => {
     e.stopPropagation();
-    focusNode(targetId);
+    if (project.nodes[targetId]) {
+      focusNode(targetId);
+    } else {
+      selectedConceptObjectId = targetId;
+      renderCanvas();
+    }
   });
 
   return group;
@@ -2688,6 +2800,15 @@ function drawNode(node, pos, faded = false) {
     badge.appendChild(badgeRect);
     badge.appendChild(badgeLabel);
     group.appendChild(badge);
+  }
+
+  if (!node.is_group && node.locked) {
+    const lockBadge = document.createElementNS(SVG_NS, "text");
+    lockBadge.setAttribute("class", "node-lock-badge");
+    lockBadge.setAttribute("x", pos.x + NODE_W / 2 - 12);
+    lockBadge.setAttribute("y", pos.y - NODE_H / 2 + 12);
+    lockBadge.textContent = "🔒";
+    group.appendChild(lockBadge);
   }
 
   if (!node.is_group && (node.priority === "High" || node.priority === "Critical")) {
@@ -2785,7 +2906,7 @@ function drawNode(node, pos, faded = false) {
     openContextMenu(node.id, e.clientX, e.clientY);
   });
 
-  if (!node.is_group && node.parent_id !== null) {
+  if (!node.is_group && node.parent_id !== null && !node.locked) {
     group.addEventListener("mousedown", (e) => {
       if (e.button !== 0 || refMode) return;
       if (layoutUnlocked && viewMode === "full") {
@@ -2970,7 +3091,7 @@ function openQuickPicker(options, clientX, clientY, onPick) {
 // remember, and never triggered by accident.
 const RELATIONSHIP_TYPES = ["Hierarchy", "Reference", "Dependency", "Data Flow", "Optional", "Cancel"];
 
-function startRelationshipDrag(e, fromNodeId, originPos) {
+function startRelationshipDrag(e, fromId, originPos) {
   const rect = canvasSvg.getBoundingClientRect();
   const viewportEl = canvasSvg.querySelector(":scope > g");
   const tempLine = document.createElementNS(SVG_NS, "line");
@@ -2982,9 +3103,13 @@ function startRelationshipDrag(e, fromNodeId, originPos) {
   if (viewportEl) viewportEl.appendChild(tempLine);
 
   let hoveredTargetId = null;
+  const targetSelector = (id) =>
+    project.nodes[id]
+      ? `.node-group[data-id="${id}"] .node-box`
+      : `.concept-object[data-id="${id}"] .concept-shape`;
   const clearHighlight = () => {
     if (!hoveredTargetId) return;
-    const el = canvasSvg.querySelector(`.node-group[data-id="${hoveredTargetId}"] .node-box`);
+    const el = canvasSvg.querySelector(targetSelector(hoveredTargetId));
     if (el) el.classList.remove("relationship-drop-target");
     hoveredTargetId = null;
   };
@@ -3001,16 +3126,25 @@ function startRelationshipDrag(e, fromNodeId, originPos) {
 
     let targetId = null;
     for (const [nodeId, nodePos] of lastVisiblePositions.entries()) {
-      if (nodeId === fromNodeId) continue;
+      if (nodeId === fromId) continue;
       if (Math.abs(p.x - nodePos.x) <= NODE_W / 2 && Math.abs(p.y - nodePos.y) <= NODE_H / 2) {
         targetId = nodeId;
         break;
       }
     }
+    if (!targetId) {
+      for (const obj of project.concept_objects) {
+        if (obj.id === fromId) continue;
+        if (p.x >= obj.x && p.x <= obj.x + obj.width && p.y >= obj.y && p.y <= obj.y + obj.height) {
+          targetId = obj.id;
+          break;
+        }
+      }
+    }
     if (targetId !== hoveredTargetId) {
       clearHighlight();
       if (targetId) {
-        const el = canvasSvg.querySelector(`.node-group[data-id="${targetId}"] .node-box`);
+        const el = canvasSvg.querySelector(targetSelector(targetId));
         if (el) el.classList.add("relationship-drop-target");
         hoveredTargetId = targetId;
       }
@@ -3024,11 +3158,15 @@ function startRelationshipDrag(e, fromNodeId, originPos) {
     clearHighlight();
     if (!hoveredTargetId) return;
     const targetId = hoveredTargetId;
-    openRelationshipChooser(upEvent.clientX, upEvent.clientY, async (type) => {
+    // Hierarchy (reparenting) only makes sense between two architecture nodes — free objects
+    // aren't part of the tree, so that option is left out when either end is a free object.
+    const bothNodes = !!project.nodes[fromId] && !!project.nodes[targetId];
+    const types = bothNodes ? RELATIONSHIP_TYPES : RELATIONSHIP_TYPES.filter((t) => t !== "Hierarchy");
+    openRelationshipChooser(upEvent.clientX, upEvent.clientY, types, async (type) => {
       if (type === "Cancel") return;
       if (type === "Hierarchy") {
         pushUndoSnapshot("Become Child");
-        const res = await fetch(`/api/projects/${projectId}/nodes/${fromNodeId}/reparent`, {
+        const res = await fetch(`/api/projects/${projectId}/nodes/${fromId}/reparent`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ new_parent_id: targetId }),
@@ -3041,14 +3179,14 @@ function startRelationshipDrag(e, fromNodeId, originPos) {
           return;
         }
         await loadProject();
-        focusNode(fromNodeId);
+        focusNode(fromId);
         return;
       }
       pushUndoSnapshot(`Create ${type}`);
       await fetch(`/api/projects/${projectId}/references`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ from: fromNodeId, to: targetId, reference_type: type === "Reference" ? null : type }),
+        body: JSON.stringify({ from: fromId, to: targetId, reference_type: type === "Reference" ? null : type }),
       });
       await loadProject();
     });
@@ -3058,11 +3196,11 @@ function startRelationshipDrag(e, fromNodeId, originPos) {
   document.addEventListener("mouseup", onUp);
 }
 
-function openRelationshipChooser(clientX, clientY, onPick) {
+function openRelationshipChooser(clientX, clientY, types, onPick) {
   closeContextMenu();
   const menu = document.createElement("div");
   menu.className = "context-menu";
-  for (const type of RELATIONSHIP_TYPES) {
+  for (const type of types) {
     if (type === "Cancel") menu.appendChild(contextMenuSeparator());
     menu.appendChild(contextMenuItem(type, () => onPick(type), { danger: type === "Cancel" }));
   }
@@ -3126,18 +3264,82 @@ function contextMenuSubmenu(text, options, onPick) {
   return wrap;
 }
 
+// Same submenu shell as contextMenuSubmenu, but for pre-built menu-item elements (including
+// nested submenus) rather than a flat list of string options — used for "▸ More".
+function contextMenuElementSubmenu(text, items) {
+  const wrap = document.createElement("div");
+  wrap.className = "context-menu-item context-menu-has-submenu";
+  const label = document.createElement("span");
+  label.textContent = text;
+  const arrow = document.createElement("span");
+  arrow.className = "context-menu-arrow";
+  arrow.textContent = "▸";
+  wrap.appendChild(label);
+  wrap.appendChild(arrow);
+
+  const submenu = document.createElement("div");
+  submenu.className = "context-menu context-submenu";
+  for (const item of items) submenu.appendChild(item);
+  wrap.appendChild(submenu);
+  return wrap;
+}
+
 function openContextMenu(nodeId, clientX, clientY) {
   closeContextMenu();
   const node = project.nodes[nodeId];
   const isRoot = node.parent_id === null;
+  const locked = !!node.locked;
   const CLEAR = "— Clear —";
 
   const menu = document.createElement("div");
   menu.className = "context-menu";
 
-  menu.appendChild(contextMenuItem("+ Add Component", () => addChild(nodeId)));
-  menu.appendChild(contextMenuItem("+ Add Parallel Component", () => addSiblingBelow(nodeId), { disabled: isRoot }));
+  // Primary, always-visible actions — everything else lives under "More" so the menu stays
+  // scannable. Nothing here is removed, just reorganized: every item below still exists.
+  menu.appendChild(contextMenuItem("+ Add Child", () => addChild(nodeId), { disabled: locked }));
   menu.appendChild(
+    contextMenuItem("+ Add Parallel", () => addSiblingBelow(nodeId), { disabled: isRoot || locked })
+  );
+  menu.appendChild(
+    contextMenuItem("⇢ Connect", () => {
+      refMode = true;
+      pendingRefFrom = nodeId;
+      refModeBanner.hidden = false;
+      renderCanvas();
+    })
+  );
+  menu.appendChild(
+    contextMenuItem("⧉ Duplicate", async () => {
+      const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/duplicate`, { method: "POST" });
+      const newNode = await res.json();
+      await loadProject();
+      focusNode(newNode.id);
+    }, { disabled: isRoot || locked })
+  );
+  menu.appendChild(
+    contextMenuItem("💬 Comment", () => {
+      focusedNodeId = nodeId;
+      inspectorActiveTab = "comments";
+      render();
+    })
+  );
+  menu.appendChild(
+    contextMenuItem("→ Convert to Planning Object", async () => {
+      pushUndoSnapshot("Convert to Planning Object");
+      const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/convert-to-object`, { method: "POST" });
+      const obj = await res.json();
+      await loadProject();
+      selectedConceptObjectId = obj.id;
+      renderCanvas();
+    }, { disabled: locked })
+  );
+  menu.appendChild(
+    contextMenuItem(locked ? "🔓 Unlock" : "🔒 Lock", () => patchNodeById(nodeId, { locked: !locked }))
+  );
+
+  menu.appendChild(contextMenuSeparator());
+
+  const moreItems = [
     contextMenuItem("↑ Add Parent Above", async () => {
       const label = prompt("New parent label:", "New parent");
       if (!label || !label.trim()) return;
@@ -3149,45 +3351,18 @@ function openContextMenu(nodeId, clientX, clientY) {
       const newNode = await res.json();
       await loadProject();
       focusNode(newNode.id);
-    }, { disabled: isRoot })
-  );
-  menu.appendChild(
-    contextMenuItem("⧉ Duplicate", async () => {
-      const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/duplicate`, { method: "POST" });
-      const newNode = await res.json();
-      await loadProject();
-      focusNode(newNode.id);
-    }, { disabled: isRoot })
-  );
-  menu.appendChild(contextMenuItem("▤ Add Group", () => addGroupUnder(nodeId)));
-  menu.appendChild(
-    contextMenuItem("→ Convert to Planning Object", async () => {
-      pushUndoSnapshot("Convert to Planning Object");
-      const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/convert-to-object`, { method: "POST" });
-      const obj = await res.json();
-      await loadProject();
-      selectedConceptObjectId = obj.id;
-      renderCanvas();
-    })
-  );
-  menu.appendChild(
+    }, { disabled: isRoot || locked }),
+    contextMenuItem("▤ Add Group", () => addGroupUnder(nodeId), { disabled: locked }),
     contextMenuItem("✎ Rename", () => {
       const label = prompt("Rename node:", node.label);
       if (label && label.trim()) {
         pushUndoSnapshot("Rename node");
         patchNodeById(nodeId, { label: label.trim() });
       }
-    })
-  );
-
-  menu.appendChild(contextMenuSeparator());
-
-  menu.appendChild(
+    }, { disabled: locked }),
     contextMenuSubmenu("◆ Set Classification", [CLEAR, ...CLASSIFICATIONS], (opt) => {
       patchNodeById(nodeId, { classification: opt === CLEAR ? "" : opt });
-    })
-  );
-  menu.appendChild(
+    }),
     contextMenuItem("🎨 Change Color", () => {
       const colorInput = document.createElement("input");
       colorInput.type = "color";
@@ -3200,75 +3375,44 @@ function openContextMenu(nodeId, clientX, clientY) {
         colorInput.remove();
       });
       colorInput.click();
-    })
-  );
-  menu.appendChild(
+    }),
     contextMenuItem("Change Node Type", () => {
       const value = prompt("Node type:", node.node_type || "");
       if (value !== null) patchNodeById(nodeId, { node_type: value.trim() });
-    })
-  );
-  menu.appendChild(
+    }),
     contextMenuSubmenu("● Set Lifecycle Stage", [CLEAR, "Planned", "In Development", "Done", "Blocked", "Deprecated"], (opt) => {
       patchNodeById(nodeId, { status: opt === CLEAR ? "" : opt });
-    })
-  );
-  menu.appendChild(
+    }),
     contextMenuSubmenu("● Set Priority", [CLEAR, "Low", "Medium", "High", "Critical"], (opt) => {
       patchNodeById(nodeId, { priority: opt === CLEAR ? "" : opt });
-    })
-  );
-  menu.appendChild(
+    }),
     contextMenuSubmenu("● Set Risk Level", [CLEAR, "Low", "Medium", "High", "Critical"], (opt) => {
       patchNodeById(nodeId, { risk_level: opt === CLEAR ? "" : opt });
-    })
-  );
-  menu.appendChild(
+    }),
     contextMenuItem("+ Add Tag", () => {
       const tag = prompt("Tag to add:");
       if (tag && tag.trim() && !node.tags.includes(tag.trim())) {
         patchNodeById(nodeId, { tags: [...node.tags, tag.trim()] });
       }
-    })
-  );
-  menu.appendChild(
+    }),
     contextMenuItem("Assign Owner", () => {
       const owner = prompt("Owner:", node.owner || "");
       if (owner !== null) patchNodeById(nodeId, { owner: owner.trim() });
-    })
-  );
-  menu.appendChild(
+    }),
     contextMenuItem("Add / Edit Notes", () => {
       focusedNodeId = nodeId;
-      inspectorActiveTab = "inspector";
+      inspectorActiveTab = "documentation";
       render();
       const textarea = inspectorContent.querySelector("textarea");
       if (textarea) textarea.focus();
-    })
-  );
-
-  menu.appendChild(contextMenuSeparator());
-
-  menu.appendChild(
-    contextMenuItem("⇢ Add Reference Link", () => {
-      refMode = true;
-      pendingRefFrom = nodeId;
-      refModeBanner.hidden = false;
-      renderCanvas();
-    })
-  );
-  menu.appendChild(
+    }),
     contextMenuItem(node.collapsed ? "▸ Expand Branch" : "▾ Collapse Branch", () => toggleCollapse(nodeId, !node.collapsed), {
       disabled: node.children.length === 0,
-    })
-  );
-  menu.appendChild(
+    }),
     contextMenuItem("Copy Subtree", async () => {
       const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/subtree`);
       clipboardSubtree = await res.json();
-    })
-  );
-  menu.appendChild(
+    }),
     contextMenuItem("Paste Subtree Here", async () => {
       const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/paste-subtree`, {
         method: "POST",
@@ -3278,20 +3422,19 @@ function openContextMenu(nodeId, clientX, clientY) {
       const newNode = await res.json();
       await loadProject();
       focusNode(newNode.id);
-    }, { disabled: !clipboardSubtree })
-  );
-  menu.appendChild(
+    }, { disabled: !clipboardSubtree || locked }),
     contextMenuItem("⇩ Export Subtree", async () => {
       const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/subtree`);
       const subtree = await res.json();
       downloadBlob(JSON.stringify(subtree, null, 2), `${safeFilename(node.label)}_subtree.json`, "application/json");
-    })
-  );
+    }),
+  ];
+  menu.appendChild(contextMenuElementSubmenu("▸ More", moreItems));
 
   menu.appendChild(contextMenuSeparator());
 
   menu.appendChild(
-    contextMenuItem("🗑 Delete", () => deleteNodeFlow(nodeId), { disabled: isRoot, danger: true })
+    contextMenuItem("🗑 Delete", () => deleteNodeFlow(nodeId), { disabled: isRoot || locked, danger: true })
   );
 
   menu.style.left = `${clientX}px`;
@@ -3375,11 +3518,11 @@ function viewportCenterClient() {
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
 
-zoomInBtn.addEventListener("click", () => {
+menuZoomInBtn.addEventListener("click", () => {
   const c = viewportCenterClient();
   zoomAtPoint(zoomScale + ZOOM_STEP, c.x, c.y, true);
 });
-zoomOutBtn.addEventListener("click", () => {
+menuZoomOutBtn.addEventListener("click", () => {
   const c = viewportCenterClient();
   zoomAtPoint(zoomScale - ZOOM_STEP, c.x, c.y, true);
 });
@@ -3515,30 +3658,45 @@ function fitArchitecture() {
   fitToView();
 }
 
-fitBtn.addEventListener("click", () => {
-  if (fitMenu.hidden) {
-    exportMenu.hidden = true;
-    statusFilterMenu.hidden = true;
-    collapseExpandMenu.hidden = true;
-    closeImportModal();
-  }
-  fitMenu.hidden = !fitMenu.hidden;
+// ---------- Toolbar dropdowns: Layout and Settings ----------
+// The permanent toolbar stays minimal (Search, Insert, Export, Undo, Redo, Present, Layout,
+// Settings) — camera/arrangement controls live in Layout, display toggles live in Settings,
+// closing whichever other dropdown/modal is open so only one is ever visible at a time.
+function closeToolbarMenus() {
+  exportMenu.hidden = true;
+  layoutMenu.hidden = true;
+  settingsMenu.hidden = true;
+  insertMenu.hidden = true;
+  closeImportModal();
+}
+layoutMenuBtn.addEventListener("click", () => {
+  const wasHidden = layoutMenu.hidden;
+  closeToolbarMenus();
+  layoutMenu.hidden = !wasHidden;
+});
+settingsMenuBtn.addEventListener("click", () => {
+  const wasHidden = settingsMenu.hidden;
+  closeToolbarMenus();
+  settingsMenu.hidden = !wasHidden;
 });
 document.addEventListener("click", (e) => {
-  if (!fitMenu.hidden && !fitMenu.contains(e.target) && e.target !== fitBtn) {
-    fitMenu.hidden = true;
+  if (!layoutMenu.hidden && !layoutMenu.contains(e.target) && e.target !== layoutMenuBtn) {
+    layoutMenu.hidden = true;
+  }
+  if (!settingsMenu.hidden && !settingsMenu.contains(e.target) && e.target !== settingsMenuBtn) {
+    settingsMenu.hidden = true;
   }
 });
 fitSelectionBtn.addEventListener("click", () => {
-  fitMenu.hidden = true;
+  layoutMenu.hidden = true;
   fitSelection();
 });
 fitBranchBtn.addEventListener("click", () => {
-  fitMenu.hidden = true;
+  layoutMenu.hidden = true;
   fitBranch();
 });
 fitAllBtn.addEventListener("click", () => {
-  fitMenu.hidden = true;
+  layoutMenu.hidden = true;
   fitArchitecture();
 });
 
@@ -3596,32 +3754,20 @@ function openCanvasContextMenu(clientX, clientY) {
     })
   );
   menu.appendChild(
-    contextMenuItem("📋 Paste Object", () => pasteConceptObject(clientX, clientY), { disabled: !conceptClipboard })
+    contextMenuElementSubmenu("📋 Paste", [
+      contextMenuItem("Paste Object", () => pasteConceptObject(clientX, clientY), { disabled: !conceptClipboard }),
+      contextMenuItem("Paste Subtree Here", async () => {
+        const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/paste-subtree`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ root: clipboardSubtree }),
+        });
+        const newNode = await res.json();
+        await loadProject();
+        focusNode(newNode.id);
+      }, { disabled: !clipboardSubtree || !focusedNodeId }),
+    ])
   );
-  menu.appendChild(
-    contextMenuItem("Paste Subtree Here", async () => {
-      const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/paste-subtree`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ root: clipboardSubtree }),
-      });
-      const newNode = await res.json();
-      await loadProject();
-      focusNode(newNode.id);
-    }, { disabled: !clipboardSubtree || !focusedNodeId })
-  );
-  menu.appendChild(
-    contextMenuItem("⇩ Import Outline Here", () => {
-      importText.value = "";
-      importModal.hidden = false;
-      importText.focus();
-    }, { disabled: !focusedNodeId })
-  );
-
-  menu.appendChild(contextMenuSeparator());
-
-  menu.appendChild(contextMenuItem("↶ Undo", performUndo, { disabled: undoStack.length === 0 }));
-  menu.appendChild(contextMenuItem("↷ Redo", performRedo, { disabled: redoStack.length === 0 }));
 
   menu.appendChild(contextMenuSeparator());
 
@@ -3630,22 +3776,18 @@ function openCanvasContextMenu(clientX, clientY) {
   } else {
     menu.appendChild(contextMenuItem("🔓 Unlock Layout", () => setLayoutUnlocked(true)));
   }
-  menu.appendChild(
-    contextMenuItem(showConceptGrid ? "☑ Show Grid" : "☐ Show Grid", () => {
-      showConceptGrid = !showConceptGrid;
-      renderCanvas();
-    })
-  );
-  menu.appendChild(
-    contextMenuItem(snapToConceptGrid ? "☑ Snap to Grid" : "☐ Snap to Grid", () => {
-      snapToConceptGrid = !snapToConceptGrid;
-    })
-  );
-
-  menu.appendChild(contextMenuSeparator());
-
   menu.appendChild(contextMenuItem("▶ Presentation Mode", enterPresentationMode));
-  menu.appendChild(contextMenuItem("⬇ Download as SVG", () => exportCanvasSvg()));
+  menu.appendChild(
+    contextMenuElementSubmenu("⚙ Canvas Settings", [
+      contextMenuItem(showConceptGrid ? "☑ Show Grid" : "☐ Show Grid", () => {
+        showConceptGrid = !showConceptGrid;
+        renderCanvas();
+      }),
+      contextMenuItem(snapToConceptGrid ? "☑ Snap to Grid" : "☐ Snap to Grid", () => {
+        snapToConceptGrid = !snapToConceptGrid;
+      }),
+    ])
+  );
 
   menu.style.left = `${clientX}px`;
   menu.style.top = `${clientY}px`;
@@ -3740,6 +3882,15 @@ selColorBtn.addEventListener("click", () => {
     await loadProject();
   });
   colorInput.click();
+});
+
+selConnectBtn.addEventListener("click", () => {
+  if (selectedNodeIds.size !== 1) return;
+  const [nodeId] = selectedNodeIds;
+  refMode = true;
+  pendingRefFrom = nodeId;
+  refModeBanner.hidden = false;
+  renderCanvas();
 });
 
 selStatusBtn.addEventListener("click", () => {
@@ -3937,8 +4088,8 @@ fullArchModeBtn.addEventListener("click", () => setViewMode("full"));
 // Only meaningful in Full Architecture view — Focus Mode always recenters on the focused
 // node, so a persisted free position wouldn't mean anything there.
 function updateUnlockLayoutButton() {
-  unlockLayoutBtn.hidden = layoutUnlocked;
-  autoArrangeBtn.hidden = !layoutUnlocked;
+  menuUnlockLayoutBtn.hidden = layoutUnlocked;
+  menuAutoArrangeBtn.hidden = !layoutUnlocked;
 }
 
 async function setLayoutUnlocked(unlocked) {
@@ -3953,8 +4104,14 @@ async function setLayoutUnlocked(unlocked) {
     body: JSON.stringify({ unlocked }),
   });
 }
-unlockLayoutBtn.addEventListener("click", () => setLayoutUnlocked(true));
-autoArrangeBtn.addEventListener("click", () => autoArrangeLayout());
+menuUnlockLayoutBtn.addEventListener("click", () => {
+  layoutMenu.hidden = true;
+  setLayoutUnlocked(true);
+});
+menuAutoArrangeBtn.addEventListener("click", () => {
+  layoutMenu.hidden = true;
+  autoArrangeLayout();
+});
 
 async function autoArrangeLayout() {
   pushUndoSnapshot("Auto Arrange");
@@ -3978,10 +4135,16 @@ async function autoArrangeLayout() {
   await setLayoutUnlocked(false);
 }
 
-animateFlowBtn.addEventListener("click", () => {
-  animateDataFlow = !animateDataFlow;
-  animateFlowBtn.classList.toggle("active", animateDataFlow);
+animateFlowCheckbox.addEventListener("change", () => {
+  animateDataFlow = animateFlowCheckbox.checked;
   renderCanvas();
+});
+showGridCheckbox.addEventListener("change", () => {
+  showConceptGrid = showGridCheckbox.checked;
+  renderCanvas();
+});
+snapGridCheckbox.addEventListener("change", () => {
+  snapToConceptGrid = snapGridCheckbox.checked;
 });
 
 async function addGroupUnder(parentId) {
@@ -4007,27 +4170,13 @@ let animateDataFlow = true;
 
 // ---------- Visual status filters ----------
 
-statusFilterBtn.addEventListener("click", () => {
-  if (statusFilterMenu.hidden) {
-    exportMenu.hidden = true;
-    collapseExpandMenu.hidden = true;
-    fitMenu.hidden = true;
-    closeImportModal();
-  }
-  statusFilterMenu.hidden = !statusFilterMenu.hidden;
-});
-document.addEventListener("click", (e) => {
-  if (!statusFilterMenu.hidden && !statusFilterMenu.contains(e.target) && e.target !== statusFilterBtn) {
-    statusFilterMenu.hidden = true;
-  }
-});
-statusFilterMenu.addEventListener("change", (e) => {
+settingsMenu.addEventListener("change", (e) => {
   const checkbox = e.target.closest("input[data-filter]");
   if (!checkbox) return;
   if (checkbox.checked) activeStatusFilters.add(checkbox.dataset.filter);
   else activeStatusFilters.delete(checkbox.dataset.filter);
   const allChecked = activeStatusFilters.size === PLANNING_STATUSES.length;
-  statusFilterBtn.classList.toggle("active", !allChecked);
+  settingsMenuBtn.classList.toggle("active", !allChecked);
   renderCanvas();
 });
 
@@ -4046,35 +4195,20 @@ async function setCollapsedForIds(ids, collapsed) {
   await loadProject();
 }
 
-collapseExpandBtn.addEventListener("click", () => {
-  if (collapseExpandMenu.hidden) {
-    exportMenu.hidden = true;
-    statusFilterMenu.hidden = true;
-    fitMenu.hidden = true;
-    closeImportModal();
-  }
-  collapseExpandMenu.hidden = !collapseExpandMenu.hidden;
-});
-document.addEventListener("click", (e) => {
-  if (!collapseExpandMenu.hidden && !collapseExpandMenu.contains(e.target) && e.target !== collapseExpandBtn) {
-    collapseExpandMenu.hidden = true;
-  }
-});
-
 collapseAllBtn.addEventListener("click", async () => {
-  collapseExpandMenu.hidden = true;
+  layoutMenu.hidden = true;
   const allIds = Object.keys(project.nodes).filter((id) => id !== rootId);
   await setCollapsedForIds(allIds, true);
 });
 
 expandBranchBtn.addEventListener("click", async () => {
-  collapseExpandMenu.hidden = true;
+  layoutMenu.hidden = true;
   if (!focusedNodeId) return;
   await setCollapsedForIds(collectSubtreeIds(focusedNodeId), false);
 });
 
 expandToLevelBtn.addEventListener("click", async () => {
-  collapseExpandMenu.hidden = true;
+  layoutMenu.hidden = true;
   const raw = prompt("Show levels 1 through N (collapses everything deeper):", "3");
   const level = parseInt(raw, 10);
   if (!raw || isNaN(level) || level < 1) return;
@@ -4218,7 +4352,7 @@ function stopStoryMode() {
     clearInterval(storyModeInterval);
     storyModeInterval = null;
   }
-  presentStoryBtn.textContent = "▶ Story Mode";
+  presentStoryBtn.textContent = "▶ Auto-Play";
   presentStoryBtn.classList.remove("active");
 }
 
@@ -4227,7 +4361,7 @@ function toggleStoryMode() {
     stopStoryMode();
     return;
   }
-  presentStoryBtn.textContent = "⏸ Story Mode";
+  presentStoryBtn.textContent = "⏸ Auto-Play";
   presentStoryBtn.classList.add("active");
   storyModeInterval = setInterval(() => {
     const order = storyOrder();
@@ -4349,9 +4483,8 @@ async function refreshHealthPanel() {
 // breakdown, complete change history) only shows up in the modal opened by View Full Report,
 // so the Inspector stays focused on the selected node instead of a wall of validation rows.
 function renderHealthFooter(report) {
-  const ratingClass = "rating-" + report.rating.toLowerCase().replace(/\s+/g, "-");
-  healthFooterScoreEl.className = "health-footer-score " + ratingClass;
-  healthFooterScoreEl.textContent = `${report.score}%`;
+  healthFooterGaugeEl.innerHTML = "";
+  healthFooterGaugeEl.appendChild(buildHealthGauge(report, 48));
 
   const critical =
     report.duplicate_labels.length +
@@ -4390,19 +4523,19 @@ function renderHealthFooter(report) {
   }
 }
 
-function renderHealthScore(report) {
+// Shared by the full-report modal (92px) and the compact Inspector footer (48px) — same
+// gauge, just a different size, so the two views never drift into inconsistent visuals.
+function buildHealthGauge(report, size) {
   const ratingClass = "rating-" + report.rating.toLowerCase().replace(/\s+/g, "-");
-  healthScoreEl.className = "health-score " + ratingClass;
-  healthScoreEl.innerHTML = "";
-
-  const size = 92;
-  const stroke = 9;
+  const stroke = size >= 80 ? 9 : 5;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference * (1 - report.score / 100);
 
   const gaugeWrap = document.createElement("div");
-  gaugeWrap.className = "health-gauge-wrap";
+  gaugeWrap.className = "health-gauge-wrap " + ratingClass + (size < 80 ? " small" : "");
+  gaugeWrap.style.width = `${size}px`;
+  gaugeWrap.style.height = `${size}px`;
 
   const svg = document.createElementNS(SVG_NS, "svg");
   svg.setAttribute("width", size);
@@ -4435,12 +4568,18 @@ function renderHealthScore(report) {
 
   gaugeWrap.appendChild(svg);
   gaugeWrap.appendChild(scoreText);
+  return gaugeWrap;
+}
+
+function renderHealthScore(report) {
+  const ratingClass = "rating-" + report.rating.toLowerCase().replace(/\s+/g, "-");
+  healthScoreEl.className = "health-score " + ratingClass;
+  healthScoreEl.innerHTML = "";
+  healthScoreEl.appendChild(buildHealthGauge(report, 92));
 
   const ratingEl = document.createElement("div");
   ratingEl.className = "score-rating";
   ratingEl.textContent = report.rating;
-
-  healthScoreEl.appendChild(gaugeWrap);
   healthScoreEl.appendChild(ratingEl);
 }
 
@@ -4620,7 +4759,7 @@ function closeImportModal() {
 
 importOutlineBtn.addEventListener("click", () => {
   if (!focusedNodeId) return;
-  exportMenu.hidden = true;
+  insertMenu.hidden = true;
   importText.value = "";
   importModal.hidden = false;
   importText.focus();
@@ -4712,11 +4851,12 @@ function buildPathString(nodeId) {
 // ---------- Export ----------
 
 exportBtn.addEventListener("click", () => {
-  if (exportMenu.hidden) closeImportModal();
-  statusFilterMenu.hidden = true;
-  collapseExpandMenu.hidden = true;
-  fitMenu.hidden = true;
-  exportMenu.hidden = !exportMenu.hidden;
+  const wasHidden = exportMenu.hidden;
+  if (wasHidden) closeImportModal();
+  layoutMenu.hidden = true;
+  settingsMenu.hidden = true;
+  insertMenu.hidden = true;
+  exportMenu.hidden = !wasHidden;
 });
 
 document.addEventListener("click", (e) => {
@@ -5268,7 +5408,6 @@ function renderReferencesTab(container, node) {
     const refsField = field(`Reference Links (${touchingRefs.length})`);
     for (const ref of touchingRefs) {
       const otherId = ref.from === node.id ? ref.to : ref.from;
-      const otherNode = project.nodes[otherId];
       const direction = ref.from === node.id ? "→" : "←";
       const item = document.createElement("div");
       item.className = "ref-list-item";
@@ -5276,7 +5415,7 @@ function renderReferencesTab(container, node) {
       dot.className = "dot dot-accent";
       const text = document.createElement("span");
       text.className = "ref-text";
-      text.textContent = `${direction} ${otherNode ? otherNode.label : "(unknown)"}${ref.label ? " · " + ref.label : ""}`;
+      text.textContent = `${direction} ${canvasObjectLabel(otherId)}${ref.label ? " · " + ref.label : ""}`;
       const typeSelect = document.createElement("select");
       typeSelect.className = "ref-type-select";
       typeSelect.title = "Relationship type — colors the connector on the canvas (Dependency=emerald, Warning=amber, Broken=red)";

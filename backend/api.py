@@ -147,6 +147,7 @@ def api_update_node(project_id: str, node_id: str, body: NodeUpdate):
         body.classification,
         body.custom_color,
         body.planning_status,
+        body.locked,
     )
     if body.label is not None and body.label != old_label:
         tree.log_activity(project, f"Renamed '{old_label}' to '{body.label}'")
@@ -292,7 +293,8 @@ def api_add_reference(project_id: str, body: ReferenceCreate):
     project = storage.load_project(project_id)
     ref = tree.add_reference(project, body.from_, body.to, body.label, body.reference_type)
     tree.log_activity(
-        project, f"Linked '{project.nodes[body.from_].label}' -> '{project.nodes[body.to].label}'"
+        project,
+        f"Linked '{tree.canvas_object_label(project, body.from_)}' -> '{tree.canvas_object_label(project, body.to)}'",
     )
     storage.save_project(project)
     return ref
@@ -316,9 +318,12 @@ def api_update_reference(project_id: str, reference_id: str, body: ReferenceUpda
         body.line_style,
         body.opacity,
         body.show_arrowhead,
+        body.curve_style,
+        body.animation_speed,
     )
     tree.log_activity(
-        project, f"Relinked reference to '{project.nodes[ref.from_].label}' -> '{project.nodes[ref.to].label}'"
+        project,
+        f"Relinked reference to '{tree.canvas_object_label(project, ref.from_)}' -> '{tree.canvas_object_label(project, ref.to)}'",
     )
     storage.save_project(project)
     return ref

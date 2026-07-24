@@ -19,20 +19,29 @@
       </div>
       <div class="dropdown-wrap">
         <button id="insertBtn" class="btn btn-small" title="Add an architecture component or a free-form object to the canvas — same picker as right-click">+ Insert ▾</button>
-        <div id="insertMenu" class="dropdown-menu" hidden>
+        <div id="insertMenu" class="dropdown-menu insert-menu" hidden>
+          <div class="dropdown-section-label">Architecture</div>
           <button data-insert="node">◆ New Architecture Node <span class="menu-shortcut">N</span></button>
           <div class="dropdown-divider"></div>
+          <div class="dropdown-section-label">Planning</div>
           <button data-insert="sticky-note">🗒 Sticky Note <span class="menu-shortcut">S</span></button>
+          <button data-insert="text">A Text <span class="menu-shortcut">T</span></button>
+          <button data-insert="section-header">▬ Section Header</button>
+          <button data-insert="divider">─ Divider</button>
+          <div class="dropdown-divider"></div>
+          <div class="dropdown-section-label">Shapes</div>
           <button data-insert="rectangle">▭ Rectangle <span class="menu-shortcut">R</span></button>
           <button data-insert="rounded-rectangle">▢ Rounded Rectangle</button>
           <button data-insert="circle">◯ Circle</button>
           <button data-insert="diamond">◇ Diamond</button>
-          <button data-insert="text">A Text <span class="menu-shortcut">T</span></button>
+          <button data-insert="hexagon">⬡ Hexagon</button>
           <button data-insert="arrow">➜ Arrow</button>
-          <button data-insert="divider">─ Divider</button>
-          <button data-insert="section-header">▬ Section Header</button>
+          <div class="dropdown-divider"></div>
+          <div class="dropdown-section-label">Media</div>
           <button data-insert="image">🖼 Image</button>
           <button data-insert="icon">★ Icon</button>
+          <div class="dropdown-divider"></div>
+          <button id="importOutlineBtn">⇩ Import Outline…</button>
         </div>
       </div>
       <div class="dropdown-wrap">
@@ -45,9 +54,44 @@
       </div>
       <button id="undoBtn" class="btn btn-small" title="Undo the last change (Ctrl+Z)" disabled>↶ Undo</button>
       <button id="redoBtn" class="btn btn-small" title="Redo the last undone change (Ctrl+Shift+Z / Ctrl+Y)" disabled>↷ Redo</button>
-      <button id="importOutlineBtn" class="btn btn-small" title="Import a text outline as new children under the selected node">⇩ Import outline</button>
       <button id="presentEnterBtn" class="btn btn-small icon-only" title="Presentation Mode: hide all interface chrome and walk through the architecture as a guided story">▶</button>
-      <button id="themeToggleBtn" class="theme-toggle" title="Toggle light/dark theme"></button>
+      <div class="dropdown-wrap">
+        <button id="layoutMenuBtn" class="btn btn-small" title="Layout: arrangement and camera controls">Layout ▾</button>
+        <div id="layoutMenu" class="dropdown-menu" hidden>
+          <button id="menuUnlockLayoutBtn">🔓 Unlock Layout</button>
+          <button id="menuAutoArrangeBtn" hidden>⤾ Auto Arrange</button>
+          <div class="dropdown-divider"></div>
+          <button id="fitSelectionBtn">Fit Selection</button>
+          <button id="fitBranchBtn">Fit Branch</button>
+          <button id="fitAllBtn">Fit / Center Architecture</button>
+          <div class="dropdown-divider"></div>
+          <button id="collapseAllBtn">Collapse All</button>
+          <button id="expandBranchBtn">Expand Current Branch</button>
+          <button id="expandToLevelBtn">Expand to Level…</button>
+          <div class="dropdown-divider"></div>
+          <button id="menuZoomInBtn">+ Zoom In</button>
+          <button id="menuZoomOutBtn">− Zoom Out</button>
+        </div>
+      </div>
+      <span id="zoomLevel" class="zoom-level" title="Current zoom level">100%</span>
+      <div class="dropdown-wrap">
+        <button id="settingsMenuBtn" class="btn btn-small" title="Display settings">Settings ▾</button>
+        <div id="settingsMenu" class="dropdown-menu" hidden>
+          <button id="themeToggleBtn">🌓 Toggle Theme</button>
+          <div class="dropdown-divider"></div>
+          <label><input type="checkbox" id="showGridCheckbox"> ▦ Show Grid</label>
+          <label><input type="checkbox" id="snapGridCheckbox"> ▣ Snap to Grid</label>
+          <label><input type="checkbox" id="animateFlowCheckbox" checked> ⚡ Animate Data Flow</label>
+          <label><input type="checkbox" id="showDepsCheckbox"> ⇢ Show Dependencies</label>
+          <div class="dropdown-divider"></div>
+          <div class="dropdown-section-label">Show by Completion Status</div>
+          <label><input type="checkbox" data-filter="Not Started" checked> ○ Not Started</label>
+          <label><input type="checkbox" data-filter="In Progress" checked> ◐ In Progress</label>
+          <label><input type="checkbox" data-filter="Completed" checked> ✓ Completed</label>
+          <label><input type="checkbox" data-filter="Needs Review" checked> ⚠ Needs Review</label>
+          <label><input type="checkbox" data-filter="Blocked" checked> ⛔ Blocked</label>
+        </div>
+      </div>
       <a class="btn" href="index.html" title="Back to the project library">Back to library</a>
     </div>
   </div>
@@ -69,40 +113,6 @@
             <button id="focusModeBtn" class="btn btn-small active">Focus Mode</button>
             <button id="fullArchModeBtn" class="btn btn-small">Full Architecture</button>
           </div>
-          <button id="unlockLayoutBtn" class="btn btn-small" title="Unlock Layout: freely drag nodes into a custom arrangement without changing the architecture (switches to Full Architecture view). Auto Arrange restores the default layout.">🔓 Unlock Layout</button>
-          <button id="autoArrangeBtn" class="btn btn-small" title="Restore the automatic, structure-driven layout" hidden>⤾ Auto Arrange</button>
-          <button id="animateFlowBtn" class="btn btn-small active" title="Small particles travel along connectors to show relationships flowing, like data or electricity. On by default — click to turn off.">⚡ Animate</button>
-          <div class="dropdown-wrap">
-            <button id="statusFilterBtn" class="btn btn-small" title="Show or hide nodes by planning status — unfinished work stays fully visible, everything else fades">Filters ▾</button>
-            <div id="statusFilterMenu" class="dropdown-menu status-filter-menu" hidden>
-              <label><input type="checkbox" data-filter="Not Started" checked> ○ Not Started</label>
-              <label><input type="checkbox" data-filter="In Progress" checked> ◐ In Progress</label>
-              <label><input type="checkbox" data-filter="Completed" checked> ✓ Completed</label>
-              <label><input type="checkbox" data-filter="Needs Review" checked> ⚠ Needs Review</label>
-              <label><input type="checkbox" data-filter="Blocked" checked> ⛔ Blocked</label>
-              <div class="dropdown-divider"></div>
-              <label><input type="checkbox" id="showDepsCheckbox"> ⇢ Show Dependencies</label>
-            </div>
-          </div>
-          <div class="dropdown-wrap">
-            <button id="collapseExpandBtn" class="btn btn-small" title="Bulk collapse/expand controls for how much of the architecture is visible at once">▾/▸ Collapse/Expand</button>
-            <div id="collapseExpandMenu" class="dropdown-menu" hidden>
-              <button id="collapseAllBtn">Collapse All</button>
-              <button id="expandBranchBtn">Expand Current Branch</button>
-              <button id="expandToLevelBtn">Expand to Level…</button>
-            </div>
-          </div>
-          <div class="dropdown-wrap">
-            <button id="fitBtn" class="btn btn-small" title="Camera fitting: bring the selection, the current branch, or the whole tree into view">⤢ Fit ▾</button>
-            <div id="fitMenu" class="dropdown-menu" hidden>
-              <button id="fitSelectionBtn">Fit Selection</button>
-              <button id="fitBranchBtn">Fit Branch</button>
-              <button id="fitAllBtn">Fit Architecture</button>
-            </div>
-          </div>
-          <button id="zoomOutBtn" class="btn btn-small" title="Zoom out (or scroll the mouse wheel)">−</button>
-          <span id="zoomLevel" class="zoom-level" title="Current zoom level">100%</span>
-          <button id="zoomInBtn" class="btn btn-small" title="Zoom in (or scroll the mouse wheel)">+</button>
         </div>
       </div>
       <div id="refModeBanner" class="ref-mode-banner" hidden>
@@ -113,6 +123,7 @@
         <button id="selCollapseBtn" class="btn btn-small" title="Collapse every selected node">Collapse</button>
         <button id="selExpandBtn" class="btn btn-small" title="Expand every selected node">Expand</button>
         <button id="selColorBtn" class="btn btn-small" title="Apply a color override to every selected node">Color</button>
+        <button id="selConnectBtn" class="btn btn-small" title="Draw a relationship from this node to another — click the target node next">Connect</button>
         <div class="dropdown-wrap">
           <button id="selStatusBtn" class="btn btn-small" title="Set completion status on every selected node — the 5-stage tracker used by the progress bar and Filters, not the free-text Lifecycle Stage">Completion ▾</button>
           <div id="selStatusMenu" class="dropdown-menu" hidden>
@@ -154,7 +165,7 @@
         <button id="presentNextLevelBtn" class="btn btn-small" title="Go down to the first child (Down arrow)">Level ▼</button>
         <button id="presentBranchBtn" class="btn btn-small" title="Frame the focused node's whole branch">Focus Branch</button>
         <button id="presentZoomTopicBtn" class="btn btn-small" title="Zoom in close on the focused node">Zoom to Topic</button>
-        <button id="presentStoryBtn" class="btn btn-small" title="Auto-advance through the outline in story order (Space to toggle)">▶ Story Mode</button>
+        <button id="presentStoryBtn" class="btn btn-small" title="Auto-advance through the outline in story order (Space to toggle)">▶ Auto-Play</button>
         <button id="presentExitBtn" class="btn btn-small" title="Exit Presentation Mode (Esc)">✕ Exit</button>
       </div>
       <div class="canvas-svg-wrap">
@@ -170,11 +181,13 @@
       </div>
       <div id="inspectorContent" class="inspector-content"></div>
       <div id="healthFooter" class="health-footer" title="A quick structural-quality read at a glance. Click View Full Report for the complete breakdown.">
-        <div class="health-footer-header">
-          <span>Architecture Health</span>
-          <span id="healthFooterScore" class="health-footer-score"></span>
+        <div class="health-footer-main">
+          <div id="healthFooterGauge" class="health-footer-gauge"></div>
+          <div class="health-footer-col">
+            <div class="health-footer-title">Architecture Health</div>
+            <div id="healthFooterSummary" class="health-footer-summary"></div>
+          </div>
         </div>
-        <div id="healthFooterSummary" class="health-footer-summary"></div>
         <div id="healthFooterRecent" class="health-footer-recent"></div>
         <button id="viewFullReportBtn" class="btn btn-small" title="Open the complete validation breakdown and full change history">View Full Report</button>
       </div>

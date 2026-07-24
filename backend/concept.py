@@ -11,6 +11,7 @@ DEFAULT_SIZES = {
     "rounded-rectangle": (180, 100),
     "circle": (120, 120),
     "diamond": (160, 120),
+    "hexagon": (170, 120),
     "sticky-note": (160, 140),
     "text": (160, 40),
     "divider": (240, 4),

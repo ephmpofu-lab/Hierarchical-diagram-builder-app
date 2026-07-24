@@ -32,6 +32,7 @@ class Node(BaseModel):
     classification: Optional[str] = None
     custom_color: Optional[str] = None
     planning_status: Optional[str] = None
+    locked: bool = False
 
 
 class Reference(BaseModel):
@@ -48,6 +49,8 @@ class Reference(BaseModel):
     line_style: Optional[str] = None  # "solid" | "dashed" | "dotted"
     opacity: Optional[float] = None  # 0-1, None means fully opaque
     show_arrowhead: bool = True
+    curve_style: Optional[str] = None  # "curved" (default) | "straight"
+    animation_speed: Optional[float] = None  # seconds per lap, None means the default speed
 
     model_config = {"populate_by_name": True}
 
@@ -74,6 +77,8 @@ class ReferenceUpdate(BaseModel):
     line_style: Optional[str] = None
     opacity: Optional[float] = None
     show_arrowhead: Optional[bool] = None
+    curve_style: Optional[str] = None
+    animation_speed: Optional[float] = None
 
     model_config = {"populate_by_name": True}
 
@@ -189,6 +194,7 @@ class NodeUpdate(BaseModel):
     classification: Optional[str] = None
     custom_color: Optional[str] = None
     planning_status: Optional[str] = None
+    locked: Optional[bool] = None
 
 
 class MoveSiblingRequest(BaseModel):

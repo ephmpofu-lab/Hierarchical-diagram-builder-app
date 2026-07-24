@@ -45,6 +45,28 @@ def get_node_or_404(project: Project, node_id: str):
     return node
 
 
+def get_canvas_object_or_404(project: Project, object_id: str):
+    """Anything a reference/connector can point at: an architecture node OR a free (concept)
+    object — connectors are not exclusive to the hierarchy."""
+    node = project.nodes.get(object_id)
+    if node is not None:
+        return node
+    for obj in project.concept_objects:
+        if obj.id == object_id:
+            return obj
+    raise HTTPException(status_code=404, detail="Node or object not found")
+
+
+def canvas_object_label(project: Project, object_id: str) -> str:
+    node = project.nodes.get(object_id)
+    if node is not None:
+        return node.label
+    for obj in project.concept_objects:
+        if obj.id == object_id:
+            return obj.text or obj.type
+    return "?"
+
+
 def add_node(
     project: Project,
     parent_id: str,
@@ -92,6 +114,8 @@ def delete_node(project: Project, node_id: str, promote_children: bool) -> None:
     node = get_node_or_404(project, node_id)
     if node.parent_id is None:
         raise HTTPException(status_code=400, detail="Cannot delete the root node")
+    if node.locked:
+        raise HTTPException(status_code=400, detail="This component is locked — unlock it before deleting")
     parent = project.nodes[node.parent_id]
     index = parent.children.index(node_id)
 
@@ -138,8 +162,15 @@ def rename_node(
     classification: Optional[str] = None,
     custom_color: Optional[str] = None,
     planning_status: Optional[str] = None,
+    locked: Optional[bool] = None,
 ) -> None:
     node = get_node_or_404(project, node_id)
+    is_editing = any(
+        v is not None
+        for v in (label, notes, node_type, status, priority, complexity, risk_level, tags, owner, classification, custom_color, planning_status)
+    )
+    if node.locked and is_editing and locked is None:
+        raise HTTPException(status_code=400, detail="This component is locked")
     if label is not None:
         node.label = label
     if notes is not None:
@@ -172,6 +203,8 @@ def rename_node(
         node.custom_color = custom_color
     if planning_status is not None:
         node.planning_status = planning_status
+    if locked is not None:
+        node.locked = locked
 
 
 def move_sibling(project: Project, node_id: str, direction: str) -> None:
@@ -195,6 +228,8 @@ def move_sibling(project: Project, node_id: str, direction: str) -> None:
 
 def move_node_position(project: Project, node_id: str, canvas_x: float, canvas_y: float) -> None:
     node = get_node_or_404(project, node_id)
+    if node.locked:
+        raise HTTPException(status_code=400, detail="This component is locked")
     node.canvas_x = canvas_x
     node.canvas_y = canvas_y
 
@@ -255,6 +290,8 @@ def reparent_node(project: Project, node_id: str, new_parent_id: str) -> None:
     node = get_node_or_404(project, node_id)
     if node.parent_id is None:
         raise HTTPException(status_code=400, detail="Cannot reparent the root node this way")
+    if node.locked:
+        raise HTTPException(status_code=400, detail="This component is locked")
     new_parent = get_node_or_404(project, new_parent_id)
     if new_parent_id == node_id:
         raise HTTPException(status_code=400, detail="A node cannot be its own parent")
@@ -299,8 +336,8 @@ def promote_to_root(project: Project, node_id: str) -> None:
 def add_reference(
     project: Project, from_id: str, to_id: str, label: Optional[str], reference_type: Optional[str] = None
 ) -> Reference:
-    get_node_or_404(project, from_id)
-    get_node_or_404(project, to_id)
+    get_canvas_object_or_404(project, from_id)
+    get_canvas_object_or_404(project, to_id)
     if from_id == to_id:
         raise HTTPException(status_code=400, detail="Cannot reference a node to itself")
     ref = Reference(id=str(uuid.uuid4()), **{"from": from_id}, to=to_id, label=label, reference_type=reference_type)
@@ -330,14 +367,16 @@ def update_reference(
     line_style: Optional[str] = None,
     opacity: Optional[float] = None,
     show_arrowhead: Optional[bool] = None,
+    curve_style: Optional[str] = None,
+    animation_speed: Optional[float] = None,
 ) -> Reference:
     ref = next((r for r in project.references if r.id == reference_id), None)
     if ref is None:
         raise HTTPException(status_code=404, detail="Reference not found")
     new_from = from_id if from_id is not None else ref.from_
     new_to = to_id if to_id is not None else ref.to
-    get_node_or_404(project, new_from)
-    get_node_or_404(project, new_to)
+    get_canvas_object_or_404(project, new_from)
+    get_canvas_object_or_404(project, new_to)
     if new_from == new_to:
         raise HTTPException(status_code=400, detail="Cannot reference a node to itself")
     ref.from_ = new_from
@@ -362,6 +401,10 @@ def update_reference(
         ref.opacity = opacity
     if show_arrowhead is not None:
         ref.show_arrowhead = show_arrowhead
+    if curve_style is not None:
+        ref.curve_style = curve_style or None
+    if animation_speed is not None:
+        ref.animation_speed = animation_speed
     return ref
 
 
@@ -532,10 +575,11 @@ def build_validation_report(project: Project) -> ValidationReport:
     circular_references = find_reference_cycles(project)
 
     node_ids = set(project.nodes.keys())
+    canvas_object_ids = node_ids | {obj.id for obj in project.concept_objects}
     broken_references = [
-        f"Reference '{r.label or r.id}' points to a node that no longer exists"
+        f"Reference '{r.label or r.id}' points to an object that no longer exists"
         for r in project.references
-        if r.from_ not in node_ids or r.to not in node_ids
+        if r.from_ not in canvas_object_ids or r.to not in canvas_object_ids
     ]
 
     avg_depth = round(sum(depths) / len(depths), 2) if depths else 0.0
