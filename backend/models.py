@@ -168,6 +168,7 @@ class NodeCreate(BaseModel):
     parent_id: str
     label: str = "New node"
     insert_after: Optional[str] = None
+    insert_before: Optional[str] = None
     is_group: bool = False
 
 

@@ -86,6 +86,7 @@ def add_node(
     node_id: str,
     insert_after: Optional[str] = None,
     is_group: bool = False,
+    insert_before: Optional[str] = None,
 ) -> None:
     from .models import Node
 
@@ -104,6 +105,11 @@ def add_node(
             raise HTTPException(status_code=400, detail="insert_after is not a child of parent_id")
         index = parent.children.index(insert_after)
         parent.children.insert(index + 1, node_id)
+    elif insert_before is not None:
+        if insert_before not in parent.children:
+            raise HTTPException(status_code=400, detail="insert_before is not a child of parent_id")
+        index = parent.children.index(insert_before)
+        parent.children.insert(index, node_id)
     else:
         parent.children.append(node_id)
 

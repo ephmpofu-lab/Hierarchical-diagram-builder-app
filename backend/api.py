@@ -128,7 +128,7 @@ def api_restore_project(project_id: str, body: Project):
 def api_add_node(project_id: str, body: NodeCreate):
     project = storage.load_project(project_id)
     node_id = str(uuid.uuid4())
-    tree.add_node(project, body.parent_id, body.label, node_id, body.insert_after, body.is_group)
+    tree.add_node(project, body.parent_id, body.label, node_id, body.insert_after, body.is_group, body.insert_before)
     tree.log_activity(project, f"Added {'group' if body.is_group else 'node'} '{body.label}'")
     storage.save_project(project)
     node = project.nodes[node_id]

@@ -637,6 +637,24 @@ async function addSiblingBelow(nodeId) {
   focusAndRenameRow(newNode.id);
 }
 
+async function addSiblingAbove(nodeId) {
+  const node = project.nodes[nodeId];
+  if (node.parent_id === null) {
+    return addChild(nodeId);
+  }
+  pushUndoSnapshot("Add Parallel Component");
+  const res = await fetch(`/api/projects/${projectId}/nodes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ parent_id: node.parent_id, label: "New Component", insert_before: nodeId }),
+  });
+  const newNode = await res.json();
+  await loadProject();
+  focusedNodeId = newNode.id;
+  render();
+  focusAndRenameRow(newNode.id);
+}
+
 function focusAndRenameRow(nodeId) {
   const row = outlineTree.querySelector(`.outline-row[data-id="${nodeId}"]`);
   if (!row) return;
@@ -2274,16 +2292,20 @@ function drawTreeEdge(from, to, fromId, toId, faded = false) {
   const group = document.createElementNS(SVG_NS, "g");
   const key = toId ? edgeKey("tree", toId) : null;
 
+  // Hierarchy edges are always straight lines (never curved) — same "tree diagram" straight-
+  // line convention as the multi-child trunk+bus connector, so Auto Arrange and free dragging
+  // both produce a consistent look. Reference edges keep their own separate curve/straight
+  // per-connector choice (drawRefEdge) — unrelated to this.
   const hit = document.createElementNS(SVG_NS, "path");
   hit.setAttribute("class", "edge-hit");
-  hit.setAttribute("d", curvePath(from, to));
+  hit.setAttribute("d", straightPath(from, to));
 
   const line = document.createElementNS(SVG_NS, "path");
   line.setAttribute(
     "class",
     "edge" + (faded ? " faded-edge" : "") + (key && selectedEdgeKey === key ? " selected" : "")
   );
-  line.setAttribute("d", curvePath(from, to));
+  line.setAttribute("d", straightPath(from, to));
   if (fromId) group.dataset.fromId = fromId;
   if (toId) group.dataset.toId = toId;
   group.dataset.x1 = from.x;
@@ -2294,7 +2316,7 @@ function drawTreeEdge(from, to, fromId, toId, faded = false) {
   group.appendChild(hit);
   group.appendChild(line);
   if (animateDataFlow && !faded) {
-    group.appendChild(drawFlowParticle(curvePath(from, to), "var(--accent)"));
+    group.appendChild(drawFlowParticle(straightPath(from, to), "var(--accent)"));
   }
   if (key) {
     group.addEventListener("click", (e) => {
@@ -3501,6 +3523,35 @@ function openContextMenu(nodeId, clientX, clientY) {
       await loadProject();
       focusNode(newNode.id);
     }, { disabled: isRoot || locked }),
+    contextMenuItem("+ Insert Sibling Above", () => addSiblingAbove(nodeId), { disabled: isRoot || locked }),
+    contextMenuItem(
+      "⬆ Promote (Move Up a Level)",
+      async () => {
+        pushUndoSnapshot("Promote");
+        const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/outdent`, { method: "POST" });
+        if (res.ok) {
+          await loadProject();
+        } else {
+          undoStack.pop();
+          updateUndoRedoButtons();
+        }
+      },
+      { disabled: isRoot || locked || project.nodes[node.parent_id].parent_id === null }
+    ),
+    contextMenuItem(
+      "⬇ Demote (Move Under Previous Sibling)",
+      async () => {
+        pushUndoSnapshot("Demote");
+        const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/indent`, { method: "POST" });
+        if (res.ok) {
+          await loadProject();
+        } else {
+          undoStack.pop();
+          updateUndoRedoButtons();
+        }
+      },
+      { disabled: isRoot || locked || project.nodes[node.parent_id].children.indexOf(nodeId) === 0 }
+    ),
     contextMenuItem("▤ Add Group", () => addGroupUnder(nodeId), { disabled: locked }),
     contextMenuItem("✎ Rename", () => {
       const label = prompt("Rename node:", node.label);
