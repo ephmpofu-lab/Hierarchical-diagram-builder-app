@@ -214,7 +214,9 @@ let selectedEdgeKey = null; // "ref:<refId>" or "tree:<childId>"
 let lastVisiblePositions = new Map();
 let lastViewW = 800;
 let lastViewH = 500;
-let showDependencies = false;
+// On by default, same reasoning as animateDataFlow — a connection you just drew should be
+// visible immediately, not hidden behind a Settings toggle nobody knows to flip.
+let showDependencies = true;
 let expandedGroupOverflow = false; // "show all" for progressive disclosure of many ungrouped children
 let lastValidationReport = null;
 let viewMode = "focus"; // "focus" | "full"
@@ -1644,6 +1646,11 @@ function drawConceptObject(obj) {
   group.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+    if (refMode) {
+      e.preventDefault();
+      handleRefModeClick(obj.id);
+      return;
+    }
     selectedConceptObjectId = obj.id;
     startConceptDrag(e, obj.id, "move");
     renderCanvas();
@@ -1803,6 +1810,14 @@ function openConceptObjectContextMenu(objId, clientX, clientY) {
   );
   menu.appendChild(
     contextMenuItem("✎ Edit Text", () => startConceptTextEdit(objId))
+  );
+  menu.appendChild(
+    contextMenuItem("⇢ Connect", () => {
+      refMode = true;
+      pendingRefFrom = objId;
+      refModeBanner.hidden = false;
+      renderCanvas();
+    })
   );
   menu.appendChild(
     contextMenuItem("⧉ Duplicate", async () => {
