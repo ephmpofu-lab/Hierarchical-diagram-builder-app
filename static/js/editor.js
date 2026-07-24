@@ -1269,6 +1269,7 @@ function computeDeterministicFullLayout(viewW, viewH) {
 
 function renderFullArchitectureCanvas(viewW, viewH) {
   const { positions, childrenByParent, overflowByParent, bounds } = computeFullArchitectureLayout(viewW, viewH);
+  const visibleIds = new Set(positions.keys());
 
   const viewport = document.createElementNS(SVG_NS, "g");
   viewport.setAttribute("class", "viewport-group" + (smoothZoomNextRender ? " smooth" : ""));
@@ -1280,6 +1281,7 @@ function renderFullArchitectureCanvas(viewW, viewH) {
   if (grid) viewport.appendChild(grid);
 
   const edgesGroup = document.createElementNS(SVG_NS, "g");
+  const refGroup = document.createElementNS(SVG_NS, "g");
   const nodesGroup = document.createElementNS(SVG_NS, "g");
 
   // Same trunk+bus distribution rail as Focus Mode, per parent — never a flat fan of
@@ -1288,6 +1290,41 @@ function renderFullArchitectureCanvas(viewW, viewH) {
     const parentPos = positions.get(parentId);
     if (!parentPos) continue;
     edgesGroup.appendChild(drawTreeBranches(parentPos, children, positions));
+  }
+
+  if (showDependencies) {
+    // Unlike Focus Mode, there's no single focused node to scope to — the whole tree is
+    // already on screen, so every non-hidden reference draws (still tagged instead of drawn
+    // full-length when one endpoint is inside a collapsed branch).
+    const tagCounters = new Map();
+    const endpointVisible = (id) => (project.nodes[id] ? visibleIds.has(id) : true);
+    const endpointPos = (id) => (project.nodes[id] ? positions.get(id) : canvasObjectCenter(id));
+    for (const ref of project.references) {
+      if (ref.connector_hidden) continue;
+      const fromVisible = endpointVisible(ref.from);
+      const toVisible = endpointVisible(ref.to);
+      if (fromVisible && toVisible) {
+        const fromPos = endpointPos(ref.from);
+        const toPos = endpointPos(ref.to);
+        if (!fromPos || !toPos) continue;
+        refGroup.appendChild(drawRefEdge(fromPos, toPos, ref));
+        if (selectedEdgeKey === edgeKey("ref", ref.id)) {
+          refGroup.appendChild(drawRefHandle(fromPos, ref, "from"));
+          refGroup.appendChild(drawRefHandle(toPos, ref, "to"));
+        }
+      } else if (fromVisible || toVisible) {
+        const visibleId = fromVisible ? ref.from : ref.to;
+        const otherId = fromVisible ? ref.to : ref.from;
+        const otherPos = endpointPos(visibleId);
+        if (!otherPos) continue;
+        const index = tagCounters.get(visibleId) || 0;
+        tagCounters.set(visibleId, index + 1);
+        const arrow = fromVisible ? "→" : "←";
+        refGroup.appendChild(
+          drawRefTag(otherPos, `${arrow} ${canvasObjectLabel(otherId)}`, otherId, index, visibleId)
+        );
+      }
+    }
   }
 
   for (const [nodeId, pos] of positions.entries()) {
@@ -1305,6 +1342,7 @@ function renderFullArchitectureCanvas(viewW, viewH) {
   }
 
   viewport.appendChild(edgesGroup);
+  viewport.appendChild(refGroup);
   viewport.appendChild(nodesGroup);
   viewport.appendChild(buildFreeObjectsLayer());
   canvasSvg.appendChild(viewport);
