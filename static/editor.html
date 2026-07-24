@@ -12,14 +12,28 @@
 <body>
   <div class="topbar">
     <h1 id="projectName">Loading…</h1>
-    <div class="app-mode-toggle" title="Architecture Mode is the structured, validated component tree. Concept Mode is a freeform planning board for sketching ideas before they become structure.">
-      <button id="architectureModeBtn" class="btn btn-small active">Architecture Mode</button>
-      <button id="conceptModeBtn" class="btn btn-small">Concept Mode</button>
-    </div>
     <div class="topbar-actions">
       <div class="search-wrap">
         <input id="searchBox" type="text" placeholder="Search nodes…" autocomplete="off">
         <div id="searchResults" class="search-results" hidden></div>
+      </div>
+      <div class="dropdown-wrap">
+        <button id="insertBtn" class="btn btn-small" title="Add an architecture component or a free-form object to the canvas — same picker as right-click">+ Insert ▾</button>
+        <div id="insertMenu" class="dropdown-menu" hidden>
+          <button data-insert="node">◆ New Architecture Node <span class="menu-shortcut">N</span></button>
+          <div class="dropdown-divider"></div>
+          <button data-insert="sticky-note">🗒 Sticky Note <span class="menu-shortcut">S</span></button>
+          <button data-insert="rectangle">▭ Rectangle <span class="menu-shortcut">R</span></button>
+          <button data-insert="rounded-rectangle">▢ Rounded Rectangle</button>
+          <button data-insert="circle">◯ Circle</button>
+          <button data-insert="diamond">◇ Diamond</button>
+          <button data-insert="text">A Text <span class="menu-shortcut">T</span></button>
+          <button data-insert="arrow">➜ Arrow</button>
+          <button data-insert="divider">─ Divider</button>
+          <button data-insert="section-header">▬ Section Header</button>
+          <button data-insert="image">🖼 Image</button>
+          <button data-insert="icon">★ Icon</button>
+        </div>
       </div>
       <div class="dropdown-wrap">
         <button id="exportBtn" class="btn" title="Export the current view or whole tree">Export ▾</button>
@@ -45,21 +59,6 @@
         <button id="outlineCollapseBtn" class="pane-collapse-btn" title="Collapse this panel for a distraction-free canvas">«</button>
       </div>
       <div id="outlineTree" class="outline-tree"></div>
-      <div id="toolboxContent" class="toolbox-content" hidden>
-        <p class="inspector-empty-note">Click a shape to place it on the board, then drag it into position.</p>
-        <div class="toolbox-grid">
-          <button class="toolbox-item" data-obj-type="rectangle" title="Rectangle">▭<span>Rectangle</span></button>
-          <button class="toolbox-item" data-obj-type="rounded-rectangle" title="Rounded Rectangle">▢<span>Rounded</span></button>
-          <button class="toolbox-item" data-obj-type="circle" title="Circle">◯<span>Circle</span></button>
-          <button class="toolbox-item" data-obj-type="diamond" title="Diamond">◇<span>Diamond</span></button>
-          <button class="toolbox-item" data-obj-type="sticky-note" title="Sticky Note">🗒<span>Sticky Note</span></button>
-          <button class="toolbox-item" data-obj-type="text" title="Text">A<span>Text</span></button>
-          <button class="toolbox-item" data-obj-type="arrow" title="Arrow">➜<span>Arrow</span></button>
-          <button class="toolbox-item" data-obj-type="divider" title="Divider">─<span>Divider</span></button>
-          <button class="toolbox-item" data-obj-type="icon" title="Icon">★<span>Icon</span></button>
-        </div>
-        <p class="inspector-empty-note">Right-click any object for color, border, layer order, and Convert to Architecture Component.</p>
-      </div>
     </div>
 
     <div class="pane canvas-pane">
@@ -70,6 +69,9 @@
             <button id="focusModeBtn" class="btn btn-small active">Focus Mode</button>
             <button id="fullArchModeBtn" class="btn btn-small">Full Architecture</button>
           </div>
+          <button id="unlockLayoutBtn" class="btn btn-small" title="Unlock Layout: freely drag nodes into a custom arrangement without changing the architecture (switches to Full Architecture view). Auto Arrange restores the default layout.">🔓 Unlock Layout</button>
+          <button id="autoArrangeBtn" class="btn btn-small" title="Restore the automatic, structure-driven layout" hidden>⤾ Auto Arrange</button>
+          <button id="animateFlowBtn" class="btn btn-small active" title="Small particles travel along connectors to show relationships flowing, like data or electricity. On by default — click to turn off.">⚡ Animate</button>
           <div class="dropdown-wrap">
             <button id="statusFilterBtn" class="btn btn-small" title="Show or hide nodes by planning status — unfinished work stays fully visible, everything else fades">Filters ▾</button>
             <div id="statusFilterMenu" class="dropdown-menu status-filter-menu" hidden>
@@ -80,7 +82,6 @@
               <label><input type="checkbox" data-filter="Blocked" checked> ⛔ Blocked</label>
               <div class="dropdown-divider"></div>
               <label><input type="checkbox" id="showDepsCheckbox"> ⇢ Show Dependencies</label>
-              <label title="Small particles travel along both hierarchy and reference connectors — a subtle, optional effect, off by default"><input type="checkbox" id="animateFlowCheckbox"> ⚡ Animate Data Flow</label>
             </div>
           </div>
           <div class="dropdown-wrap">
@@ -113,7 +114,7 @@
         <button id="selExpandBtn" class="btn btn-small" title="Expand every selected node">Expand</button>
         <button id="selColorBtn" class="btn btn-small" title="Apply a color override to every selected node">Color</button>
         <div class="dropdown-wrap">
-          <button id="selStatusBtn" class="btn btn-small" title="Set planning status on every selected node">Status ▾</button>
+          <button id="selStatusBtn" class="btn btn-small" title="Set completion status on every selected node — the 5-stage tracker used by the progress bar and Filters, not the free-text Lifecycle Stage">Completion ▾</button>
           <div id="selStatusMenu" class="dropdown-menu" hidden>
             <button data-status="Not Started">○ Not Started</button>
             <button data-status="In Progress">◐ In Progress</button>

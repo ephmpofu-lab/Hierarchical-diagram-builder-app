@@ -113,7 +113,11 @@ const exportMenu = document.getElementById("exportMenu");
 const statusFilterBtn = document.getElementById("statusFilterBtn");
 const statusFilterMenu = document.getElementById("statusFilterMenu");
 const showDepsCheckbox = document.getElementById("showDepsCheckbox");
-const animateFlowCheckbox = document.getElementById("animateFlowCheckbox");
+const animateFlowBtn = document.getElementById("animateFlowBtn");
+const unlockLayoutBtn = document.getElementById("unlockLayoutBtn");
+const autoArrangeBtn = document.getElementById("autoArrangeBtn");
+const insertBtn = document.getElementById("insertBtn");
+const insertMenu = document.getElementById("insertMenu");
 const collapseExpandBtn = document.getElementById("collapseExpandBtn");
 const collapseExpandMenu = document.getElementById("collapseExpandMenu");
 const collapseAllBtn = document.getElementById("collapseAllBtn");
@@ -142,10 +146,6 @@ const selClearBtn = document.getElementById("selClearBtn");
 const focusModeBtn = document.getElementById("focusModeBtn");
 const fullArchModeBtn = document.getElementById("fullArchModeBtn");
 const minimapSvg = document.getElementById("minimapSvg");
-const architectureModeBtn = document.getElementById("architectureModeBtn");
-const conceptModeBtn = document.getElementById("conceptModeBtn");
-const outlinePaneTitle = document.getElementById("outlinePaneTitle");
-const toolboxContent = document.getElementById("toolboxContent");
 const presentEnterBtn = document.getElementById("presentEnterBtn");
 const presentationBar = document.getElementById("presentationBar");
 const presentPrevLevelBtn = document.getElementById("presentPrevLevelBtn");
@@ -263,6 +263,8 @@ async function loadProject() {
   rootId = Object.values(project.nodes).find((n) => n.parent_id === null).id;
   projectNameEl.textContent = project.name;
   if (!focusedNodeId) focusedNodeId = rootId;
+  layoutUnlocked = !!project.layout_unlocked;
+  updateUnlockLayoutButton();
   render();
 }
 
@@ -652,21 +654,17 @@ document.addEventListener("keydown", async (e) => {
     return;
   }
 
-  if (!typingGlobal && appMode === "concept" && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
-    if (selectedConceptObjectId) {
-      const obj = project.concept_objects.find((o) => o.id === selectedConceptObjectId);
-      if (obj) conceptClipboard = { ...obj };
-    }
+  if (!typingGlobal && selectedConceptObjectId && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
+    const obj = project.concept_objects.find((o) => o.id === selectedConceptObjectId);
+    if (obj) conceptClipboard = { ...obj };
     return;
   }
-  if (!typingGlobal && appMode === "concept" && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
-    if (conceptClipboard) {
-      const svgRect = canvasSvg.getBoundingClientRect();
-      await pasteConceptObject(svgRect.left + svgRect.width / 2, svgRect.top + svgRect.height / 2);
-    }
+  if (!typingGlobal && conceptClipboard && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+    const svgRect = canvasSvg.getBoundingClientRect();
+    await pasteConceptObject(svgRect.left + svgRect.width / 2, svgRect.top + svgRect.height / 2);
     return;
   }
-  if (!typingGlobal && appMode === "concept" && e.key === "Delete" && selectedConceptObjectId) {
+  if (!typingGlobal && e.key === "Delete" && selectedConceptObjectId) {
     const objId = selectedConceptObjectId;
     pushUndoSnapshot("Delete");
     const res = await fetch(`/api/projects/${projectId}/concept-objects/${objId}`, { method: "DELETE" });
@@ -701,6 +699,26 @@ document.addEventListener("keydown", async (e) => {
   if (!focusedNodeId || editingNodeId) return;
   const activeTag = document.activeElement.tagName;
   if (activeTag === "INPUT" || activeTag === "TEXTAREA") return;
+
+  const noModifiers = !e.ctrlKey && !e.metaKey && !e.altKey;
+  const key = e.key.toLowerCase();
+  if (noModifiers && key === "n") {
+    e.preventDefault();
+    insertNewArchitectureNode();
+    return;
+  } else if (noModifiers && key === "s") {
+    e.preventDefault();
+    createConceptObject("sticky-note");
+    return;
+  } else if (noModifiers && key === "t") {
+    e.preventDefault();
+    createConceptObject("text");
+    return;
+  } else if (noModifiers && key === "r") {
+    e.preventDefault();
+    createConceptObject("rectangle");
+    return;
+  }
 
   if (e.key === "Tab") {
     e.preventDefault();
@@ -939,16 +957,28 @@ function renderCanvas() {
   const viewW = rect.width || 800;
   const viewH = rect.height || 500;
 
-  if (appMode === "concept") {
-    renderConceptCanvas(viewW, viewH);
-    closeFloatingNodeToolbar();
-  } else if (viewMode === "full") {
+  if (viewMode === "full") {
     renderFullArchitectureCanvas(viewW, viewH);
-    updateFloatingNodeToolbar(rect);
   } else {
     renderFocusCanvas(viewW, viewH);
-    updateFloatingNodeToolbar(rect);
   }
+  updateFloatingNodeToolbar(rect);
+
+  canvasSvg.onclick = (e) => {
+    if (e.target !== canvasSvg) return;
+    let changed = false;
+    if (selectedEdgeKey) {
+      selectedEdgeKey = null;
+      closeConnectorPanel();
+      changed = true;
+    }
+    if (selectedConceptObjectId) {
+      selectedConceptObjectId = null;
+      changed = true;
+    }
+    if (changed) renderCanvas();
+  };
+
   smoothZoomNextRender = false;
 }
 
@@ -963,6 +993,8 @@ function renderFocusCanvas(viewW, viewH) {
     "transform",
     `translate(${viewW / 2 + panOffsetX} ${viewH / 2 + panOffsetY}) scale(${zoomScale}) translate(${-viewW / 2} ${-viewH / 2})`
   );
+  const grid = buildGridBackground();
+  if (grid) viewport.appendChild(grid);
 
   const edgesGroup = document.createElementNS(SVG_NS, "g");
   const refGroup = document.createElementNS(SVG_NS, "g");
@@ -1059,19 +1091,12 @@ function renderFocusCanvas(viewW, viewH) {
   viewport.appendChild(edgesGroup);
   viewport.appendChild(refGroup);
   viewport.appendChild(nodesGroup);
+  viewport.appendChild(buildFreeObjectsLayer());
   canvasSvg.appendChild(viewport);
 
   lastVisiblePositions = positions;
   lastViewW = viewW;
   lastViewH = viewH;
-
-  canvasSvg.onclick = (e) => {
-    if (e.target === canvasSvg && selectedEdgeKey) {
-      selectedEdgeKey = null;
-      closeConnectorPanel();
-      renderCanvas();
-    }
-  };
 }
 
 // Full Architecture mode: every non-collapsed node in the project, laid out one row per
@@ -1102,6 +1127,14 @@ function computeFullArchitectureLayout(viewW, viewH) {
   const levels = [...levelBuckets.keys()].sort((a, b) => a - b);
   levels.forEach((level, rowIndex) => {
     const nodesInRow = levelBuckets.get(level);
+    if (layoutUnlocked) {
+      // Unlock Layout: position is whatever the user last dragged it to (persisted on the
+      // node itself), not the computed row/column grid — the architecture is unaffected.
+      for (const node of nodesInRow) {
+        positions.set(node.id, { x: node.canvas_x, y: node.canvas_y });
+      }
+      return;
+    }
     const n = nodesInRow.length;
     const rowWidth = n * NODE_W + Math.max(0, n - 1) * COL_GAP;
     const startX = viewW / 2 - rowWidth / 2 + NODE_W / 2;
@@ -1139,6 +1172,8 @@ function renderFullArchitectureCanvas(viewW, viewH) {
     "transform",
     `translate(${viewW / 2 + panOffsetX} ${viewH / 2 + panOffsetY}) scale(${zoomScale}) translate(${-viewW / 2} ${-viewH / 2})`
   );
+  const grid = buildGridBackground();
+  if (grid) viewport.appendChild(grid);
 
   const edgesGroup = document.createElementNS(SVG_NS, "g");
   const nodesGroup = document.createElementNS(SVG_NS, "g");
@@ -1167,31 +1202,24 @@ function renderFullArchitectureCanvas(viewW, viewH) {
 
   viewport.appendChild(edgesGroup);
   viewport.appendChild(nodesGroup);
+  viewport.appendChild(buildFreeObjectsLayer());
   canvasSvg.appendChild(viewport);
 
   lastVisiblePositions = positions;
   lastViewW = viewW;
   lastViewH = viewH;
-
-  canvasSvg.onclick = (e) => {
-    if (e.target === canvasSvg && selectedEdgeKey) {
-      selectedEdgeKey = null;
-      closeConnectorPanel();
-      renderCanvas();
-    }
-  };
 }
 
-// ---------- Concept Mode: freeform planning board ----------
-// A physical-planning-board counterpart to the structured architecture tree. Objects are
-// freely positioned (not the deterministic grid the tree uses), dragged, resized, and
-// right-clicked for color/border/layer/convert actions — additive to the app, never
-// replacing the architecture view, which stays exactly as it was.
-let appMode = "architecture";
+// ---------- Free objects: sticky notes, shapes, etc. ----------
+// One workspace: architecture nodes (structured, tree-connected) and free objects (sticky
+// notes, shapes, etc. — not part of the hierarchy) render on the same canvas at all times.
+// There is no mode toggle; "structured vs free" is a property of each object, not a
+// workspace-wide switch.
 let selectedConceptObjectId = null;
 let conceptDragState = null;
 let showConceptGrid = false;
 let snapToConceptGrid = false;
+let layoutUnlocked = false; // mirrors project.layout_unlocked — see setLayoutUnlocked()
 const CONCEPT_GRID_SIZE = 20;
 
 function snapConceptValue(v) {
@@ -1207,28 +1235,48 @@ const CONCEPT_DEFAULT_COLORS = {
   text: "#f1f5f9",
   arrow: "#64748b",
   divider: "#64748b",
+  "section-header": "#f1f5f9",
+  image: "#334155",
   icon: "#8b5cf6",
 };
 
-function setAppMode(mode) {
-  if (appMode === mode) return;
-  appMode = mode;
-  architectureModeBtn.classList.toggle("active", mode === "architecture");
-  conceptModeBtn.classList.toggle("active", mode === "concept");
-  outlineTree.hidden = mode !== "architecture";
-  toolboxContent.hidden = mode !== "concept";
-  outlinePaneTitle.textContent = mode === "architecture" ? "Outline" : "Toolbox";
-  selectedConceptObjectId = null;
-  closeContextMenu();
-  renderCanvas();
-}
-architectureModeBtn.addEventListener("click", () => setAppMode("architecture"));
-conceptModeBtn.addEventListener("click", () => setAppMode("concept"));
+const INSERT_TYPES = [
+  ["sticky-note", "🗒 Sticky Note"],
+  ["rectangle", "▭ Rectangle"],
+  ["rounded-rectangle", "▢ Rounded Rectangle"],
+  ["circle", "◯ Circle"],
+  ["diamond", "◇ Diamond"],
+  ["text", "A Text"],
+  ["arrow", "➜ Arrow"],
+  ["divider", "─ Divider"],
+  ["section-header", "▬ Section Header"],
+  ["image", "🖼 Image"],
+  ["icon", "★ Icon"],
+];
 
-toolboxContent.addEventListener("click", (e) => {
-  const btn = e.target.closest(".toolbox-item");
+async function insertNewArchitectureNode() {
+  const parentId = focusedNodeId || rootId;
+  if (parentId) await addChild(parentId);
+}
+
+insertBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  insertMenu.hidden = !insertMenu.hidden;
+});
+insertMenu.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-insert]");
   if (!btn) return;
-  createConceptObject(btn.dataset.objType);
+  insertMenu.hidden = true;
+  if (btn.dataset.insert === "node") {
+    insertNewArchitectureNode();
+  } else {
+    createConceptObject(btn.dataset.insert);
+  }
+});
+document.addEventListener("click", (e) => {
+  if (!insertMenu.hidden && !insertBtn.contains(e.target) && !insertMenu.contains(e.target)) {
+    insertMenu.hidden = true;
+  }
 });
 
 async function createConceptObject(type) {
@@ -1238,7 +1286,7 @@ async function createConceptObject(type) {
   const viewH = rect.height || 500;
   const cx = snapConceptValue(viewW / 2 - panOffsetX / zoomScale);
   const cy = snapConceptValue(viewH / 2 - panOffsetY / zoomScale);
-  const needsText = type === "text" || type === "sticky-note" || type === "icon";
+  const needsText = type === "text" || type === "sticky-note" || type === "icon" || type === "section-header";
   const res = await fetch(`/api/projects/${projectId}/concept-objects`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1246,7 +1294,7 @@ async function createConceptObject(type) {
       type,
       x: cx,
       y: cy,
-      text: needsText ? (type === "icon" ? "★" : "Double-click to edit") : "",
+      text: needsText ? (type === "icon" ? "★" : type === "section-header" ? "Section" : "Double-click to edit") : "",
     }),
   });
   const obj = await res.json();
@@ -1280,58 +1328,46 @@ async function pasteConceptObject(clientX, clientY) {
   await loadProject();
 }
 
-function renderConceptCanvas(viewW, viewH) {
-  const viewport = document.createElementNS(SVG_NS, "g");
-  viewport.setAttribute("class", "viewport-group" + (smoothZoomNextRender ? " smooth" : ""));
-  viewport.setAttribute(
-    "transform",
-    `translate(${viewW / 2 + panOffsetX} ${viewH / 2 + panOffsetY}) scale(${zoomScale}) translate(${-viewW / 2} ${-viewH / 2})`
-  );
+// Shared by both Focus and Full Architecture rendering: the grid backdrop (opt-in, mainly
+// useful while Unlock Layout / free objects are being positioned) and the free-objects layer
+// itself, drawn above the node/edge layers so annotations sit on top of the architecture.
+function buildGridBackground() {
+  if (!showConceptGrid) return null;
+  const g = document.createElementNS(SVG_NS, "g");
+  const defs = document.createElementNS(SVG_NS, "defs");
+  const pattern = document.createElementNS(SVG_NS, "pattern");
+  pattern.setAttribute("id", "conceptGrid");
+  pattern.setAttribute("width", CONCEPT_GRID_SIZE);
+  pattern.setAttribute("height", CONCEPT_GRID_SIZE);
+  pattern.setAttribute("patternUnits", "userSpaceOnUse");
+  const dot = document.createElementNS(SVG_NS, "circle");
+  dot.setAttribute("cx", 1);
+  dot.setAttribute("cy", 1);
+  dot.setAttribute("r", 1);
+  dot.setAttribute("class", "concept-grid-dot");
+  pattern.appendChild(dot);
+  defs.appendChild(pattern);
+  g.appendChild(defs);
 
-  if (showConceptGrid) {
-    const defs = document.createElementNS(SVG_NS, "defs");
-    const pattern = document.createElementNS(SVG_NS, "pattern");
-    pattern.setAttribute("id", "conceptGrid");
-    pattern.setAttribute("width", CONCEPT_GRID_SIZE);
-    pattern.setAttribute("height", CONCEPT_GRID_SIZE);
-    pattern.setAttribute("patternUnits", "userSpaceOnUse");
-    const dot = document.createElementNS(SVG_NS, "circle");
-    dot.setAttribute("cx", 1);
-    dot.setAttribute("cy", 1);
-    dot.setAttribute("r", 1);
-    dot.setAttribute("class", "concept-grid-dot");
-    pattern.appendChild(dot);
-    defs.appendChild(pattern);
-    viewport.appendChild(defs);
+  const bg = document.createElementNS(SVG_NS, "rect");
+  bg.setAttribute("x", -5000);
+  bg.setAttribute("y", -5000);
+  bg.setAttribute("width", 10000);
+  bg.setAttribute("height", 10000);
+  bg.setAttribute("fill", "url(#conceptGrid)");
+  bg.style.pointerEvents = "none";
+  g.appendChild(bg);
+  return g;
+}
 
-    const bg = document.createElementNS(SVG_NS, "rect");
-    bg.setAttribute("x", -5000);
-    bg.setAttribute("y", -5000);
-    bg.setAttribute("width", 10000);
-    bg.setAttribute("height", 10000);
-    bg.setAttribute("fill", "url(#conceptGrid)");
-    bg.style.pointerEvents = "none";
-    viewport.appendChild(bg);
-  }
-
+function buildFreeObjectsLayer() {
   const objectsGroup = document.createElementNS(SVG_NS, "g");
+  objectsGroup.setAttribute("class", "free-objects-layer");
   const sorted = [...project.concept_objects].sort((a, b) => a.z_index - b.z_index);
   for (const obj of sorted) {
     objectsGroup.appendChild(drawConceptObject(obj));
   }
-  viewport.appendChild(objectsGroup);
-  canvasSvg.appendChild(viewport);
-
-  lastVisiblePositions = new Map();
-  lastViewW = viewW;
-  lastViewH = viewH;
-
-  canvasSvg.onclick = (e) => {
-    if (e.target === canvasSvg && selectedConceptObjectId) {
-      selectedConceptObjectId = null;
-      renderCanvas();
-    }
-  };
+  return objectsGroup;
 }
 
 function drawConceptObject(obj) {
@@ -1378,7 +1414,7 @@ function drawConceptObject(obj) {
     shape.setAttribute("y2", obj.y);
     shape.setAttribute("stroke", color);
     shape.setAttribute("marker-end", "url(#refArrow)");
-  } else if (obj.type === "text" || obj.type === "icon") {
+  } else if (obj.type === "text" || obj.type === "icon" || obj.type === "section-header") {
     shape = document.createElementNS(SVG_NS, "rect");
     shape.setAttribute("x", obj.x);
     shape.setAttribute("y", obj.y);
@@ -1386,6 +1422,27 @@ function drawConceptObject(obj) {
     shape.setAttribute("height", obj.height);
     shape.setAttribute("fill", "transparent");
     shape.style.stroke = "none";
+  } else if (obj.type === "image") {
+    const isUrl = /^(https?:|data:)/.test(obj.text || "");
+    if (isUrl) {
+      shape = document.createElementNS(SVG_NS, "image");
+      shape.setAttribute("x", obj.x);
+      shape.setAttribute("y", obj.y);
+      shape.setAttribute("width", obj.width);
+      shape.setAttribute("height", obj.height);
+      shape.setAttribute("preserveAspectRatio", "xMidYMid slice");
+      shape.setAttributeNS("http://www.w3.org/1999/xlink", "href", obj.text);
+    } else {
+      shape = document.createElementNS(SVG_NS, "rect");
+      shape.setAttribute("x", obj.x);
+      shape.setAttribute("y", obj.y);
+      shape.setAttribute("width", obj.width);
+      shape.setAttribute("height", obj.height);
+      shape.setAttribute("rx", 6);
+      shape.setAttribute("fill", "var(--surface-2)");
+      shape.setAttribute("stroke", color);
+      shape.style.strokeDasharray = "5 4";
+    }
   } else {
     shape = document.createElementNS(SVG_NS, "rect");
     shape.setAttribute("x", obj.x);
@@ -1397,21 +1454,33 @@ function drawConceptObject(obj) {
     shape.setAttribute("stroke", obj.type === "sticky-note" ? "transparent" : color);
   }
   shape.setAttribute("class", "concept-shape");
-  if (obj.type !== "text" && obj.type !== "icon") {
+  if (obj.type !== "text" && obj.type !== "icon" && obj.type !== "image") {
     shape.style.strokeWidth = obj.border_style === "none" ? 0 : 2;
     if (obj.border_style === "dashed") shape.style.strokeDasharray = "6 4";
   }
   group.appendChild(shape);
 
-  if (obj.text && obj.type !== "divider" && obj.type !== "arrow") {
+  if (obj.text && obj.type !== "divider" && obj.type !== "arrow" && obj.type !== "image") {
     const textEl = document.createElementNS(SVG_NS, "text");
-    textEl.setAttribute("class", "concept-object-text" + (obj.type === "icon" ? " concept-icon-text" : ""));
-    textEl.setAttribute("x", obj.x + obj.width / 2);
+    textEl.setAttribute(
+      "class",
+      "concept-object-text" +
+        (obj.type === "icon" ? " concept-icon-text" : "") +
+        (obj.type === "section-header" ? " concept-section-header-text" : "")
+    );
+    textEl.setAttribute("x", obj.type === "section-header" ? obj.x + 6 : obj.x + obj.width / 2);
     textEl.setAttribute("y", obj.y + obj.height / 2);
     const displayText = obj.text.length > 60 ? obj.text.slice(0, 59) + "…" : obj.text;
     textEl.textContent = displayText;
     if (obj.type === "sticky-note") textEl.style.fill = "#1f2937";
     group.appendChild(textEl);
+  } else if (obj.type === "image" && !/^(https?:|data:)/.test(obj.text || "")) {
+    const placeholderText = document.createElementNS(SVG_NS, "text");
+    placeholderText.setAttribute("class", "concept-object-text concept-icon-text");
+    placeholderText.setAttribute("x", obj.x + obj.width / 2);
+    placeholderText.setAttribute("y", obj.y + obj.height / 2);
+    placeholderText.textContent = "🖼 Double-click to set image URL";
+    group.appendChild(placeholderText);
   }
 
   if (selectedConceptObjectId === obj.id && !obj.locked) {
@@ -1650,7 +1719,6 @@ function openConceptObjectContextMenu(objId, clientX, clientY) {
       });
       const node = await res.json();
       await loadProject();
-      setAppMode("architecture");
       focusNode(node.id);
     })
   );
@@ -2250,6 +2318,47 @@ const DROP_ZONE_LABELS = {
 // sibling, or hold Alt (Alt+Shift for a Dependency) to draw a reference link instead of
 // reparenting. Architecture Mode's layout stays deterministic — the ghost is just a
 // drag preview; the real position is always recomputed from the tree after the drop.
+// Unlock Layout is active: dragging a node just moves it (visual model only, via the
+// existing per-node position endpoint) instead of previewing a reparent/reference drop.
+function startNodeFreeDrag(e, nodeId) {
+  e.preventDefault();
+  e.stopPropagation();
+  const node = project.nodes[nodeId];
+  pushUndoSnapshot("Move node");
+  const startClientX = e.clientX;
+  const startClientY = e.clientY;
+  const startX = node.canvas_x;
+  const startY = node.canvas_y;
+  let moved = false;
+
+  const onMove = (moveEvent) => {
+    const dx = (moveEvent.clientX - startClientX) / zoomScale;
+    const dy = (moveEvent.clientY - startClientY) / zoomScale;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
+    node.canvas_x = startX + dx;
+    node.canvas_y = startY + dy;
+    renderCanvas();
+  };
+  const onUp = async () => {
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+    nodeDragJustHappened = true;
+    setTimeout(() => (nodeDragJustHappened = false), 0);
+    if (!moved) {
+      undoStack.pop();
+      updateUndoRedoButtons();
+      return;
+    }
+    await fetch(`/api/projects/${projectId}/nodes/${nodeId}/position`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ canvas_x: node.canvas_x, canvas_y: node.canvas_y }),
+    });
+  };
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
+}
+
 function startNodeReparentDrag(e, nodeId, startPos) {
   const rect = canvasSvg.getBoundingClientRect();
   const startClientX = e.clientX;
@@ -2301,8 +2410,11 @@ function startNodeReparentDrag(e, nodeId, startPos) {
     for (const [targetId, tpos] of lastVisiblePositions.entries()) {
       if (excludeIds.has(targetId)) continue;
       if (Math.abs(p.x - tpos.x) <= NODE_W / 2 && Math.abs(p.y - tpos.y) <= NODE_H / 2) {
-        const relY = (p.y - tpos.y) / (NODE_H / 2);
-        let zone = relY < -0.35 ? "before" : relY > 0.35 ? "after" : "child";
+        // Centre of the node = Become Child; left/right edge = Become Parallel Component.
+        // Reference/Dependency are always a deliberate modifier-key action, never a drop
+        // location, so they can never happen by accident in a dense architecture.
+        const relX = (p.x - tpos.x) / (NODE_W / 2);
+        let zone = relX < -0.35 ? "before" : relX > 0.35 ? "after" : "child";
         if (moveEvent.altKey) zone = moveEvent.shiftKey ? "dependency" : "reference";
         const targetNode = project.nodes[targetId];
         if ((zone === "before" || zone === "after") && (!targetNode || targetNode.parent_id === null)) {
@@ -2318,15 +2430,15 @@ function startNodeReparentDrag(e, nodeId, startPos) {
       highlight.style.display = "";
       highlight.setAttribute("class", "node-drop-zone-highlight zone-" + t.zone);
       if (t.zone === "before") {
-        highlight.setAttribute("x", t.pos.x - NODE_W / 2 - 4);
-        highlight.setAttribute("y", t.pos.y - NODE_H / 2 - 10);
-        highlight.setAttribute("width", NODE_W + 8);
-        highlight.setAttribute("height", 6);
+        highlight.setAttribute("x", t.pos.x - NODE_W / 2 - 10);
+        highlight.setAttribute("y", t.pos.y - NODE_H / 2 - 4);
+        highlight.setAttribute("width", 6);
+        highlight.setAttribute("height", NODE_H + 8);
       } else if (t.zone === "after") {
-        highlight.setAttribute("x", t.pos.x - NODE_W / 2 - 4);
-        highlight.setAttribute("y", t.pos.y + NODE_H / 2 + 4);
-        highlight.setAttribute("width", NODE_W + 8);
-        highlight.setAttribute("height", 6);
+        highlight.setAttribute("x", t.pos.x + NODE_W / 2 + 4);
+        highlight.setAttribute("y", t.pos.y - NODE_H / 2 - 4);
+        highlight.setAttribute("width", 6);
+        highlight.setAttribute("height", NODE_H + 8);
       } else {
         highlight.setAttribute("x", t.pos.x - NODE_W / 2 - 4);
         highlight.setAttribute("y", t.pos.y - NODE_H / 2 - 4);
@@ -2604,9 +2716,13 @@ function drawNode(node, pos, faded = false) {
   if (!node.is_group && node.parent_id !== null) {
     group.addEventListener("mousedown", (e) => {
       if (e.button !== 0 || refMode) return;
-      startNodeReparentDrag(e, node.id, pos);
+      if (layoutUnlocked && viewMode === "full") {
+        startNodeFreeDrag(e, node.id);
+      } else {
+        startNodeReparentDrag(e, node.id, pos);
+      }
     });
-    group.style.cursor = "grab";
+    group.style.cursor = layoutUnlocked && viewMode === "full" ? "move" : "grab";
   }
 
   group.addEventListener("mouseenter", (e) => {
@@ -2677,9 +2793,9 @@ function showNodeHoverTooltip(node, clientX, clientY) {
   if (node.classification) {
     fields.appendChild(hoverField("Classification", `${CLASSIFICATION_ICONS[node.classification] || ""} ${node.classification}`));
   }
-  if (node.status) fields.appendChild(hoverField("Status", node.status));
+  if (node.status) fields.appendChild(hoverField("Lifecycle Stage", node.status));
   if (node.planning_status) {
-    fields.appendChild(hoverField("Planning", `${PLANNING_STATUS_ICONS[node.planning_status]} ${node.planning_status}`));
+    fields.appendChild(hoverField("Completion Status", `${PLANNING_STATUS_ICONS[node.planning_status]} ${node.planning_status}`));
   }
   if (node.owner) fields.appendChild(hoverField("Owner", node.owner));
   if (node.priority) fields.appendChild(hoverField("Priority", node.priority));
@@ -2818,7 +2934,7 @@ function updateFloatingNodeToolbar(rect) {
     })
   );
   floatingToolbarEl.appendChild(
-    floatingToolbarBtn("●", "Set Status", (e) => {
+    floatingToolbarBtn("●", "Set Lifecycle Stage", (e) => {
       const CLEAR = "— Clear —";
       openQuickPicker(
         [CLEAR, "Planned", "In Development", "Done", "Blocked", "Deprecated"],
@@ -2852,7 +2968,6 @@ function updateFloatingNodeToolbar(rect) {
       });
       const obj = await res.json();
       await loadProject();
-      setAppMode("concept");
       selectedConceptObjectId = obj.id;
       renderCanvas();
     })
@@ -2957,7 +3072,6 @@ function openContextMenu(nodeId, clientX, clientY) {
       const res = await fetch(`/api/projects/${projectId}/nodes/${nodeId}/convert-to-object`, { method: "POST" });
       const obj = await res.json();
       await loadProject();
-      setAppMode("concept");
       selectedConceptObjectId = obj.id;
       renderCanvas();
     })
@@ -3001,7 +3115,7 @@ function openContextMenu(nodeId, clientX, clientY) {
     })
   );
   menu.appendChild(
-    contextMenuSubmenu("● Set Status", [CLEAR, "Planned", "In Development", "Done", "Blocked", "Deprecated"], (opt) => {
+    contextMenuSubmenu("● Set Lifecycle Stage", [CLEAR, "Planned", "In Development", "Done", "Blocked", "Deprecated"], (opt) => {
       patchNodeById(nodeId, { status: opt === CLEAR ? "" : opt });
     })
   );
@@ -3363,43 +3477,51 @@ canvasSvg.addEventListener("mousedown", (e) => {
 canvasSvg.addEventListener("contextmenu", (e) => {
   if (e.target !== canvasSvg) return;
   e.preventDefault();
-  if (appMode === "concept") {
-    openConceptCanvasContextMenu(e.clientX, e.clientY);
-  } else {
-    openCanvasContextMenu(e.clientX, e.clientY);
-  }
+  openCanvasContextMenu(e.clientX, e.clientY);
 });
 
-const CONCEPT_TOOLBOX_TYPES = [
-  ["Rectangle", "rectangle"],
-  ["Rounded Rectangle", "rounded-rectangle"],
-  ["Circle", "circle"],
-  ["Diamond", "diamond"],
-  ["Sticky Note", "sticky-note"],
-  ["Text", "text"],
-  ["Arrow", "arrow"],
-  ["Divider", "divider"],
-  ["Icon", "icon"],
-];
 let conceptClipboard = null;
 
-function openConceptCanvasContextMenu(clientX, clientY) {
+// One right-click menu for the whole canvas, regardless of what's under the cursor or which
+// view is active — the same "+ Insert" picker as the toolbar Insert button, plus layout and
+// presentation controls. Works even with nothing focused (previously silently did nothing).
+function openCanvasContextMenu(clientX, clientY) {
   closeContextMenu();
   const menu = document.createElement("div");
   menu.className = "context-menu";
+  const NEW_NODE_LABEL = "◆ New Architecture Node";
 
   menu.appendChild(
-    contextMenuSubmenu(
-      "+ Add Content",
-      CONCEPT_TOOLBOX_TYPES.map(([label]) => label),
-      (label) => {
-        const found = CONCEPT_TOOLBOX_TYPES.find(([l]) => l === label);
-        if (found) createConceptObject(found[1]);
+    contextMenuSubmenu("+ Insert", [NEW_NODE_LABEL, ...INSERT_TYPES.map(([, label]) => label)], (label) => {
+      if (label === NEW_NODE_LABEL) {
+        insertNewArchitectureNode();
+        return;
       }
-    )
+      const found = INSERT_TYPES.find(([, l]) => l === label);
+      if (found) createConceptObject(found[0]);
+    })
   );
   menu.appendChild(
-    contextMenuItem("📋 Paste", () => pasteConceptObject(clientX, clientY), { disabled: !conceptClipboard })
+    contextMenuItem("📋 Paste Object", () => pasteConceptObject(clientX, clientY), { disabled: !conceptClipboard })
+  );
+  menu.appendChild(
+    contextMenuItem("Paste Subtree Here", async () => {
+      const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/paste-subtree`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ root: clipboardSubtree }),
+      });
+      const newNode = await res.json();
+      await loadProject();
+      focusNode(newNode.id);
+    }, { disabled: !clipboardSubtree || !focusedNodeId })
+  );
+  menu.appendChild(
+    contextMenuItem("⇩ Import Outline Here", () => {
+      importText.value = "";
+      importModal.hidden = false;
+      importText.focus();
+    }, { disabled: !focusedNodeId })
   );
 
   menu.appendChild(contextMenuSeparator());
@@ -3409,6 +3531,11 @@ function openConceptCanvasContextMenu(clientX, clientY) {
 
   menu.appendChild(contextMenuSeparator());
 
+  if (layoutUnlocked) {
+    menu.appendChild(contextMenuItem("⤾ Auto Arrange", autoArrangeLayout));
+  } else {
+    menu.appendChild(contextMenuItem("🔓 Unlock Layout", () => setLayoutUnlocked(true)));
+  }
   menu.appendChild(
     contextMenuItem(showConceptGrid ? "☑ Show Grid" : "☐ Show Grid", () => {
       showConceptGrid = !showConceptGrid;
@@ -3423,46 +3550,8 @@ function openConceptCanvasContextMenu(clientX, clientY) {
 
   menu.appendChild(contextMenuSeparator());
 
-  menu.appendChild(contextMenuItem("⬇ Download as SVG", () => exportCanvasSvg()));
-
-  menu.style.left = `${clientX}px`;
-  menu.style.top = `${clientY}px`;
-  document.body.appendChild(menu);
-  openContextMenuEl = menu;
-
-  const rect = menu.getBoundingClientRect();
-  if (rect.right > window.innerWidth) menu.style.left = `${Math.max(4, window.innerWidth - rect.width - 4)}px`;
-  if (rect.bottom > window.innerHeight) menu.style.top = `${Math.max(4, window.innerHeight - rect.height - 4)}px`;
-}
-
-function openCanvasContextMenu(clientX, clientY) {
-  closeContextMenu();
-  if (!focusedNodeId) return;
-  const menu = document.createElement("div");
-  menu.className = "context-menu";
-
-  menu.appendChild(contextMenuItem("+ Add Component Here", () => addChild(focusedNodeId)));
-  menu.appendChild(
-    contextMenuItem("Paste Subtree Here", async () => {
-      const res = await fetch(`/api/projects/${projectId}/nodes/${focusedNodeId}/paste-subtree`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ root: clipboardSubtree }),
-      });
-      const newNode = await res.json();
-      await loadProject();
-      focusNode(newNode.id);
-    }, { disabled: !clipboardSubtree })
-  );
-  menu.appendChild(
-    contextMenuItem("⇩ Import Outline Here", () => {
-      importText.value = "";
-      importModal.hidden = false;
-      importText.focus();
-    })
-  );
-  menu.appendChild(contextMenuSeparator());
   menu.appendChild(contextMenuItem("▶ Presentation Mode", enterPresentationMode));
+  menu.appendChild(contextMenuItem("⬇ Download as SVG", () => exportCanvasSvg()));
 
   menu.style.left = `${clientX}px`;
   menu.style.top = `${clientY}px`;
@@ -3623,6 +3712,59 @@ function setViewMode(mode) {
 focusModeBtn.addEventListener("click", () => setViewMode("focus"));
 fullArchModeBtn.addEventListener("click", () => setViewMode("full"));
 
+// ---------- Unlock Layout / Auto Arrange ----------
+// The architecture (hierarchy, references) is always the source of truth; this only toggles
+// whether the CANVAS reads node position from the computed deterministic layout (locked,
+// default) or from each node's own stored canvas_x/canvas_y (unlocked, freely draggable).
+// Only meaningful in Full Architecture view — Focus Mode always recenters on the focused
+// node, so a persisted free position wouldn't mean anything there.
+function updateUnlockLayoutButton() {
+  unlockLayoutBtn.hidden = layoutUnlocked;
+  autoArrangeBtn.hidden = !layoutUnlocked;
+}
+
+async function setLayoutUnlocked(unlocked) {
+  if (unlocked && viewMode !== "full") setViewMode("full");
+  layoutUnlocked = unlocked;
+  updateUnlockLayoutButton();
+  renderCanvas();
+  await fetch(`/api/projects/${projectId}/layout-unlocked`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ unlocked }),
+  });
+}
+unlockLayoutBtn.addEventListener("click", () => setLayoutUnlocked(true));
+autoArrangeBtn.addEventListener("click", () => autoArrangeLayout());
+
+async function autoArrangeLayout() {
+  pushUndoSnapshot("Auto Arrange");
+  const rect = canvasSvg.getBoundingClientRect();
+  const viewW = rect.width || 800;
+  const viewH = rect.height || 500;
+  const wasUnlocked = layoutUnlocked;
+  layoutUnlocked = false; // compute the deterministic layout regardless of the current toggle
+  const { positions } = computeFullArchitectureLayout(viewW, viewH);
+  layoutUnlocked = wasUnlocked;
+  for (const [nodeId, pos] of positions.entries()) {
+    const node = project.nodes[nodeId];
+    node.canvas_x = pos.x;
+    node.canvas_y = pos.y;
+    await fetch(`/api/projects/${projectId}/nodes/${nodeId}/position`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ canvas_x: pos.x, canvas_y: pos.y }),
+    });
+  }
+  await setLayoutUnlocked(false);
+}
+
+animateFlowBtn.addEventListener("click", () => {
+  animateDataFlow = !animateDataFlow;
+  animateFlowBtn.classList.toggle("active", animateDataFlow);
+  renderCanvas();
+});
+
 async function addGroupUnder(parentId) {
   const name = prompt("Name for this group (e.g. Configuration, Scanning, Validation):");
   if (!name || !name.trim()) return;
@@ -3640,11 +3782,9 @@ showDepsCheckbox.addEventListener("change", () => {
   renderCanvas();
 });
 
-let animateDataFlow = false;
-animateFlowCheckbox.addEventListener("change", () => {
-  animateDataFlow = animateFlowCheckbox.checked;
-  renderCanvas();
-});
+// On by default per user preference: a visual board should read like electricity/data
+// flowing through it out of the box, not require finding a settings toggle first.
+let animateDataFlow = true;
 
 // ---------- Visual status filters ----------
 
@@ -4667,7 +4807,7 @@ function renderOverviewTab(container, node) {
   infoTable.appendChild(infoRow("Parent", infoStaticValue(parentNode ? parentNode.label : "— (root)")));
   infoTable.appendChild(infoRow("Children", infoStaticValue(String(node.children.length))));
   infoTable.appendChild(infoRow("Level", infoStaticValue(String(node.level))));
-  infoTable.appendChild(infoRow("Planning Status", infoPlanningStatusValue(node)));
+  infoTable.appendChild(infoRow("Completion Status", infoPlanningStatusValue(node)));
   container.appendChild(infoTable);
 
   const progressField = field("Progress");
@@ -4793,7 +4933,7 @@ function renderPropertiesTab(container, node) {
     infoRow("Node Type", infoTextValue(node.node_type, "e.g. Decision Engine", (v) => patchNode({ node_type: v })))
   );
   infoTable.appendChild(
-    infoRow("Status", infoSelectValue("status", ["Planned", "In Development", "Done", "Blocked", "Deprecated"], node))
+    infoRow("Lifecycle Stage", infoSelectValue("status", ["Planned", "In Development", "Done", "Blocked", "Deprecated"], node))
   );
   infoTable.appendChild(infoRow("Owner", infoTextValue(node.owner, "e.g. your name or team", (v) => patchNode({ owner: v }))));
   infoTable.appendChild(infoRow("Priority", infoSelectValue("priority", ["Low", "Medium", "High", "Critical"], node)));

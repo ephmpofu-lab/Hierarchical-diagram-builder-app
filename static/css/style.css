@@ -327,6 +327,13 @@ button {
   font-size: 28px;
 }
 
+.canvas-svg .concept-section-header-text {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-anchor: start;
+}
+
 .canvas-svg .concept-resize-handle {
   fill: var(--accent);
   stroke: var(--surface);
@@ -656,8 +663,7 @@ button {
   margin: 4px 0;
 }
 
-.view-mode-toggle,
-.app-mode-toggle {
+.view-mode-toggle {
   display: flex;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -665,65 +671,29 @@ button {
   margin-right: 4px;
 }
 
-.view-mode-toggle .btn,
-.app-mode-toggle .btn {
+.view-mode-toggle .btn {
   border: none;
   border-radius: 0;
 }
 
-.view-mode-toggle .btn + .btn,
-.app-mode-toggle .btn + .btn {
+.view-mode-toggle .btn + .btn {
   border-left: 1px solid var(--border);
 }
 
-#conceptModeBtn.active,
-#architectureModeBtn.active {
+#focusModeBtn.active,
+#fullArchModeBtn.active,
+#animateFlowBtn.active {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
 }
 
-.toolbox-content {
-  padding: 8px 12px;
-}
-
-.toolbox-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  margin: 10px 0;
-}
-
-.toolbox-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 12px 6px;
-  font-size: 20px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  cursor: pointer;
-}
-
-.toolbox-item:hover {
-  background: var(--surface-hover);
-  border-color: var(--accent);
-}
-
-.toolbox-item span {
+.menu-shortcut {
+  float: right;
+  margin-left: 12px;
   font-size: 11px;
   color: var(--text-muted);
-}
-
-#focusModeBtn.active,
-#fullArchModeBtn.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  opacity: 0.8;
 }
 
 #statusFilterBtn.active {

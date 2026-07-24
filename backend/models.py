@@ -135,6 +135,14 @@ class Project(BaseModel):
     references: List[Reference] = Field(default_factory=list)
     activity_log: List[ActivityEntry] = Field(default_factory=list)
     concept_objects: List[ConceptObject] = Field(default_factory=list)
+    # When False (default), node canvas position is always recomputed from the hierarchy.
+    # When True, the canvas reads/writes each node's stored canvas_x/canvas_y instead, so the
+    # architecture (parent/child/references) and its visual layout stay fully independent.
+    layout_unlocked: bool = False
+
+
+class LayoutUnlockedUpdate(BaseModel):
+    unlocked: bool
 
 
 class ProjectSummary(BaseModel):

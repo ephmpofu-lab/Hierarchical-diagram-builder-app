@@ -15,6 +15,8 @@ DEFAULT_SIZES = {
     "text": (160, 40),
     "divider": (240, 4),
     "arrow": (160, 4),
+    "section-header": (280, 36),
+    "image": (200, 140),
     "icon": (64, 64),
 }
 

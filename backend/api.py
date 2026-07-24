@@ -12,6 +12,7 @@ from .models import (
     ConceptObjectCreate,
     ConceptObjectUpdate,
     ConvertToNodeRequest,
+    LayoutUnlockedUpdate,
     MoveSiblingRequest,
     NodeCreate,
     NodePosition,
@@ -179,6 +180,14 @@ def api_move_node(project_id: str, node_id: str, body: NodePosition):
     storage.save_project(project)
     node = project.nodes[node_id]
     return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node_id))
+
+
+@router.put("/projects/{project_id}/layout-unlocked")
+def api_set_layout_unlocked(project_id: str, body: LayoutUnlockedUpdate):
+    project = storage.load_project(project_id)
+    project.layout_unlocked = body.unlocked
+    storage.save_project(project)
+    return {"layout_unlocked": project.layout_unlocked}
 
 
 @router.post("/projects/{project_id}/nodes/{node_id}/indent", response_model=NodeWithLevel)
