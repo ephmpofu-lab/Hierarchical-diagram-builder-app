@@ -23,5 +23,16 @@ def get_pool() -> ConnectionPool:
                 "DATABASE_URL is not set. Add it to a local .env file "
                 "(DATABASE_URL=postgresql://...) — see Supabase dashboard > Settings > Database."
             )
-        _pool = ConnectionPool(DATABASE_URL, min_size=1, max_size=10, open=True)
+        _pool = ConnectionPool(
+            DATABASE_URL,
+            min_size=1,
+            max_size=10,
+            open=True,
+            # Supabase's pooler runs in transaction mode (port 6543) -- a query can land on a
+            # different backend connection each time, so psycopg's default server-side
+            # prepared statements (which assume a stable session) break with
+            # "prepared statement already exists". Disabling them is the standard fix for
+            # this exact pooler mode.
+            kwargs={"prepare_threshold": None},
+        )
     return _pool
