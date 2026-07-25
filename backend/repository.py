@@ -4,7 +4,19 @@ else later) means writing a new class that satisfies these shapes, nothing more.
 
 from typing import List, Protocol
 
-from .models import Project, ProjectSummary, Template, TemplateNode, TemplateSummary
+from .models import (
+    GovernancePrinciple,
+    GovernancePrincipleCreate,
+    KnowledgeConcept,
+    KnowledgeConceptCreate,
+    KnowledgeRelationship,
+    KnowledgeRelationshipCreate,
+    Project,
+    ProjectSummary,
+    Template,
+    TemplateNode,
+    TemplateSummary,
+)
 
 
 class ProjectRepository(Protocol):
@@ -29,3 +41,28 @@ class TemplateRepository(Protocol):
     def save_new(self, name: str, root: TemplateNode) -> Template: ...
 
     def delete(self, template_id: str) -> None: ...
+
+
+class KnowledgeRepository(Protocol):
+    """The Enterprise Knowledge Layer's storage abstraction (project-independent --
+    Knowledge Domain + Standards Library, Phase 8 §2). Named but left unpopulated in the
+    Phase 2 Blueprint ("interface defined now -- not yet populated"); this is that
+    population, per the Phase 12 Implementation Roadmap's WP1."""
+
+    def list_concepts(self) -> List[KnowledgeConcept]: ...
+
+    def load_concept(self, concept_id: str) -> KnowledgeConcept: ...
+
+    def save_concept(self, concept: KnowledgeConceptCreate) -> KnowledgeConcept: ...
+
+    def delete_concept(self, concept_id: str) -> None: ...
+
+    def list_relationships(self, concept_id: str) -> List[KnowledgeRelationship]: ...
+
+    def save_relationship(self, relationship: KnowledgeRelationshipCreate) -> KnowledgeRelationship: ...
+
+    def list_principles(self) -> List[GovernancePrinciple]: ...
+
+    def save_principle(self, principle: GovernancePrincipleCreate) -> GovernancePrinciple: ...
+
+    def delete_principle(self, principle_id: str) -> None: ...

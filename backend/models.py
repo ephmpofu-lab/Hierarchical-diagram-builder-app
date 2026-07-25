@@ -148,6 +148,12 @@ class Project(BaseModel):
     references: List[Reference] = Field(default_factory=list)
     activity_log: List[ActivityEntry] = Field(default_factory=list)
     concept_objects: List[ConceptObject] = Field(default_factory=list)
+    requirements: List["Requirement"] = Field(default_factory=list)
+    traceability_links: List["TraceabilityLink"] = Field(default_factory=list)
+    risks: List["Risk"] = Field(default_factory=list)
+    governance_decisions: List["GovernanceDecision"] = Field(default_factory=list)
+    validation_findings: List["ValidationFinding"] = Field(default_factory=list)
+    risk_assessments: List["RiskAssessment"] = Field(default_factory=list)
 
 
 class ProjectSummary(BaseModel):
@@ -272,3 +278,160 @@ class ValidationReport(BaseModel):
     avg_depth: float
     max_depth: int
     risk_distribution: Dict[str, int]
+
+
+# ============================================================================
+# Enterprise Architecture Meta Model (Phase 3) -- additive entities, per the
+# Phase 12 Implementation Roadmap's WP1 ("Repository domain extension").
+# Project-scoped: Requirement, TraceabilityLink, Risk, GovernanceDecision,
+# ValidationFinding, RiskAssessment (nested on Project, same whole-project
+# load/save semantics as references/concept_objects).
+# Project-independent (Knowledge Domain + Standards Library, Phase 8 §2):
+# KnowledgeConcept, KnowledgeRelationship, GovernancePrinciple.
+# ============================================================================
+
+
+class Requirement(BaseModel):
+    id: str
+    description: str
+    parent_id: Optional[str] = None  # self-referential -- Requirements form their own
+    # parallel tree, cross-linked to the architecture tree via TraceabilityLink rather
+    # than merged into it (Phase 5 §6).
+    origin_node_id: Optional[str] = None
+    status: str = "Draft"  # Draft | Active | Satisfied | Withdrawn
+
+
+class RequirementCreate(BaseModel):
+    description: str
+    parent_id: Optional[str] = None
+    origin_node_id: Optional[str] = None
+
+
+class RequirementUpdate(BaseModel):
+    description: Optional[str] = None
+    status: Optional[str] = None
+
+
+class TraceabilityLink(BaseModel):
+    id: str
+    requirement_id: str
+    node_id: str
+    link_type: str = "satisfies"
+
+
+class TraceabilityLinkCreate(BaseModel):
+    requirement_id: str
+    node_id: str
+    link_type: str = "satisfies"
+
+
+class Risk(BaseModel):
+    id: str
+    description: str
+    classification: Optional[str] = None
+    initial_level: Optional[str] = None
+    residual_level: Optional[str] = None
+    status: str = "Identified"  # Identified | Classified | Mitigated | Monitored | Accepted
+    target_node_id: Optional[str] = None
+
+
+class RiskCreate(BaseModel):
+    description: str
+    classification: Optional[str] = None
+    target_node_id: Optional[str] = None
+
+
+class RiskUpdate(BaseModel):
+    description: Optional[str] = None
+    classification: Optional[str] = None
+    initial_level: Optional[str] = None
+    residual_level: Optional[str] = None
+    status: Optional[str] = None
+
+
+class GovernanceDecision(BaseModel):
+    id: str
+    timestamp: str
+    actor: str
+    decision_type: str  # Approve | Edit | Reject
+    target_node_id: Optional[str] = None
+    rationale: Optional[str] = None
+
+
+class GovernanceDecisionCreate(BaseModel):
+    actor: str
+    decision_type: str
+    target_node_id: Optional[str] = None
+    rationale: Optional[str] = None
+
+
+class ValidationFinding(BaseModel):
+    id: str
+    timestamp: str
+    category: str
+    severity: str  # Critical | Warning | Suggestion
+    target_node_id: Optional[str] = None
+
+
+class RiskAssessment(BaseModel):
+    id: str
+    timestamp: str
+    risk_id: str
+    assessment_type: str  # Initial | Residual
+    level: str
+
+
+class KnowledgeConcept(BaseModel):
+    id: str
+    concept_id: str  # the Knowledge Base's own stable id, e.g. "ARC-0002"
+    name: str
+    category: str
+    chapter_source: Optional[int] = None
+    section_source: Optional[str] = None
+    definition: str
+    rules: List[str] = Field(default_factory=list)
+    validation_criteria: List[str] = Field(default_factory=list)
+    related: List[str] = Field(default_factory=list)
+    status: str = "Active"  # Proposed | UnderReview | Active | Superseded | Deprecated | Archived
+
+
+class KnowledgeConceptCreate(BaseModel):
+    concept_id: str
+    name: str
+    category: str
+    chapter_source: Optional[int] = None
+    section_source: Optional[str] = None
+    definition: str
+    rules: List[str] = Field(default_factory=list)
+    validation_criteria: List[str] = Field(default_factory=list)
+    related: List[str] = Field(default_factory=list)
+
+
+class KnowledgeRelationship(BaseModel):
+    id: str
+    from_concept_id: str
+    to_concept_id: str
+    relation_type: str
+
+
+class KnowledgeRelationshipCreate(BaseModel):
+    from_concept_id: str
+    to_concept_id: str
+    relation_type: str
+
+
+class GovernancePrinciple(BaseModel):
+    id: str
+    statement: str
+    applies_to_domain: Optional[str] = None
+    source_concept_id: Optional[str] = None  # the KnowledgeConcept.concept_id this
+    # principle was derived from, if any (Phase 6 §7's rule-to-principle derivation)
+
+
+class GovernancePrincipleCreate(BaseModel):
+    statement: str
+    applies_to_domain: Optional[str] = None
+    source_concept_id: Optional[str] = None
+
+
+Project.model_rebuild()

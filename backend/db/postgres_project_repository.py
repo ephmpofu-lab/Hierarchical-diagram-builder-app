@@ -11,10 +11,16 @@ from ..models import (
     ActivityEntry,
     Comment,
     ConceptObject,
+    GovernanceDecision,
     Node,
     Project,
     ProjectSummary,
     Reference,
+    Requirement,
+    Risk,
+    RiskAssessment,
+    TraceabilityLink,
+    ValidationFinding,
 )
 from .connection import get_pool
 
@@ -92,6 +98,60 @@ class PostgresProjectRepository:
                 reversed(
                     conn.execute(
                         'select id, "timestamp", message from activity_log where project_id = %s '
+                        'order by "timestamp" desc limit 200',
+                        (project_id,),
+                    ).fetchall()
+                )
+            )
+
+            requirement_rows = conn.execute(
+                "select id, parent_id, description, origin_node_id, status "
+                "from requirements where project_id = %s",
+                (project_id,),
+            ).fetchall()
+
+            traceability_rows = conn.execute(
+                "select id, requirement_id, node_id, link_type "
+                "from traceability_links where project_id = %s",
+                (project_id,),
+            ).fetchall()
+
+            risk_rows = conn.execute(
+                "select id, description, classification, initial_level, residual_level, "
+                "status, target_node_id from risks where project_id = %s",
+                (project_id,),
+            ).fetchall()
+
+            # GovernanceDecision/ValidationFinding/RiskAssessment are historical audit
+            # records, same append-only read-time-window treatment as activity_log above --
+            # never deleted on save(), so "most recent 200" is a read-time cap, not data loss.
+            governance_decision_rows = list(
+                reversed(
+                    conn.execute(
+                        'select id, "timestamp", actor, decision_type, target_node_id, rationale '
+                        'from governance_decisions where project_id = %s '
+                        'order by "timestamp" desc limit 200',
+                        (project_id,),
+                    ).fetchall()
+                )
+            )
+
+            validation_finding_rows = list(
+                reversed(
+                    conn.execute(
+                        'select id, "timestamp", category, severity, target_node_id '
+                        'from validation_findings where project_id = %s '
+                        'order by "timestamp" desc limit 200',
+                        (project_id,),
+                    ).fetchall()
+                )
+            )
+
+            risk_assessment_rows = list(
+                reversed(
+                    conn.execute(
+                        'select id, "timestamp", risk_id, assessment_type, level '
+                        'from risk_assessments where project_id = %s '
                         'order by "timestamp" desc limit 200',
                         (project_id,),
                     ).fetchall()
@@ -196,6 +256,65 @@ class PostgresProjectRepository:
             for r in activity_rows
         ]
 
+        requirements = [
+            Requirement(
+                id=str(r[0]),
+                parent_id=str(r[1]) if r[1] else None,
+                description=r[2],
+                origin_node_id=str(r[3]) if r[3] else None,
+                status=r[4],
+            )
+            for r in requirement_rows
+        ]
+
+        traceability_links = [
+            TraceabilityLink(id=str(r[0]), requirement_id=str(r[1]), node_id=str(r[2]), link_type=r[3])
+            for r in traceability_rows
+        ]
+
+        risks = [
+            Risk(
+                id=str(r[0]),
+                description=r[1],
+                classification=r[2],
+                initial_level=r[3],
+                residual_level=r[4],
+                status=r[5],
+                target_node_id=str(r[6]) if r[6] else None,
+            )
+            for r in risk_rows
+        ]
+
+        governance_decisions = [
+            GovernanceDecision(
+                id=str(r[0]),
+                timestamp=r[1].isoformat(),
+                actor=r[2],
+                decision_type=r[3],
+                target_node_id=str(r[4]) if r[4] else None,
+                rationale=r[5],
+            )
+            for r in governance_decision_rows
+        ]
+
+        validation_findings = [
+            ValidationFinding(
+                id=str(r[0]),
+                timestamp=r[1].isoformat(),
+                category=r[2],
+                severity=r[3],
+                target_node_id=str(r[4]) if r[4] else None,
+            )
+            for r in validation_finding_rows
+        ]
+
+        risk_assessments = [
+            RiskAssessment(
+                id=str(r[0]), timestamp=r[1].isoformat(), risk_id=str(r[2]), assessment_type=r[3], level=r[4]
+            )
+            for r in risk_assessment_rows
+        ]
+
         return Project(
             id=str(project_row[0]),
             name=project_row[1],
@@ -206,6 +325,12 @@ class PostgresProjectRepository:
             references=references,
             activity_log=activity_log,
             concept_objects=concept_objects,
+            requirements=requirements,
+            traceability_links=traceability_links,
+            risks=risks,
+            governance_decisions=governance_decisions,
+            validation_findings=validation_findings,
+            risk_assessments=risk_assessments,
         )
 
     def save(self, project: Project) -> None:
@@ -229,6 +354,13 @@ class PostgresProjectRepository:
                 conn.execute("delete from nodes where project_id = %s", (project.id,))
                 conn.execute("delete from project_references where project_id = %s", (project.id,))
                 conn.execute("delete from concept_objects where project_id = %s", (project.id,))
+                # Requirements form their own parallel tree (Phase 5 §6) -- same whole-list
+                # replace as nodes/references/concept_objects. Child-before-parent delete
+                # order (traceability_links, then requirements) even though the FKs would
+                # cascade anyway, so this never depends on cascade ordering being implicit.
+                conn.execute("delete from traceability_links where project_id = %s", (project.id,))
+                conn.execute("delete from requirements where project_id = %s", (project.id,))
+                conn.execute("delete from risks where project_id = %s", (project.id,))
 
                 # Insert nodes in parent-before-child order (root first) so the self-referencing
                 # parent_id foreign key is always satisfied at insert time.
@@ -363,6 +495,112 @@ class PostgresProjectRepository:
                         'insert into activity_log (id, project_id, "timestamp", message) '
                         "values (%s, %s, %s, %s) on conflict (id) do nothing",
                         (entry.id, project.id, entry.timestamp, entry.message),
+                    )
+
+                # Requirements insert in parent-before-child order (self-referencing FK),
+                # mirroring the nodes DFS visit above.
+                req_by_id = {r.id: r for r in project.requirements}
+                req_order: list[str] = []
+                req_seen: set[str] = set()
+
+                def visit_requirement(req_id: str) -> None:
+                    if req_id in req_seen or req_id not in req_by_id:
+                        return
+                    req_seen.add(req_id)
+                    parent_id = req_by_id[req_id].parent_id
+                    if parent_id:
+                        visit_requirement(parent_id)
+                    req_order.append(req_id)
+
+                for req_id in req_by_id:
+                    visit_requirement(req_id)
+
+                for req_id in req_order:
+                    req = req_by_id[req_id]
+                    conn.execute(
+                        """
+                        insert into requirements (id, project_id, parent_id, description, origin_node_id, status)
+                        values (%s, %s, %s, %s, %s, %s)
+                        """,
+                        (req.id, project.id, req.parent_id, req.description, req.origin_node_id, req.status),
+                    )
+
+                for link in project.traceability_links:
+                    conn.execute(
+                        """
+                        insert into traceability_links (id, project_id, requirement_id, node_id, link_type)
+                        values (%s, %s, %s, %s, %s)
+                        """,
+                        (link.id, project.id, link.requirement_id, link.node_id, link.link_type),
+                    )
+
+                for risk in project.risks:
+                    conn.execute(
+                        """
+                        insert into risks (
+                            id, project_id, description, classification, initial_level,
+                            residual_level, status, target_node_id
+                        ) values (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            risk.id,
+                            project.id,
+                            risk.description,
+                            risk.classification,
+                            risk.initial_level,
+                            risk.residual_level,
+                            risk.status,
+                            risk.target_node_id,
+                        ),
+                    )
+
+                # GovernanceDecision/ValidationFinding/RiskAssessment are historical audit
+                # records -- append-only, same ON CONFLICT DO NOTHING pattern as activity_log,
+                # never deleted above.
+                for decision in project.governance_decisions:
+                    conn.execute(
+                        'insert into governance_decisions '
+                        '(id, project_id, "timestamp", actor, decision_type, target_node_id, rationale) '
+                        "values (%s, %s, %s, %s, %s, %s, %s) on conflict (id) do nothing",
+                        (
+                            decision.id,
+                            project.id,
+                            decision.timestamp,
+                            decision.actor,
+                            decision.decision_type,
+                            decision.target_node_id,
+                            decision.rationale,
+                        ),
+                    )
+
+                for finding in project.validation_findings:
+                    conn.execute(
+                        'insert into validation_findings '
+                        '(id, project_id, "timestamp", category, severity, target_node_id) '
+                        "values (%s, %s, %s, %s, %s, %s) on conflict (id) do nothing",
+                        (
+                            finding.id,
+                            project.id,
+                            finding.timestamp,
+                            finding.category,
+                            finding.severity,
+                            finding.target_node_id,
+                        ),
+                    )
+
+                for assessment in project.risk_assessments:
+                    conn.execute(
+                        'insert into risk_assessments '
+                        '(id, project_id, "timestamp", risk_id, assessment_type, level) '
+                        "values (%s, %s, %s, %s, %s, %s) on conflict (id) do nothing",
+                        (
+                            assessment.id,
+                            project.id,
+                            assessment.timestamp,
+                            assessment.risk_id,
+                            assessment.assessment_type,
+                            assessment.level,
+                        ),
                     )
 
     def create(self, name: str) -> Project:

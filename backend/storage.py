@@ -6,13 +6,27 @@ file's callers."""
 
 from typing import List
 
+from .db.postgres_knowledge_repository import PostgresKnowledgeRepository
 from .db.postgres_project_repository import PostgresProjectRepository
 from .db.postgres_template_repository import PostgresTemplateRepository
-from .models import Project, ProjectSummary, Template, TemplateNode, TemplateSummary
-from .repository import ProjectRepository, TemplateRepository
+from .models import (
+    GovernancePrinciple,
+    GovernancePrincipleCreate,
+    KnowledgeConcept,
+    KnowledgeConceptCreate,
+    KnowledgeRelationship,
+    KnowledgeRelationshipCreate,
+    Project,
+    ProjectSummary,
+    Template,
+    TemplateNode,
+    TemplateSummary,
+)
+from .repository import KnowledgeRepository, ProjectRepository, TemplateRepository
 
 _project_repo: ProjectRepository = PostgresProjectRepository()
 _template_repo: TemplateRepository = PostgresTemplateRepository()
+_knowledge_repo: KnowledgeRepository = PostgresKnowledgeRepository()
 
 
 def list_projects() -> List[ProjectSummary]:
@@ -53,3 +67,39 @@ def save_new_template(name: str, root: TemplateNode) -> Template:
 
 def delete_template(template_id: str) -> None:
     _template_repo.delete(template_id)
+
+
+def list_knowledge_concepts() -> List[KnowledgeConcept]:
+    return _knowledge_repo.list_concepts()
+
+
+def load_knowledge_concept(concept_id: str) -> KnowledgeConcept:
+    return _knowledge_repo.load_concept(concept_id)
+
+
+def save_knowledge_concept(concept: KnowledgeConceptCreate) -> KnowledgeConcept:
+    return _knowledge_repo.save_concept(concept)
+
+
+def delete_knowledge_concept(concept_id: str) -> None:
+    _knowledge_repo.delete_concept(concept_id)
+
+
+def list_knowledge_relationships(concept_id: str) -> List[KnowledgeRelationship]:
+    return _knowledge_repo.list_relationships(concept_id)
+
+
+def save_knowledge_relationship(relationship: KnowledgeRelationshipCreate) -> KnowledgeRelationship:
+    return _knowledge_repo.save_relationship(relationship)
+
+
+def list_governance_principles() -> List[GovernancePrinciple]:
+    return _knowledge_repo.list_principles()
+
+
+def save_governance_principle(principle: GovernancePrincipleCreate) -> GovernancePrinciple:
+    return _knowledge_repo.save_principle(principle)
+
+
+def delete_governance_principle(principle_id: str) -> None:
+    _knowledge_repo.delete_principle(principle_id)
