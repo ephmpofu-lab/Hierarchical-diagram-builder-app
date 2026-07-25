@@ -122,6 +122,8 @@ const emptyCanvasPrompt = document.getElementById("emptyCanvasPrompt");
 const emptyCanvasBtn = document.getElementById("emptyCanvasBtn");
 const connectCoachMark = document.getElementById("connectCoachMark");
 const connectCoachMarkDismiss = document.getElementById("connectCoachMarkDismiss");
+const paneCoachMark = document.getElementById("paneCoachMark");
+const paneCoachMarkDismiss = document.getElementById("paneCoachMarkDismiss");
 const toolRail = document.getElementById("toolRail");
 const toolSelectBtn = document.getElementById("toolSelectBtn");
 const toolPanBtn = document.getElementById("toolPanBtn");
@@ -157,6 +159,8 @@ const selDistributeBtn = document.getElementById("selDistributeBtn");
 const selDistributeMenu = document.getElementById("selDistributeMenu");
 const selDeleteBtn = document.getElementById("selDeleteBtn");
 const selClearBtn = document.getElementById("selClearBtn");
+const selMoreBtn = document.getElementById("selMoreBtn");
+const selMoreMenu = document.getElementById("selMoreMenu");
 const focusModeBtn = document.getElementById("focusModeBtn");
 const fullArchModeBtn = document.getElementById("fullArchModeBtn");
 const minimapSvg = document.getElementById("minimapSvg");
@@ -174,11 +178,20 @@ const outlinePane = document.getElementById("outlinePane");
 const outlineCollapseBtn = document.getElementById("outlineCollapseBtn");
 const inspectorPane = document.getElementById("inspectorPane");
 const inspectorCollapseBtn = document.getElementById("inspectorCollapseBtn");
+const healthFooterEl = document.getElementById("healthFooter");
+const healthFooterChip = document.getElementById("healthFooterChip");
+const healthFooterDotEl = document.getElementById("healthFooterDot");
+const healthFooterChipScoreEl = document.getElementById("healthFooterChipScore");
+const healthFooterChevronEl = document.getElementById("healthFooterChevron");
 const healthFooterGaugeEl = document.getElementById("healthFooterGauge");
 const healthFooterSummaryEl = document.getElementById("healthFooterSummary");
 const healthFooterRecentEl = document.getElementById("healthFooterRecent");
 const healthReportModal = document.getElementById("healthReportModal");
 const healthReportCloseBtn = document.getElementById("healthReportCloseBtn");
+const shortcutsBtn = document.getElementById("shortcutsBtn");
+const shortcutsModal = document.getElementById("shortcutsModal");
+const shortcutsCloseBtn = document.getElementById("shortcutsCloseBtn");
+const shortcutsListEl = document.getElementById("shortcutsList");
 const healthScoreEl = document.getElementById("healthScore");
 const viewFullReportBtn = document.getElementById("viewFullReportBtn");
 const validationSummaryEl = document.getElementById("validationSummary");
@@ -279,11 +292,10 @@ function updateSelectionToolbar() {
   if (count > 0) {
     selectionCountEl.textContent = `${count} selected`;
   }
-  selConnectBtn.disabled = count !== 1;
-  selConnectBtn.title =
-    count === 1
-      ? "Draw a relationship from this node to another — click the target node next"
-      : "Select exactly one node to start a connection";
+  // Genuinely hidden, not just disabled, when inapplicable -- Connect only makes sense for
+  // exactly one selected node, it's not a "temporarily blocked" action for any other count.
+  selConnectBtn.hidden = count !== 1;
+  selConnectBtn.title = "Draw a relationship from this node to another — click the target node next";
   // Align/Distribute write canvas_x/canvas_y, which only Focus Mode reads — in Full
   // Architecture the layout is always recomputed live, so an edit there would have no
   // lasting visible effect.
@@ -819,8 +831,18 @@ document.addEventListener("keydown", async (e) => {
     renderCanvas();
     return;
   }
+  if (e.key === "Escape" && selectedNodeIds.size > 0) {
+    selectedNodeIds = new Set();
+    updateSelectionToolbar();
+    renderCanvas();
+    return;
+  }
   if (e.key === "Escape" && !importModal.hidden) {
     closeImportModal();
+    return;
+  }
+  if (e.key === "Escape" && !shortcutsModal.hidden) {
+    shortcutsModal.hidden = true;
     return;
   }
   if (e.key === "Escape" && !exportMenu.hidden) {
@@ -1110,6 +1132,11 @@ function renderCanvas() {
     }
     if (selectedConceptObjectIds.size > 0) {
       selectedConceptObjectIds = new Set();
+      changed = true;
+    }
+    if (selectedNodeIds.size > 0) {
+      selectedNodeIds = new Set();
+      updateSelectionToolbar();
       changed = true;
     }
     if (changed) renderCanvas();
@@ -4035,6 +4062,7 @@ function closeToolbarMenus() {
   layoutMenu.hidden = true;
   settingsMenu.hidden = true;
   shapesFlyout.hidden = true;
+  selMoreMenu.hidden = true;
   closeImportModal();
 }
 layoutMenuBtn.addEventListener("click", () => {
@@ -4047,12 +4075,21 @@ settingsMenuBtn.addEventListener("click", () => {
   closeToolbarMenus();
   settingsMenu.hidden = !wasHidden;
 });
+selMoreBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const wasHidden = selMoreMenu.hidden;
+  closeToolbarMenus();
+  selMoreMenu.hidden = !wasHidden;
+});
 document.addEventListener("click", (e) => {
   if (!layoutMenu.hidden && !layoutMenu.contains(e.target) && e.target !== layoutMenuBtn) {
     layoutMenu.hidden = true;
   }
   if (!settingsMenu.hidden && !settingsMenu.contains(e.target) && e.target !== settingsMenuBtn) {
     settingsMenu.hidden = true;
+  }
+  if (!selMoreMenu.hidden && !selMoreMenu.contains(e.target) && e.target !== selMoreBtn) {
+    selMoreMenu.hidden = true;
   }
 });
 fitSelectionBtn.addEventListener("click", () => {
@@ -4632,17 +4669,51 @@ function renderMinimap() {
 
 const editorPanesEl = document.querySelector(".editor-panes");
 
+const OUTLINE_COLLAPSED_KEY = "diagram-builder-outline-collapsed";
+const INSPECTOR_COLLAPSED_KEY = "diagram-builder-inspector-collapsed";
+
+// Applies whatever the anti-FOUC inline script in <head> already decided (from localStorage,
+// defaulting to collapsed for a first-time session -- canvas dominates by default) as the
+// real classes, then removes those data attributes: from this point on the classes below are
+// the single source of truth, never the html[data-*] attributes again.
+function applyInitialPaneCollapse() {
+  const outlineCollapsed = document.documentElement.dataset.outlineCollapsed === "true";
+  const inspectorCollapsed = document.documentElement.dataset.inspectorCollapsed === "true";
+  outlinePane.classList.toggle("collapsed", outlineCollapsed);
+  editorPanesEl.classList.toggle("outline-collapsed", outlineCollapsed);
+  outlineCollapseBtn.textContent = outlineCollapsed ? "»" : "«";
+  outlineCollapseBtn.title = outlineCollapsed ? "Expand Outline panel" : "Collapse this panel for a distraction-free canvas";
+  inspectorPane.classList.toggle("collapsed", inspectorCollapsed);
+  editorPanesEl.classList.toggle("inspector-collapsed", inspectorCollapsed);
+  inspectorCollapseBtn.textContent = inspectorCollapsed ? "«" : "»";
+  inspectorCollapseBtn.title = inspectorCollapsed ? "Expand Inspector panel" : "Collapse this panel for a distraction-free canvas";
+  delete document.documentElement.dataset.outlineCollapsed;
+  delete document.documentElement.dataset.inspectorCollapsed;
+}
+applyInitialPaneCollapse();
+
+// One-time nudge toward the (now collapsed-by-default) Outline/Inspector edge strips, since
+// a 36px chevron is easy for a first-time user to miss entirely.
+const PANE_COACH_MARK_KEY = "skaido_seen_pane_coach_mark";
+if (!localStorage.getItem(PANE_COACH_MARK_KEY)) paneCoachMark.hidden = false;
+paneCoachMarkDismiss.addEventListener("click", () => {
+  localStorage.setItem(PANE_COACH_MARK_KEY, "1");
+  paneCoachMark.hidden = true;
+});
+
 outlineCollapseBtn.addEventListener("click", () => {
   const collapsed = outlinePane.classList.toggle("collapsed");
   editorPanesEl.classList.toggle("outline-collapsed", collapsed);
   outlineCollapseBtn.textContent = collapsed ? "»" : "«";
   outlineCollapseBtn.title = collapsed ? "Expand Outline panel" : "Collapse this panel for a distraction-free canvas";
+  localStorage.setItem(OUTLINE_COLLAPSED_KEY, String(collapsed));
 });
 inspectorCollapseBtn.addEventListener("click", () => {
   const collapsed = inspectorPane.classList.toggle("collapsed");
   editorPanesEl.classList.toggle("inspector-collapsed", collapsed);
   inspectorCollapseBtn.textContent = collapsed ? "«" : "»";
   inspectorCollapseBtn.title = collapsed ? "Expand Inspector panel" : "Collapse this panel for a distraction-free canvas";
+  localStorage.setItem(INSPECTOR_COLLAPSED_KEY, String(collapsed));
 });
 
 // ---------- Presentation Mode ----------
@@ -4830,6 +4901,63 @@ healthReportCloseBtn.addEventListener("click", () => {
   healthReportModal.hidden = true;
 });
 
+// ---------- Keyboard shortcuts modal ----------
+// A structured registry, not hardcoded modal HTML, so a future command palette (if ever
+// built) can read the same list instead of drifting out of sync with it. `action` is a
+// stable id for that future consumer -- nothing here invokes it yet.
+const SHORTCUT_REGISTRY = [
+  { group: "Navigation & Structure", label: "Promote / demote node", keys: ["Tab", "⇧ Tab"], action: "outdent-indent" },
+  { group: "Navigation & Structure", label: "Add sibling below", keys: ["Enter"], action: "add-sibling" },
+  { group: "Navigation & Structure", label: "Delete focused node / object", keys: ["Delete"], action: "delete" },
+  { group: "Quick Insert", label: "New component", keys: ["N"], action: "insert-node" },
+  { group: "Quick Insert", label: "New sticky note", keys: ["S"], action: "insert-sticky-note" },
+  { group: "Quick Insert", label: "New text box", keys: ["T"], action: "insert-text" },
+  { group: "Quick Insert", label: "New rectangle", keys: ["R"], action: "insert-rectangle" },
+  { group: "Edit", label: "Undo", keys: ["Ctrl", "Z"], action: "undo" },
+  { group: "Edit", label: "Redo", keys: ["Ctrl", "Shift", "Z"], action: "redo" },
+  { group: "Edit", label: "Copy selected object", keys: ["Ctrl", "C"], action: "copy-object" },
+  { group: "Edit", label: "Paste object", keys: ["Ctrl", "V"], action: "paste-object" },
+  { group: "Selection", label: "Clear selection / close panel", keys: ["Esc"], action: "escape" },
+];
+
+function renderShortcutsModal() {
+  shortcutsListEl.innerHTML = "";
+  let lastGroup = null;
+  for (const item of SHORTCUT_REGISTRY) {
+    if (item.group !== lastGroup) {
+      const groupLabel = document.createElement("div");
+      groupLabel.className = "shortcuts-group-label";
+      groupLabel.textContent = item.group;
+      shortcutsListEl.appendChild(groupLabel);
+      lastGroup = item.group;
+    }
+    const row = document.createElement("div");
+    row.className = "shortcuts-row";
+    const label = document.createElement("span");
+    label.textContent = item.label;
+    const keys = document.createElement("span");
+    keys.className = "shortcut-keys";
+    for (const key of item.keys) {
+      const kbd = document.createElement("kbd");
+      kbd.textContent = key;
+      keys.appendChild(kbd);
+    }
+    row.appendChild(label);
+    row.appendChild(keys);
+    shortcutsListEl.appendChild(row);
+  }
+}
+shortcutsBtn.addEventListener("click", () => {
+  renderShortcutsModal();
+  shortcutsModal.hidden = false;
+});
+shortcutsCloseBtn.addEventListener("click", () => {
+  shortcutsModal.hidden = true;
+});
+shortcutsModal.addEventListener("click", (e) => {
+  if (e.target === shortcutsModal) shortcutsModal.hidden = true;
+});
+
 async function refreshHealthPanel() {
   if (!project) return;
   const res = await fetch(`/api/projects/${projectId}/validation`);
@@ -4843,9 +4971,20 @@ async function refreshHealthPanel() {
   if (inspectorActiveTab === "validation") renderInspector();
 }
 
+let healthFooterAutoExpandedOnce = false;
+
+healthFooterChip.addEventListener("click", () => {
+  const collapsed = healthFooterEl.classList.toggle("chip-collapsed");
+  healthFooterChip.title = collapsed ? "Expand the health summary" : "Collapse the health summary";
+  healthFooterChevronEl.textContent = collapsed ? "▾" : "▴";
+});
+
 // Compact, always-visible summary at the bottom of the Inspector — full detail (per-category
 // breakdown, complete change history) only shows up in the modal opened by View Full Report,
 // so the Inspector stays focused on the selected node instead of a wall of validation rows.
+// The chip row (dot + score) stays visible when collapsed; the detail below it starts
+// collapsed each session, EXCEPT it auto-expands once the first time a critical issue shows
+// up, so real structural regressions surface instead of hiding quietly behind a closed chip.
 function renderHealthFooter(report) {
   healthFooterGaugeEl.innerHTML = "";
   healthFooterGaugeEl.appendChild(buildHealthGauge(report, 48));
@@ -4857,6 +4996,17 @@ function renderHealthFooter(report) {
     report.broken_references.length;
   const warnings = report.large_modules.length + report.missing_owners.length;
   const suggestions = report.single_child_nodes.length + report.missing_notes.length;
+
+  const ratingClass = "rating-" + report.rating.toLowerCase().replace(/\s+/g, "-");
+  healthFooterDotEl.className = "health-footer-dot " + ratingClass;
+  healthFooterChipScoreEl.textContent = report.score;
+
+  if (critical > 0 && !healthFooterAutoExpandedOnce) {
+    healthFooterAutoExpandedOnce = true;
+    healthFooterEl.classList.remove("chip-collapsed");
+    healthFooterChip.title = "Collapse the health summary";
+    healthFooterChevronEl.textContent = "▴";
+  }
 
   healthFooterSummaryEl.innerHTML = "";
   const rows = [
@@ -5491,10 +5641,26 @@ function infoSelectValue(fieldKey, options, node) {
 
 let inspectorActiveTab = "overview"; // overview | properties | references | documentation | history | comments | validation
 
+// Defuses the biggest discoverability risk of the collapsed-by-default Inspector: the first
+// time the user focuses a real (non-root) node, open it for them. A plain in-memory flag, not
+// persisted -- it resets every reload, so it fires again each session rather than overriding
+// whatever collapse preference the user actually chose last time (see INSPECTOR_COLLAPSED_KEY).
+let inspectorAutoExpandedThisSession = false;
+
 function renderInspector() {
   inspectorContent.innerHTML = "";
   if (!project || !focusedNodeId) return;
   const node = project.nodes[focusedNodeId];
+
+  if (focusedNodeId !== rootId && !inspectorAutoExpandedThisSession) {
+    inspectorAutoExpandedThisSession = true;
+    if (inspectorPane.classList.contains("collapsed")) {
+      inspectorPane.classList.remove("collapsed");
+      editorPanesEl.classList.remove("inspector-collapsed");
+      inspectorCollapseBtn.textContent = "»";
+      inspectorCollapseBtn.title = "Collapse this panel for a distraction-free canvas";
+    }
+  }
 
   // ---- Sticky header: title + level badge + tabs. Always visible while scrolling, so
   // Notes/Comments/etc never lose their "which node is this?" context. ----

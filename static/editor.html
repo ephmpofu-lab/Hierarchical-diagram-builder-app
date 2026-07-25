@@ -6,13 +6,27 @@
   <title>Diagram Builder — Editor</title>
   <script>
     document.documentElement.dataset.theme = localStorage.getItem("diagram-builder-theme") || "dark";
+    // Anti-FOUC for the side panes: collapsed by default for a first-time session (no stored
+    // preference yet), matching the "canvas should dominate" redesign — same trick as the
+    // theme line above, since `<body>` (and the panes themselves) don't exist yet when this
+    // runs. editor.js applies the equivalent classes on load, then removes these attributes so
+    // the class-based toggle mechanism is the single source of truth from then on.
+    document.documentElement.dataset.outlineCollapsed = localStorage.getItem("diagram-builder-outline-collapsed") || "true";
+    document.documentElement.dataset.inspectorCollapsed = localStorage.getItem("diagram-builder-inspector-collapsed") || "true";
   </script>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <div class="topbar">
-    <h1 id="projectName">Loading…</h1>
+    <div class="topbar-identity">
+      <h1 id="projectName">Loading…</h1>
+      <div id="breadcrumb" class="breadcrumb"></div>
+    </div>
     <div class="topbar-actions">
+      <div class="view-mode-toggle">
+        <button id="focusModeBtn" class="btn btn-small icon-only active" title="Focus Mode: shows the ancestor chain plus this node's children, with other branches faded">◎</button>
+        <button id="fullArchModeBtn" class="btn btn-small icon-only" title="Full Architecture: shows the whole tree at once">▦</button>
+      </div>
       <div class="search-wrap">
         <input id="searchBox" type="text" placeholder="Search nodes…" autocomplete="off">
         <div id="searchResults" class="search-results" hidden></div>
@@ -62,6 +76,7 @@
           <label><input type="checkbox" data-filter="Blocked" checked> ⛔ Blocked</label>
         </div>
       </div>
+      <button id="shortcutsBtn" class="btn btn-small icon-only" title="Keyboard shortcuts">?</button>
       <a class="btn btn-small icon-only" href="index.html" title="Back to the project library">⌂</a>
     </div>
   </div>
@@ -76,57 +91,56 @@
     </div>
 
     <div class="pane canvas-pane">
-      <div class="canvas-toolbar">
-        <div id="breadcrumb" class="breadcrumb"></div>
-        <div class="canvas-controls">
-          <div class="view-mode-toggle">
-            <button id="focusModeBtn" class="btn btn-small icon-only active" title="Focus Mode: shows the ancestor chain plus this node's children, with other branches faded">◎</button>
-            <button id="fullArchModeBtn" class="btn btn-small icon-only" title="Full Architecture: shows the whole tree at once">▦</button>
-          </div>
-        </div>
-      </div>
       <div id="refModeBanner" class="ref-mode-banner" hidden>
         Connect mode: click an object to start the link, then click the target object. Esc to cancel.
       </div>
       <div id="selectionToolbar" class="selection-toolbar" hidden>
         <span id="selectionCount" class="selection-count"></span>
-        <button id="selCollapseBtn" class="btn btn-small" title="Collapse every selected node">Collapse</button>
-        <button id="selExpandBtn" class="btn btn-small" title="Expand every selected node">Expand</button>
-        <button id="selColorBtn" class="btn btn-small" title="Apply a color override to every selected node">Color</button>
-        <button id="selConnectBtn" class="btn btn-small" title="Draw a relationship from this node to another — click the target node next">Connect</button>
-        <div class="dropdown-wrap">
-          <button id="selStatusBtn" class="btn btn-small" title="Set completion status on every selected node — the 5-stage tracker used by the progress bar and Filters, not the free-text Lifecycle Stage">Completion ▾</button>
-          <div id="selStatusMenu" class="dropdown-menu" hidden>
-            <button data-status="Not Started">○ Not Started</button>
-            <button data-status="In Progress">◐ In Progress</button>
-            <button data-status="Completed">✓ Completed</button>
-            <button data-status="Needs Review">⚠ Needs Review</button>
-            <button data-status="Blocked">⛔ Blocked</button>
-          </div>
-        </div>
-        <button id="selGroupBtn" class="btn btn-small" title="Wrap the selected nodes (must share a parent) in a new group">Group</button>
-        <button id="selUngroupBtn" class="btn btn-small" title="Dissolve a selected group, moving its children up to the group's own parent">Ungroup</button>
-        <button id="selDuplicateBtn" class="btn btn-small" title="Duplicate every selected node (with its subtree) alongside the original">Duplicate</button>
-        <div class="dropdown-wrap">
-          <button id="selAlignBtn" class="btn btn-small" title="Align selected nodes — only available while Unlock Layout is active">Align ▾</button>
-          <div id="selAlignMenu" class="dropdown-menu" hidden>
-            <button data-align="left">⯇ Align Left</button>
-            <button data-align="center-h">↔ Align Center</button>
-            <button data-align="right">⯈ Align Right</button>
-            <button data-align="top">⯅ Align Top</button>
-            <button data-align="center-v">↕ Align Middle</button>
-            <button data-align="bottom">⯆ Align Bottom</button>
-          </div>
-        </div>
-        <div class="dropdown-wrap">
-          <button id="selDistributeBtn" class="btn btn-small" title="Distribute selected nodes evenly — only available while Unlock Layout is active">Distribute ▾</button>
-          <div id="selDistributeMenu" class="dropdown-menu" hidden>
-            <button data-distribute="horizontal">↔ Horizontally</button>
-            <button data-distribute="vertical">↕ Vertically</button>
-          </div>
-        </div>
-        <button id="selDeleteBtn" class="btn btn-small btn-danger" title="Delete every selected node">Delete</button>
+        <button id="selConnectBtn" class="btn btn-small" title="Draw a relationship from this node to another — click the target node next" hidden>⇢ Connect</button>
+        <button id="selDuplicateBtn" class="btn btn-small" title="Duplicate every selected node (with its subtree) alongside the original">⧉ Duplicate</button>
+        <button id="selDeleteBtn" class="btn btn-small btn-danger" title="Delete every selected node">🗑 Delete</button>
         <button id="selClearBtn" class="btn btn-small" title="Clear the current selection">Clear</button>
+        <div class="dropdown-wrap">
+          <button id="selMoreBtn" class="btn btn-small" title="More actions for the selected nodes">More ▾</button>
+          <div id="selMoreMenu" class="dropdown-menu" hidden>
+            <div class="dropdown-wrap">
+              <button id="selStatusBtn" title="Set completion status on every selected node — the 5-stage tracker used by the progress bar and Filters, not the free-text Lifecycle Stage">Completion ▾</button>
+              <div id="selStatusMenu" class="dropdown-menu" hidden>
+                <button data-status="Not Started">○ Not Started</button>
+                <button data-status="In Progress">◐ In Progress</button>
+                <button data-status="Completed">✓ Completed</button>
+                <button data-status="Needs Review">⚠ Needs Review</button>
+                <button data-status="Blocked">⛔ Blocked</button>
+              </div>
+            </div>
+            <button id="selColorBtn" title="Apply a color override to every selected node">Color</button>
+            <div class="dropdown-divider"></div>
+            <button id="selCollapseBtn" title="Collapse every selected node">Collapse</button>
+            <button id="selExpandBtn" title="Expand every selected node">Expand</button>
+            <div class="dropdown-divider"></div>
+            <button id="selGroupBtn" title="Wrap the selected nodes (must share a parent) in a new group">Group</button>
+            <button id="selUngroupBtn" title="Dissolve a selected group, moving its children up to the group's own parent">Ungroup</button>
+            <div class="dropdown-divider"></div>
+            <div class="dropdown-wrap">
+              <button id="selAlignBtn" title="Align selected nodes — only available while Unlock Layout is active">Align ▾</button>
+              <div id="selAlignMenu" class="dropdown-menu" hidden>
+                <button data-align="left">⯇ Align Left</button>
+                <button data-align="center-h">↔ Align Center</button>
+                <button data-align="right">⯈ Align Right</button>
+                <button data-align="top">⯅ Align Top</button>
+                <button data-align="center-v">↕ Align Middle</button>
+                <button data-align="bottom">⯆ Align Bottom</button>
+              </div>
+            </div>
+            <div class="dropdown-wrap">
+              <button id="selDistributeBtn" title="Distribute selected nodes evenly — only available while Unlock Layout is active">Distribute ▾</button>
+              <div id="selDistributeMenu" class="dropdown-menu" hidden>
+                <button data-distribute="horizontal">↔ Horizontally</button>
+                <button data-distribute="vertical">↕ Vertically</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <div id="presentationBar" class="presentation-bar" hidden>
         <button id="presentPrevLevelBtn" class="btn btn-small" title="Go up to the parent (Up arrow)">▲ Level</button>
@@ -182,6 +196,10 @@
           <span>⇢ Drag from a blue dot on the edge to connect this to another component</span>
           <button id="connectCoachMarkDismiss" class="btn btn-small" title="Don't show this again">Got it</button>
         </div>
+        <div id="paneCoachMark" class="connect-coach-mark pane-coach-mark" hidden>
+          <span>◂ ▸ Outline and Inspector are tucked to the sides — click either arrow to open them</span>
+          <button id="paneCoachMarkDismiss" class="btn btn-small" title="Don't show this again">Got it</button>
+        </div>
       </div>
     </div>
 
@@ -191,16 +209,24 @@
         <button id="inspectorCollapseBtn" class="pane-collapse-btn" title="Collapse this panel for a distraction-free canvas">»</button>
       </div>
       <div id="inspectorContent" class="inspector-content"></div>
-      <div id="healthFooter" class="health-footer" title="A quick structural-quality read at a glance. Click View Full Report for the complete breakdown.">
-        <div class="health-footer-main">
-          <div id="healthFooterGauge" class="health-footer-gauge"></div>
-          <div class="health-footer-col">
-            <div class="health-footer-title">Architecture Health</div>
-            <div id="healthFooterSummary" class="health-footer-summary"></div>
+      <div id="healthFooter" class="health-footer chip-collapsed">
+        <button id="healthFooterChip" class="health-footer-chip" title="Expand the health summary">
+          <span id="healthFooterDot" class="health-footer-dot"></span>
+          <span id="healthFooterChipScore" class="health-footer-chip-score"></span>
+          <span class="health-footer-chip-label">Architecture Health</span>
+          <span id="healthFooterChevron" class="health-footer-chevron">▾</span>
+        </button>
+        <div id="healthFooterDetail" class="health-footer-detail">
+          <div class="health-footer-main">
+            <div id="healthFooterGauge" class="health-footer-gauge"></div>
+            <div class="health-footer-col">
+              <div class="health-footer-title">Architecture Health</div>
+              <div id="healthFooterSummary" class="health-footer-summary"></div>
+            </div>
           </div>
+          <div id="healthFooterRecent" class="health-footer-recent"></div>
+          <button id="viewFullReportBtn" class="btn btn-small" title="Open the complete validation breakdown and full change history">View Full Report</button>
         </div>
-        <div id="healthFooterRecent" class="health-footer-recent"></div>
-        <button id="viewFullReportBtn" class="btn btn-small" title="Open the complete validation breakdown and full change history">View Full Report</button>
       </div>
     </div>
   </div>
@@ -224,6 +250,16 @@
         <div class="pane-header" title="A running log of structural changes: additions, deletions, renames, moves, and links. Why it matters: gives you an audit trail of what changed and when, without needing real version history. How to improve: nothing to fix here - it is read-only history.">Recent Changes</div>
         <div id="activityList" class="activity-list"></div>
       </div>
+    </div>
+  </div>
+
+  <div id="shortcutsModal" class="modal-backdrop" hidden>
+    <div class="modal shortcuts-modal">
+      <div class="modal-header-row">
+        <strong>Keyboard Shortcuts</strong>
+        <button id="shortcutsCloseBtn" class="theme-toggle" title="Close">×</button>
+      </div>
+      <div id="shortcutsList" class="shortcuts-list"></div>
     </div>
   </div>
 

@@ -105,6 +105,17 @@ button {
   letter-spacing: -0.01em;
 }
 
+.topbar-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.topbar-identity .breadcrumb {
+  padding: 0;
+}
+
 .project-name-input {
   font-size: 18px;
   font-weight: 600;
@@ -632,15 +643,24 @@ button {
   transition: grid-template-columns 0.2s ease;
 }
 
-.editor-panes.outline-collapsed {
+/* The html[data-*-collapsed] selectors below are the anti-FOUC path only -- they mirror the
+   .editor-panes.*-collapsed / .pane.collapsed rules exactly, so the very first paint already
+   matches whatever the pre-JS inline script in <head> decided from localStorage. editor.js
+   removes these data attributes once it applies the real classes on load, so from that point
+   on only the class-based rules are ever in effect -- the two can never drift out of sync. */
+
+.editor-panes.outline-collapsed,
+html[data-outline-collapsed="true"] .editor-panes {
   grid-template-columns: 36px 1fr 280px;
 }
 
-.editor-panes.inspector-collapsed {
+.editor-panes.inspector-collapsed,
+html[data-inspector-collapsed="true"] .editor-panes {
   grid-template-columns: 300px 1fr 36px;
 }
 
-.editor-panes.outline-collapsed.inspector-collapsed {
+.editor-panes.outline-collapsed.inspector-collapsed,
+html[data-outline-collapsed="true"][data-inspector-collapsed="true"] .editor-panes {
   grid-template-columns: 36px 1fr 36px;
 }
 
@@ -649,17 +669,24 @@ button {
   overflow-y: auto;
 }
 
-.pane.collapsed {
+.pane.collapsed,
+html[data-outline-collapsed="true"] .outline-pane,
+html[data-inspector-collapsed="true"] .inspector-pane {
   overflow: hidden;
 }
 
-.pane.collapsed .pane-header > *:not(.pane-collapse-btn) {
+.pane.collapsed .pane-header > *:not(.pane-collapse-btn),
+html[data-outline-collapsed="true"] .outline-pane .pane-header > *:not(.pane-collapse-btn),
+html[data-inspector-collapsed="true"] .inspector-pane .pane-header > *:not(.pane-collapse-btn) {
   display: none;
 }
 
 .pane.collapsed .outline-tree,
 .pane.collapsed .inspector-content,
-.pane.collapsed .health-footer {
+.pane.collapsed .health-footer,
+html[data-outline-collapsed="true"] .outline-tree,
+html[data-inspector-collapsed="true"] .inspector-content,
+html[data-inspector-collapsed="true"] .health-footer {
   display: none;
 }
 
@@ -668,24 +695,6 @@ button {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-
-.canvas-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  flex-shrink: 0;
-  gap: 8px;
-}
-
-.canvas-controls {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 12px;
-  flex-shrink: 0;
 }
 
 .zoom-level {
@@ -794,10 +803,28 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
+  width: fit-content;
   background: var(--accent-bg);
   padding: 8px 16px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+/* The top bar's dropdowns are tuned right:0 for right-edge-anchored trigger buttons -- the
+   selection toolbar's More button sits well left of the window edge, so its own top-level
+   menu needs to expand from its left edge instead, or it clips off-window. */
+.selection-toolbar > .dropdown-wrap > .dropdown-menu {
+  left: 0;
+  right: auto;
+}
+
+/* Nested dropdowns inside the More panel (Completion/Align/Distribute) pop out to the right
+   of the panel itself, same idea as the tool rail's .rail-flyout, so they never overlap or
+   get clipped by the More panel's own bounds. */
+#selMoreMenu .dropdown-wrap > .dropdown-menu {
+  top: 0;
+  left: calc(100% + 4px);
+  right: auto;
 }
 
 .selection-count {
@@ -829,7 +856,6 @@ button {
 body.presentation-active .topbar-actions,
 body.presentation-active .outline-pane,
 body.presentation-active .inspector-pane,
-body.presentation-active .canvas-toolbar .canvas-controls,
 body.presentation-active .minimap-svg,
 body.presentation-active .selection-toolbar,
 body.presentation-active .ref-mode-banner,
@@ -1841,6 +1867,11 @@ hr.inspector-divider {
   max-width: 340px;
 }
 
+.pane-coach-mark {
+  top: 14px;
+  bottom: auto;
+}
+
 .minimap-svg {
   position: absolute;
   bottom: 12px;
@@ -1970,41 +2001,75 @@ hr.inspector-divider {
   opacity: 1;
 }
 
-/* ---------- Inspector panel mode toggle (Inspector / Health) ---------- */
-
-.panel-mode-toggle {
-  display: flex;
-  gap: 2px;
-}
-
-.panel-mode-btn {
-  border: none;
-  background: none;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 3px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.panel-mode-btn:hover {
-  color: var(--text);
-}
-
-.panel-mode-btn.active {
-  background: var(--accent-bg);
-  color: var(--accent-text);
-}
-
 /* ---------- Health footer (compact, always visible at the bottom of the Inspector) ---------- */
 
 .health-footer {
   border-top: 1px solid var(--border);
-  padding: 10px 16px 14px;
   flex-shrink: 0;
+}
+
+.health-footer-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 10px 16px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+}
+
+.health-footer-chip:hover {
+  background: var(--surface-2);
+}
+
+.health-footer-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--accent-text);
+}
+
+.health-footer-dot.rating-excellent { background: var(--success-text); }
+.health-footer-dot.rating-good { background: var(--accent-text); }
+.health-footer-dot.rating-fair { background: var(--warning-text); }
+.health-footer-dot.rating-poor,
+.health-footer-dot.rating-critical { background: var(--danger-text); }
+
+.health-footer-chip-score {
+  font-weight: 700;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.health-footer-chip-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.health-footer-chevron {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.health-footer-detail {
+  padding: 0 16px 14px;
+}
+
+.health-footer.chip-collapsed .health-footer-detail {
+  display: none;
 }
 
 .health-footer-main {
@@ -2065,6 +2130,56 @@ hr.inspector-divider {
   max-width: 480px;
   max-height: 80vh;
   overflow-y: auto;
+}
+
+.shortcuts-modal {
+  max-width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.shortcuts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shortcuts-group-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  margin: 14px 0 4px;
+}
+
+.shortcuts-group-label:first-child {
+  margin-top: 0;
+}
+
+.shortcuts-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.shortcuts-row .shortcut-keys {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.shortcuts-row kbd {
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
 }
 
 .health-card {
