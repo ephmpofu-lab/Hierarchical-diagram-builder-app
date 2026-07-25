@@ -4699,6 +4699,11 @@ function enterPresentationMode() {
   if (viewMode !== "focus") setViewMode("focus");
   document.body.classList.add("presentation-active");
   presentationBar.hidden = false;
+  // Collapsing the side panes just changed the canvas's actual pixel width via CSS grid --
+  // setViewMode() above only re-renders when the view mode itself changes, which is a no-op
+  // if already in Focus Mode (the common case). Without this, the last frame stays positioned
+  // for the old, narrower viewport and is invisible in the new, wider one.
+  fitToView(false);
 }
 
 let storyModeInterval = null;
@@ -4745,6 +4750,9 @@ function exitPresentationMode() {
   prePresentationState = null;
   document.body.classList.remove("presentation-active");
   presentationBar.hidden = true;
+  // Symmetric with enterPresentationMode() -- restoring the side panes changes the canvas's
+  // pixel width back, so the view needs to be re-fit against the new (smaller) size too.
+  fitToView(false);
 }
 
 presentEnterBtn.addEventListener("click", enterPresentationMode);
