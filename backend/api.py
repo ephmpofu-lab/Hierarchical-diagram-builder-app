@@ -59,6 +59,17 @@ def _ensure_owner(project: Project, user: AuthenticatedUser) -> None:
         raise HTTPException(status_code=403, detail="You do not have access to this project")
 
 
+@router.get("/session")
+def api_get_session(user: AuthenticatedUser = Depends(require_auth)):
+    """A lightweight "who am I" check. This exists specifically so the frontend can verify
+    a session is genuinely backend-valid before trusting it -- the Supabase client's own
+    local getSession() only checks the token's client-side expiry, which can disagree with
+    what this backend actually accepts (a real gap that produced a login/index redirect
+    ping-pong: the login page trusted the local check, the app pages trusted the backend,
+    and the two disagreed). Both pages now defer to this endpoint as the one source of truth."""
+    return {"id": user.id, "email": user.email, "role": user.role}
+
+
 @router.get("/projects", response_model=list[ProjectSummary])
 def api_list_projects(user: AuthenticatedUser = Depends(require_auth)):
     return storage.list_projects(user.id)

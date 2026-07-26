@@ -9,16 +9,41 @@
   </script>
   <link rel="stylesheet" href="css/style.css">
   <style>
-    .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-    .login-card { width: 100%; max-width: 340px; }
+    .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .login-card { width: 100%; max-width: 360px; }
     .login-card h1 { font-size: 18px; margin: 0 0 4px; }
     .login-card p.sub { color: var(--text-muted); font-size: 13px; margin: 0 0 16px; }
-    .login-field { margin-bottom: 12px; }
+    .login-field { margin-bottom: 14px; }
     .login-field label { display: block; font-size: 12.5px; color: var(--text-muted); margin-bottom: 4px; }
-    .login-error { color: var(--danger-text, #c0524a); font-size: 12.5px; margin: 0 0 12px; min-height: 1em; }
-    .login-status { color: var(--text-muted); font-size: 12.5px; margin: 0 0 12px; min-height: 1em; }
-    .login-toggle { text-align: center; margin-top: 14px; font-size: 13px; }
+    .login-field-error { color: var(--danger-text); font-size: 12px; margin-top: 4px; min-height: 1em; }
+    .password-row { position: relative; }
+    .password-row input { padding-right: 58px !important; }
+    .password-toggle {
+      position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+      border: none; background: none; color: var(--text-muted); font-size: 11.5px;
+      font-weight: 600; cursor: pointer; padding: 4px 8px;
+    }
+    .password-toggle:hover { color: var(--text); }
+    .remember-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; font-size: 12.5px; }
+    .remember-row label { display: flex; align-items: center; gap: 6px; color: var(--text-muted); cursor: pointer; }
+    .remember-row a { color: var(--accent); cursor: pointer; }
+    .login-banner {
+      border-radius: var(--radius-sm); padding: 9px 12px; font-size: 12.5px; margin: 0 0 14px;
+      display: none;
+    }
+    .login-banner.show { display: block; }
+    .login-banner.error { background: var(--danger-bg); color: var(--danger-text); }
+    .login-banner.success { background: var(--success-bg); color: var(--success-text); }
+    .login-banner.info { background: var(--info-bg); color: var(--info-text); }
+    .login-toggle { text-align: center; margin-top: 14px; font-size: 13px; color: var(--text-muted); }
     .login-toggle a { color: var(--accent); cursor: pointer; }
+    .btn-loading { position: relative; color: transparent !important; }
+    .btn-loading::after {
+      content: ""; position: absolute; left: 50%; top: 50%; width: 14px; height: 14px;
+      margin: -7px 0 0 -7px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.4);
+      border-top-color: #fff; animation: login-spin 0.7s linear infinite;
+    }
+    @keyframes login-spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -26,92 +51,251 @@
     <div class="modal login-card">
       <h1 id="formTitle">Sign in to Architeq</h1>
       <p class="sub" id="formSubtitle">Login required before accessing any project.</p>
-      <p class="login-error" id="loginError"></p>
-      <p class="login-status" id="loginStatus"></p>
-      <form id="loginForm">
+
+      <div class="login-banner error" id="errorBanner"></div>
+      <div class="login-banner success" id="successBanner"></div>
+      <div class="login-banner info" id="infoBanner"></div>
+
+      <form id="authForm" novalidate>
         <div class="login-field">
           <label for="emailInput">Email</label>
           <input id="emailInput" type="email" autocomplete="email" required>
+          <div class="login-field-error" id="emailError"></div>
         </div>
-        <div class="login-field">
+        <div class="login-field" id="passwordField">
           <label for="passwordInput">Password</label>
-          <input id="passwordInput" type="password" autocomplete="current-password" required>
+          <div class="password-row">
+            <input id="passwordInput" type="password" autocomplete="current-password" minlength="6" required>
+            <button type="button" class="password-toggle" id="togglePassword">Show</button>
+          </div>
+          <div class="login-field-error" id="passwordError"></div>
+        </div>
+        <div class="login-field" id="confirmPasswordField" hidden>
+          <label for="confirmPasswordInput">Confirm password</label>
+          <div class="password-row">
+            <input id="confirmPasswordInput" type="password" autocomplete="new-password" minlength="6">
+            <button type="button" class="password-toggle" id="toggleConfirmPassword">Show</button>
+          </div>
+          <div class="login-field-error" id="confirmPasswordError"></div>
+        </div>
+        <div class="remember-row" id="rememberRow">
+          <label><input type="checkbox" id="rememberMeCheckbox" checked> Remember me</label>
+          <a id="forgotPasswordLink">Forgot password?</a>
         </div>
         <button type="submit" class="btn btn-primary" id="submitBtn" style="width:100%;">Sign in</button>
       </form>
-      <div class="login-toggle">
+
+      <div class="login-toggle" id="modeToggleRow">
         <span id="toggleLabel">Don't have an account yet?</span>
         <a id="toggleModeBtn">Sign up</a>
+      </div>
+      <div class="login-toggle" id="backToSignInRow" style="display:none;">
+        <a id="backToSignInBtn">← Back to sign in</a>
       </div>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="js/supabase-config.js"></script>
+  <script src="js/supabase-client.js"></script>
   <script>
-    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+    // Four modes. "reset" is never chosen by the user directly -- it's entered
+    // automatically when Supabase's PASSWORD_RECOVERY auth event fires, after the user
+    // clicks the reset link in their email.
+    let mode = "signin"; // "signin" | "signup" | "forgot" | "reset"
 
-    let mode = "signin"; // "signin" | "signup"
-
-    const form = document.getElementById("loginForm");
+    const form = document.getElementById("authForm");
     const emailInput = document.getElementById("emailInput");
     const passwordInput = document.getElementById("passwordInput");
+    const confirmPasswordInput = document.getElementById("confirmPasswordInput");
+    const passwordField = document.getElementById("passwordField");
+    const confirmPasswordField = document.getElementById("confirmPasswordField");
+    const rememberRow = document.getElementById("rememberRow");
+    const rememberMeCheckbox = document.getElementById("rememberMeCheckbox");
+    const forgotPasswordLink = document.getElementById("forgotPasswordLink");
     const submitBtn = document.getElementById("submitBtn");
-    const errorEl = document.getElementById("loginError");
-    const statusEl = document.getElementById("loginStatus");
+    const errorBanner = document.getElementById("errorBanner");
+    const successBanner = document.getElementById("successBanner");
+    const infoBanner = document.getElementById("infoBanner");
+    const emailError = document.getElementById("emailError");
+    const passwordError = document.getElementById("passwordError");
+    const confirmPasswordError = document.getElementById("confirmPasswordError");
     const toggleModeBtn = document.getElementById("toggleModeBtn");
     const toggleLabel = document.getElementById("toggleLabel");
+    const modeToggleRow = document.getElementById("modeToggleRow");
+    const backToSignInRow = document.getElementById("backToSignInRow");
+    const backToSignInBtn = document.getElementById("backToSignInBtn");
     const formTitle = document.getElementById("formTitle");
     const formSubtitle = document.getElementById("formSubtitle");
 
-    // Already signed in? Skip straight past the login page.
-    supabaseClient.auth.getSession().then(({ data }) => {
-      if (data.session) window.location.href = "index.html";
-    });
+    function clearBanners() {
+      for (const el of [errorBanner, successBanner, infoBanner]) {
+        el.classList.remove("show");
+        el.textContent = "";
+      }
+    }
+    function showBanner(el, message) {
+      clearBanners();
+      el.textContent = message;
+      el.classList.add("show");
+    }
+    function clearFieldErrors() {
+      emailError.textContent = "";
+      passwordError.textContent = "";
+      confirmPasswordError.textContent = "";
+    }
+    function clearForm() {
+      form.reset();
+      rememberMeCheckbox.checked = true;
+    }
+    function setLoading(isLoading) {
+      submitBtn.disabled = isLoading;
+      submitBtn.classList.toggle("btn-loading", isLoading);
+    }
 
-    toggleModeBtn.addEventListener("click", () => {
-      mode = mode === "signin" ? "signup" : "signin";
-      errorEl.textContent = "";
-      statusEl.textContent = "";
-      if (mode === "signup") {
-        formTitle.textContent = "Create your Architeq account";
-        formSubtitle.textContent = "One account is all this project needs today.";
-        submitBtn.textContent = "Sign up";
-        toggleLabel.textContent = "Already have an account?";
-        toggleModeBtn.textContent = "Sign in";
-      } else {
+    function setMode(next) {
+      mode = next;
+      clearBanners();
+      clearFieldErrors();
+      confirmPasswordField.hidden = mode !== "signup" && mode !== "reset";
+      confirmPasswordInput.required = mode === "signup" || mode === "reset";
+      passwordField.hidden = mode === "forgot";
+      passwordInput.required = mode !== "forgot";
+      rememberRow.style.display = mode === "signin" ? "flex" : "none";
+      modeToggleRow.style.display = mode === "signin" || mode === "signup" ? "block" : "none";
+      backToSignInRow.style.display = mode === "forgot" ? "block" : "none";
+
+      if (mode === "signin") {
         formTitle.textContent = "Sign in to Architeq";
         formSubtitle.textContent = "Login required before accessing any project.";
         submitBtn.textContent = "Sign in";
         toggleLabel.textContent = "Don't have an account yet?";
         toggleModeBtn.textContent = "Sign up";
+      } else if (mode === "signup") {
+        formTitle.textContent = "Create your Architeq account";
+        formSubtitle.textContent = "One account is all this project needs today.";
+        submitBtn.textContent = "Sign up";
+        toggleLabel.textContent = "Already have an account?";
+        toggleModeBtn.textContent = "Sign in";
+      } else if (mode === "forgot") {
+        formTitle.textContent = "Reset your password";
+        formSubtitle.textContent = "Enter your email and we'll send you a reset link.";
+        submitBtn.textContent = "Send reset link";
+      } else if (mode === "reset") {
+        formTitle.textContent = "Choose a new password";
+        formSubtitle.textContent = "You're verified — set a new password to finish.";
+        submitBtn.textContent = "Update password";
       }
+    }
+
+    toggleModeBtn.addEventListener("click", () => setMode(mode === "signin" ? "signup" : "signin"));
+    forgotPasswordLink.addEventListener("click", () => setMode("forgot"));
+    backToSignInBtn.addEventListener("click", () => setMode("signin"));
+
+    function makeToggle(buttonId, inputEl) {
+      document.getElementById(buttonId).addEventListener("click", () => {
+        const showing = inputEl.type === "text";
+        inputEl.type = showing ? "password" : "text";
+        document.getElementById(buttonId).textContent = showing ? "Show" : "Hide";
+      });
+    }
+    makeToggle("togglePassword", passwordInput);
+    makeToggle("toggleConfirmPassword", confirmPasswordInput);
+
+    // Arriving here already signed in (a stale tab, e.g.) skips straight past login -- but
+    // only once verified against the backend, not just Supabase's own local session cache.
+    // The local cache only checks client-side token expiry, which can disagree with what
+    // the backend actually accepts; trusting it alone is what produced a login/index
+    // redirect loop (index.html found the disagreement via a real 401 and bounced back
+    // here, while this page kept trusting the stale local session and bouncing forward
+    // again). Not mid password-recovery, which also carries a session but needs the reset
+    // form, not a redirect.
+    (async () => {
+      const { data } = await supabaseClient.auth.getSession();
+      if (!data.session || mode === "reset") return;
+      try {
+        const res = await fetch("/api/session", {
+          headers: { Authorization: `Bearer ${data.session.access_token}` },
+        });
+        if (res.ok) {
+          guardedRedirect("index.html");
+        } else {
+          await supabaseClient.auth.signOut(); // stale/invalid session -- clear it, don't loop on it
+        }
+      } catch {
+        // Network hiccup checking the session -- stay on the login page rather than guess.
+      }
+    })();
+
+    supabaseClient.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") setMode("reset");
     });
+
+    function validate() {
+      clearFieldErrors();
+      let ok = true;
+      if (!emailInput.value.trim() && mode !== "reset") {
+        emailError.textContent = "Email is required.";
+        ok = false;
+      }
+      if (mode !== "forgot" && passwordInput.value.length < 6) {
+        passwordError.textContent = "Password must be at least 6 characters.";
+        ok = false;
+      }
+      if ((mode === "signup" || mode === "reset") && confirmPasswordInput.value !== passwordInput.value) {
+        confirmPasswordError.textContent = "Passwords do not match.";
+        ok = false;
+      }
+      return ok;
+    }
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      errorEl.textContent = "";
-      statusEl.textContent = "";
-      submitBtn.disabled = true;
+      if (!validate()) return;
+      clearBanners();
+      setLoading(true);
       const email = emailInput.value.trim();
       const password = passwordInput.value;
 
-      const { data, error } =
-        mode === "signup"
-          ? await supabaseClient.auth.signUp({ email, password })
-          : await supabaseClient.auth.signInWithPassword({ email, password });
-
-      submitBtn.disabled = false;
-      if (error) {
-        errorEl.textContent = error.message;
-        return;
+      try {
+        if (mode === "signin") {
+          setRememberMe(rememberMeCheckbox.checked);
+          const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+          guardedRedirect("index.html");
+        } else if (mode === "signup") {
+          const { data, error } = await supabaseClient.auth.signUp({ email, password });
+          if (error) throw error;
+          if (data.session) {
+            guardedRedirect("index.html");
+          } else {
+            clearForm();
+            setMode("signin"); // before showBanner -- setMode() clears banners as part of switching
+            showBanner(infoBanner, "Account created — check your email to verify your account, then sign in.");
+          }
+        } else if (mode === "forgot") {
+          const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+            redirectTo: window.location.origin + window.location.pathname,
+          });
+          if (error) throw error;
+          clearForm();
+          setMode("signin"); // before showBanner -- setMode() clears banners as part of switching
+          showBanner(successBanner, "Check your email for a password reset link.");
+        } else if (mode === "reset") {
+          const { error } = await supabaseClient.auth.updateUser({ password });
+          if (error) throw error;
+          clearForm();
+          showBanner(successBanner, "Password updated — redirecting…");
+          setTimeout(() => { guardedRedirect("index.html"); }, 1200);
+        }
+      } catch (err) {
+        showBanner(errorBanner, err.message || "Something went wrong. Please try again.");
+      } finally {
+        setLoading(false);
       }
-      if (mode === "signup" && !data.session) {
-        statusEl.textContent = "Account created — check your email to confirm, then sign in.";
-        return;
-      }
-      window.location.href = "index.html";
     });
+
+    setMode("signin");
   </script>
 </body>
 </html>

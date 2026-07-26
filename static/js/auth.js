@@ -1,38 +1,49 @@
-// Shared session guard + fetch-wrapping (Phase 12 WP2). Loaded on every page except
-// login.html, which has its own separate sign-in/sign-up flow. Depends on the Supabase JS
-// client (CDN) and supabase-config.js being loaded first.
+// Shared session guard + fetch-wrapping (Phase 12 WP2, revised). Loaded on every page
+// except login.html. Depends on supabase-client.js (which depends on the Supabase CDN
+// script + supabase-config.js) having already run and defined `supabaseClient`.
 //
 // Wrapping window.fetch once, globally, is deliberate: editor.js and library.js already
 // have dozens of existing fetch("/api/...") call sites built up over many rounds of this
-// project. Rewriting each one individually to attach an Authorization header would touch
-// far more of the codebase than this change needs to -- one wrapper here gives every
-// existing and future call site the header automatically, with zero changes to any of them.
-
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+// project. One wrapper here gives every existing and future call site the Authorization
+// header automatically, with zero changes to any of them.
 
 let currentSession = null;
 
 async function requireSession() {
   const { data } = await supabaseClient.auth.getSession();
   if (!data.session) {
-    window.location.href = "login.html";
+    guardedRedirect("login.html");
     return null;
   }
   currentSession = data.session;
   return data.session;
 }
 
-supabaseClient.auth.onAuthStateChange((_event, session) => {
+// Root cause of the earlier signup redirect loop: onAuthStateChange's very first callback
+// can fire with a transient null session before the persisted session finishes loading --
+// reacting to ANY falsy session here raced against requireSession() above, which had
+// already found and confirmed a real one, and the two disagreed. Only an explicit
+// SIGNED_OUT event should ever send us back to the login page from this listener.
+supabaseClient.auth.onAuthStateChange((event, session) => {
   currentSession = session;
-  if (!session) {
-    window.location.href = "login.html";
+  if (event === "SIGNED_OUT") {
+    guardedRedirect("login.html");
   }
 });
 
+// Scoped deliberately to our own /api/ calls only, for both the header injection AND the
+// 401 redirect below. Supabase's JS client also calls the global fetch() internally (for
+// its own token-refresh requests against supabase.co) -- an earlier version of this file
+// redirected on ANY 401 from ANY fetch, which meant a failed Supabase-internal refresh
+// call could trigger this same redirect, competing with Supabase's own auth-state handling
+// and contributing to exactly the instability this fix addresses. Supabase's client already
+// fires a real SIGNED_OUT event through onAuthStateChange above when a refresh genuinely
+// fails -- that's the one path that should ever send us to login.html, not a raw 401 count.
 const _nativeFetch = window.fetch.bind(window);
 window.fetch = async (input, init = {}) => {
   const url = typeof input === "string" ? input : input.url;
-  if (url.startsWith("/api/")) {
+  const isOwnApiCall = url.startsWith("/api/");
+  if (isOwnApiCall) {
     const session = currentSession || (await supabaseClient.auth.getSession()).data.session;
     if (session) {
       init = {
@@ -42,15 +53,15 @@ window.fetch = async (input, init = {}) => {
     }
   }
   const response = await _nativeFetch(input, init);
-  if (response.status === 401) {
-    window.location.href = "login.html";
+  if (isOwnApiCall && response.status === 401) {
+    guardedRedirect("login.html");
   }
   return response;
 };
 
 async function logout() {
   await supabaseClient.auth.signOut();
-  window.location.href = "login.html";
+  guardedRedirect("login.html");
 }
 
 requireSession();
