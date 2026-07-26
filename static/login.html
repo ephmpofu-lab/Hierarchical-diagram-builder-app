@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Architeq — Sign in</title>
+  <script>
+    document.documentElement.dataset.theme = localStorage.getItem("diagram-builder-theme") || "dark";
+  </script>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .login-card { width: 100%; max-width: 340px; }
+    .login-card h1 { font-size: 18px; margin: 0 0 4px; }
+    .login-card p.sub { color: var(--text-muted); font-size: 13px; margin: 0 0 16px; }
+    .login-field { margin-bottom: 12px; }
+    .login-field label { display: block; font-size: 12.5px; color: var(--text-muted); margin-bottom: 4px; }
+    .login-error { color: var(--danger-text, #c0524a); font-size: 12.5px; margin: 0 0 12px; min-height: 1em; }
+    .login-status { color: var(--text-muted); font-size: 12.5px; margin: 0 0 12px; min-height: 1em; }
+    .login-toggle { text-align: center; margin-top: 14px; font-size: 13px; }
+    .login-toggle a { color: var(--accent); cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="modal login-card">
+      <h1 id="formTitle">Sign in to Architeq</h1>
+      <p class="sub" id="formSubtitle">Login required before accessing any project.</p>
+      <p class="login-error" id="loginError"></p>
+      <p class="login-status" id="loginStatus"></p>
+      <form id="loginForm">
+        <div class="login-field">
+          <label for="emailInput">Email</label>
+          <input id="emailInput" type="email" autocomplete="email" required>
+        </div>
+        <div class="login-field">
+          <label for="passwordInput">Password</label>
+          <input id="passwordInput" type="password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn btn-primary" id="submitBtn" style="width:100%;">Sign in</button>
+      </form>
+      <div class="login-toggle">
+        <span id="toggleLabel">Don't have an account yet?</span>
+        <a id="toggleModeBtn">Sign up</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="js/supabase-config.js"></script>
+  <script>
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+    let mode = "signin"; // "signin" | "signup"
+
+    const form = document.getElementById("loginForm");
+    const emailInput = document.getElementById("emailInput");
+    const passwordInput = document.getElementById("passwordInput");
+    const submitBtn = document.getElementById("submitBtn");
+    const errorEl = document.getElementById("loginError");
+    const statusEl = document.getElementById("loginStatus");
+    const toggleModeBtn = document.getElementById("toggleModeBtn");
+    const toggleLabel = document.getElementById("toggleLabel");
+    const formTitle = document.getElementById("formTitle");
+    const formSubtitle = document.getElementById("formSubtitle");
+
+    // Already signed in? Skip straight past the login page.
+    supabaseClient.auth.getSession().then(({ data }) => {
+      if (data.session) window.location.href = "index.html";
+    });
+
+    toggleModeBtn.addEventListener("click", () => {
+      mode = mode === "signin" ? "signup" : "signin";
+      errorEl.textContent = "";
+      statusEl.textContent = "";
+      if (mode === "signup") {
+        formTitle.textContent = "Create your Architeq account";
+        formSubtitle.textContent = "One account is all this project needs today.";
+        submitBtn.textContent = "Sign up";
+        toggleLabel.textContent = "Already have an account?";
+        toggleModeBtn.textContent = "Sign in";
+      } else {
+        formTitle.textContent = "Sign in to Architeq";
+        formSubtitle.textContent = "Login required before accessing any project.";
+        submitBtn.textContent = "Sign in";
+        toggleLabel.textContent = "Don't have an account yet?";
+        toggleModeBtn.textContent = "Sign up";
+      }
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      errorEl.textContent = "";
+      statusEl.textContent = "";
+      submitBtn.disabled = true;
+      const email = emailInput.value.trim();
+      const password = passwordInput.value;
+
+      const { data, error } =
+        mode === "signup"
+          ? await supabaseClient.auth.signUp({ email, password })
+          : await supabaseClient.auth.signInWithPassword({ email, password });
+
+      submitBtn.disabled = false;
+      if (error) {
+        errorEl.textContent = error.message;
+        return;
+      }
+      if (mode === "signup" && !data.session) {
+        statusEl.textContent = "Account created — check your email to confirm, then sign in.";
+        return;
+      }
+      window.location.href = "index.html";
+    });
+  </script>
+</body>
+</html>

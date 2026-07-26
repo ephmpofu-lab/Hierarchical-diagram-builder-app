@@ -1,9 +1,10 @@
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from . import concept, storage, tree
+from .auth import AuthenticatedUser, require_auth
 from .models import (
     AddParentRequest,
     Comment,
@@ -34,7 +35,14 @@ from .models import (
     ValidationReport,
 )
 
-router = APIRouter(prefix="/api")
+# Every route in this router requires a valid Supabase session -- "login required before
+# accessing any project", the security requirement stated at the start of this project.
+# Ownership enforcement (below) is scoped to the project-lifecycle boundary routes only
+# (create/get/rename/delete/restore/clear/validation) for this pass, not every individual
+# node/reference/comment sub-route -- a deliberate, stated WP2 scope line, not an oversight:
+# with exactly one real user account today the residual gap is low-risk, and deep
+# per-operation checks are straightforward to extend later following this same pattern.
+router = APIRouter(prefix="/api", dependencies=[Depends(require_auth)])
 
 
 def _project_with_levels(project: Project) -> dict:
@@ -44,23 +52,32 @@ def _project_with_levels(project: Project) -> dict:
     return data
 
 
+def _ensure_owner(project: Project, user: AuthenticatedUser) -> None:
+    # owner_id is None for legacy projects created before auth existed -- accessible to
+    # any authenticated user until explicitly claimed, rather than locking them out.
+    if project.owner_id is not None and project.owner_id != user.id:
+        raise HTTPException(status_code=403, detail="You do not have access to this project")
+
+
 @router.get("/projects", response_model=list[ProjectSummary])
-def api_list_projects():
-    return storage.list_projects()
+def api_list_projects(user: AuthenticatedUser = Depends(require_auth)):
+    return storage.list_projects(user.id)
 
 
 @router.post("/projects", response_model=Project, status_code=201)
-def api_create_project(body: ProjectCreate):
+def api_create_project(body: ProjectCreate, user: AuthenticatedUser = Depends(require_auth)):
     if not body.name.strip():
         raise HTTPException(status_code=400, detail="Name cannot be empty")
-    return storage.create_project(body.name.strip())
+    return storage.create_project(body.name.strip(), user.id)
 
 
 @router.post("/projects/from-outline", response_model=Project, status_code=201)
-def api_create_project_from_outline(body: OutlineImport, name: Optional[str] = Query(None)):
+def api_create_project_from_outline(
+    body: OutlineImport, name: Optional[str] = Query(None), user: AuthenticatedUser = Depends(require_auth)
+):
     root_template = tree.parse_outline_text(body.text)
     project_name = name.strip() if name and name.strip() else root_template.label
-    project = storage.create_project(project_name)
+    project = storage.create_project(project_name, user.id)
     root_id = next(iter(project.nodes))
     project.nodes[root_id].label = root_template.label
     project.nodes[root_id].notes = root_template.notes
@@ -72,41 +89,48 @@ def api_create_project_from_outline(body: OutlineImport, name: Optional[str] = Q
 
 
 @router.get("/projects/{project_id}")
-def api_get_project(project_id: str):
+def api_get_project(project_id: str, user: AuthenticatedUser = Depends(require_auth)):
     project = storage.load_project(project_id)
+    _ensure_owner(project, user)
     return _project_with_levels(project)
 
 
 @router.get("/projects/{project_id}/raw", response_model=Project)
-def api_get_project_raw(project_id: str):
+def api_get_project_raw(project_id: str, user: AuthenticatedUser = Depends(require_auth)):
     """Exact on-disk file format, no computed fields — used for JSON export."""
-    return storage.load_project(project_id)
+    project = storage.load_project(project_id)
+    _ensure_owner(project, user)
+    return project
 
 
 @router.get("/projects/{project_id}/validation", response_model=ValidationReport)
-def api_get_validation(project_id: str):
+def api_get_validation(project_id: str, user: AuthenticatedUser = Depends(require_auth)):
     project = storage.load_project(project_id)
+    _ensure_owner(project, user)
     return tree.build_validation_report(project)
 
 
 @router.put("/projects/{project_id}", response_model=Project)
-def api_rename_project(project_id: str, body: ProjectRename):
+def api_rename_project(project_id: str, body: ProjectRename, user: AuthenticatedUser = Depends(require_auth)):
     if not body.name.strip():
         raise HTTPException(status_code=400, detail="Name cannot be empty")
+    _ensure_owner(storage.load_project(project_id), user)
     return storage.rename_project(project_id, body.name.strip())
 
 
 @router.delete("/projects/{project_id}", status_code=204)
-def api_delete_project(project_id: str):
+def api_delete_project(project_id: str, user: AuthenticatedUser = Depends(require_auth)):
+    _ensure_owner(storage.load_project(project_id), user)
     storage.delete_project(project_id)
 
 
 @router.post("/projects/{project_id}/clear", response_model=Project)
-def api_clear_project(project_id: str):
+def api_clear_project(project_id: str, user: AuthenticatedUser = Depends(require_auth)):
     """Resets the project back to just its root node - deletes every other node, every
     reference, and every free object. Gated client-side behind a type-to-confirm modal
     since this is destructive and undo history doesn't survive a page reload."""
     project = storage.load_project(project_id)
+    _ensure_owner(project, user)
     tree.clear_project(project)
     tree.log_activity(project, "Cleared the canvas back to just the root")
     storage.save_project(project)
@@ -114,12 +138,14 @@ def api_clear_project(project_id: str):
 
 
 @router.put("/projects/{project_id}/restore", response_model=Project)
-def api_restore_project(project_id: str, body: Project):
+def api_restore_project(project_id: str, body: Project, user: AuthenticatedUser = Depends(require_auth)):
     """Overwrites the whole project with a client-supplied snapshot. Used by the editor's
     Undo/Redo, which keeps prior project states in memory and replays them wholesale
     rather than trying to compute a structural inverse for every possible edit."""
-    storage.load_project(project_id)  # 404s if the project doesn't exist
+    existing = storage.load_project(project_id)  # 404s if the project doesn't exist
+    _ensure_owner(existing, user)
     body.id = project_id
+    body.owner_id = existing.owner_id  # never let a client-supplied snapshot reassign ownership
     storage.save_project(body)
     return body
 

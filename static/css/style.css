@@ -2385,7 +2385,9 @@ hr.inspector-divider {
   font-size: 16px;
 }
 
-.modal input[type="text"] {
+.modal input[type="text"],
+.modal input[type="email"],
+.modal input[type="password"] {
   width: 100%;
   box-sizing: border-box;
   font: inherit;

@@ -142,6 +142,7 @@ class Project(BaseModel):
     id: str
     name: str
     description: Optional[str] = None
+    owner_id: Optional[str] = None  # Supabase auth.users id; None = legacy pre-auth project
     created_at: str
     updated_at: str
     nodes: Dict[str, Node] = Field(default_factory=dict)

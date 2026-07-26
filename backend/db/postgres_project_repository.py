@@ -26,17 +26,33 @@ from .connection import get_pool
 
 
 class PostgresProjectRepository:
-    def list_summaries(self) -> List[ProjectSummary]:
+    def list_summaries(self, owner_id: str | None = None) -> List[ProjectSummary]:
+        # Visible to a user: projects they own, plus legacy pre-auth projects (owner_id is
+        # null) -- see Project.owner_id's own docstring. When owner_id isn't supplied
+        # (e.g. an internal/administrative call), every project is listed, unfiltered.
         with get_pool().connection() as conn:
-            rows = conn.execute(
-                """
-                select p.id, p.name, p.updated_at, count(n.id) as node_count
-                from projects p
-                left join nodes n on n.project_id = p.id
-                group by p.id
-                order by p.updated_at desc
-                """
-            ).fetchall()
+            if owner_id is None:
+                rows = conn.execute(
+                    """
+                    select p.id, p.name, p.updated_at, count(n.id) as node_count
+                    from projects p
+                    left join nodes n on n.project_id = p.id
+                    group by p.id
+                    order by p.updated_at desc
+                    """
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    select p.id, p.name, p.updated_at, count(n.id) as node_count
+                    from projects p
+                    left join nodes n on n.project_id = p.id
+                    where p.owner_id = %s or p.owner_id is null
+                    group by p.id
+                    order by p.updated_at desc
+                    """,
+                    (owner_id,),
+                ).fetchall()
         return [
             ProjectSummary(id=str(r[0]), name=r[1], updated_at=r[2].isoformat(), node_count=r[3])
             for r in rows
@@ -45,7 +61,7 @@ class PostgresProjectRepository:
     def load(self, project_id: str) -> Project:
         with get_pool().connection() as conn:
             project_row = conn.execute(
-                "select id, name, description, created_at, updated_at from projects where id = %s",
+                "select id, name, description, owner_id, created_at, updated_at from projects where id = %s",
                 (project_id,),
             ).fetchone()
             if not project_row:
@@ -319,8 +335,9 @@ class PostgresProjectRepository:
             id=str(project_row[0]),
             name=project_row[1],
             description=project_row[2],
-            created_at=project_row[3].isoformat(),
-            updated_at=project_row[4].isoformat(),
+            owner_id=str(project_row[3]) if project_row[3] else None,
+            created_at=project_row[4].isoformat(),
+            updated_at=project_row[5].isoformat(),
             nodes=nodes,
             references=references,
             activity_log=activity_log,
@@ -338,12 +355,14 @@ class PostgresProjectRepository:
             with conn.transaction():
                 conn.execute(
                     """
-                    insert into projects (id, name, description, created_at, updated_at)
-                    values (%s, %s, %s, %s, now())
+                    insert into projects (id, name, description, owner_id, created_at, updated_at)
+                    values (%s, %s, %s, %s, %s, now())
                     on conflict (id) do update set
                         name = excluded.name, description = excluded.description, updated_at = now()
                     """,
-                    (project.id, project.name, project.description, project.created_at),
+                    # owner_id is deliberately NOT in the update clause -- ownership is set once,
+                    # at create() time, and never silently reassigned by a later save().
+                    (project.id, project.name, project.description, project.owner_id, project.created_at),
                 )
 
                 # Whole-project replace for the structural tables, matching the existing
@@ -603,7 +622,7 @@ class PostgresProjectRepository:
                         ),
                     )
 
-    def create(self, name: str) -> Project:
+    def create(self, name: str, owner_id: str | None = None) -> Project:
         import uuid
         from datetime import datetime, timezone
 
@@ -611,7 +630,9 @@ class PostgresProjectRepository:
         project_id = str(uuid.uuid4())
         root_id = str(uuid.uuid4())
         root_node = Node(id=root_id, label=name, parent_id=None, children=[], canvas_x=400, canvas_y=100)
-        project = Project(id=project_id, name=name, created_at=now, updated_at=now, nodes={root_id: root_node})
+        project = Project(
+            id=project_id, name=name, owner_id=owner_id, created_at=now, updated_at=now, nodes={root_id: root_node}
+        )
         self.save(project)
         return project
 

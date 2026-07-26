@@ -29,8 +29,8 @@ _template_repo: TemplateRepository = PostgresTemplateRepository()
 _knowledge_repo: KnowledgeRepository = PostgresKnowledgeRepository()
 
 
-def list_projects() -> List[ProjectSummary]:
-    return _project_repo.list_summaries()
+def list_projects(owner_id: str | None = None) -> List[ProjectSummary]:
+    return _project_repo.list_summaries(owner_id)
 
 
 def load_project(project_id: str) -> Project:
@@ -41,8 +41,8 @@ def save_project(project: Project) -> None:
     _project_repo.save(project)
 
 
-def create_project(name: str) -> Project:
-    return _project_repo.create(name)
+def create_project(name: str, owner_id: str | None = None) -> Project:
+    return _project_repo.create(name, owner_id)
 
 
 def delete_project(project_id: str) -> None:
