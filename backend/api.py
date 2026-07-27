@@ -23,6 +23,8 @@ from .models import (
     ConceptObjectCreate,
     ConceptObjectUpdate,
     ConvertToNodeRequest,
+    DecomposeRequest,
+    DecompositionResult,
     GovernanceActionRequest,
     GovernanceDecision,
     GovernanceDecisionCreate,
@@ -295,6 +297,63 @@ def api_add_node(project_id: str, body: NodeCreate):
     storage.save_project(project)
     node = project.nodes[node_id]
     return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, node_id))
+
+
+@router.post("/projects/{project_id}/nodes/{node_id}/decompose", response_model=DecompositionResult)
+def api_decompose_node(
+    project_id: str, node_id: str, body: DecomposeRequest, user: AuthenticatedUser = Depends(require_auth)
+):
+    """Recursive Decomposition Framework (Phase 5 / WP8) applied to one already-committed
+    node: selects a domain strategy (section 9), generates its next level of children via
+    the Orchestrator (attributed to that domain's named agent -- Business/Data/
+    Application/Technology/Governance, giving those agents their first real callable
+    capability per WP7's own noted gap), and runs the same Governance Service review
+    WP6/WP7 already established. An approved batch commits immediately as real child
+    nodes (section 2 step 5); anything held or rejected is returned for review but nothing
+    is committed -- re-running decompose after conditions change (e.g. a blocking risk is
+    accepted) is this MVP's retry path, not a persisted pending-proposal queue."""
+    project = storage.load_project(project_id)
+    _ensure_owner(project, user)
+    node = tree.get_node_or_404(project, node_id)
+    try:
+        result = Orchestrator().decompose_node(project, node, body.strategy_override)
+    except ReasoningStageError as exc:
+        raise HTTPException(status_code=502, detail=f"Decomposition failed: {exc}") from exc
+
+    def _commit(children, strategy_name: str) -> list:
+        committed_ids = []
+        for child in children:
+            child_id = str(uuid.uuid4())
+            tree.add_node(project, node_id, child.label, child_id)
+            committed = project.nodes[child_id]
+            committed.classification = strategy_name
+            committed.node_type = child.node_type
+            committed.notes = child.notes
+            committed_ids.append(child_id)
+            project.governance_decisions.append(
+                GovernanceDecision(
+                    id=str(uuid.uuid4()),
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    actor=user.email or user.id,
+                    decision_type="Approve",
+                    target_node_id=child_id,
+                    rationale=f"Auto-approved {strategy_name} decomposition of '{node.label}'",
+                )
+            )
+        return committed_ids
+
+    committed_any = False
+    if result.review is not None and result.review.outcome == "approved":
+        result.committed_node_ids = _commit(result.proposed_nodes, result.strategy)
+        committed_any = True
+    if result.parallel_review is not None and result.parallel_review.outcome == "approved":
+        result.parallel_committed_node_ids = _commit(result.parallel_proposed_nodes, result.parallel_strategy)
+        committed_any = True
+    if committed_any:
+        total = len(result.committed_node_ids) + len(result.parallel_committed_node_ids)
+        tree.log_activity(project, f"Decomposed '{node.label}' ({total} child(ren) committed)")
+        storage.save_project(project)
+    return result
 
 
 @router.put("/projects/{project_id}/nodes/{node_id}", response_model=NodeWithLevel)

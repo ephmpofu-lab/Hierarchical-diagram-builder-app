@@ -33,6 +33,12 @@ class Node(BaseModel):
     custom_color: Optional[str] = None
     planning_status: Optional[str] = None
     locked: bool = False
+    abstraction_level: Optional[str] = None  # Contextual | Conceptual | Logical | Physical
+    # (TOGAF Building Block levels, Phase 3 section 3.6) -- Physical overrides strategy
+    # selection to Technology regardless of classification (Phase 5 section 9, WP8)
+    decomposition_terminal: Optional[bool] = None  # human override marking this node
+    # terminal early (Phase 5 section 5, HITL point 4) -- None means "not overridden, use
+    # the computed stopping rule"
 
 
 class Reference(BaseModel):
@@ -556,6 +562,24 @@ class GovernanceReview(BaseModel):
     requires_human_review: bool = False
     requires_risk_acceptance: bool = False
     rationale: str = ""
+
+
+class DecomposeRequest(BaseModel):
+    strategy_override: Optional[str] = None  # a human re-selecting the strategy (Phase 5
+    # section 10, HITL points 1 & 5) instead of the computed default
+
+
+class DecompositionResult(BaseModel):
+    strategy: str
+    parallel_strategy: Optional[str] = None  # set only when an active Risk against this
+    # node triggers the Governance strategy to run alongside the primary one (section 9)
+    terminal: bool
+    proposed_nodes: List[ProposedNode] = Field(default_factory=list)
+    review: Optional[GovernanceReview] = None
+    committed_node_ids: List[str] = Field(default_factory=list)
+    parallel_proposed_nodes: List[ProposedNode] = Field(default_factory=list)
+    parallel_review: Optional[GovernanceReview] = None
+    parallel_committed_node_ids: List[str] = Field(default_factory=list)
 
 
 Project.model_rebuild()
