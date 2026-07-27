@@ -1071,6 +1071,31 @@ html[data-inspector-collapsed="true"] .health-footer {
   text-align: center;
 }
 
+/* Architecture Health workspace (WP11e) -- promotes the existing footer-chip/modal content
+   (score gauge, validation summary, activity log -- all pre-existing, Phase 9 section 5's
+   own claim of "no new rendering logic") to a full pane instead of a popup modal. Same
+   .health-card styling as before, just no longer wrapped in .modal/.modal-backdrop. */
+.health-pane {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg);
+  padding: 20px;
+}
+
+.health-pane[hidden] {
+  display: none;
+}
+
+.health-pane-content {
+  max-width: 620px;
+  margin: 0 auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 20px;
+}
+
 .kanban-board {
   display: flex;
   gap: 16px;

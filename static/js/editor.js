@@ -198,8 +198,7 @@ const healthFooterChevronEl = document.getElementById("healthFooterChevron");
 const healthFooterGaugeEl = document.getElementById("healthFooterGauge");
 const healthFooterSummaryEl = document.getElementById("healthFooterSummary");
 const healthFooterRecentEl = document.getElementById("healthFooterRecent");
-const healthReportModal = document.getElementById("healthReportModal");
-const healthReportCloseBtn = document.getElementById("healthReportCloseBtn");
+const healthPane = document.getElementById("healthPane");
 const shortcutsBtn = document.getElementById("shortcutsBtn");
 const shortcutsModal = document.getElementById("shortcutsModal");
 const shortcutsCloseBtn = document.getElementById("shortcutsCloseBtn");
@@ -4169,10 +4168,12 @@ function switchToWorkspace(workspaceId) {
   timelinePane.hidden = workspaceId !== "timeline";
   documentationPane.hidden = workspaceId !== "documentation";
   dependenciesPane.hidden = workspaceId !== "dependencies";
+  healthPane.hidden = workspaceId !== "health";
   if (workspaceId === "kanban") renderKanbanBoard();
   if (workspaceId === "timeline") renderTimelineBoard();
   if (workspaceId === "documentation") renderDocumentationBoard();
   if (workspaceId === "dependencies") renderDependenciesBoard();
+  if (workspaceId === "health" && !lastValidationReport) refreshHealthPanel();
 }
 
 // Breadcrumb-style path for a card, reusing the same parent_id chain compute_level already
@@ -5513,6 +5514,9 @@ document.addEventListener("keydown", (e) => {
 // ---------- Health / validation / activity ----------
 
 runValidationBtn.addEventListener("click", refreshHealthPanel);
+// Promoted to a full workspace (Phase 9 section 5, WP11e) -- this used to open a modal;
+// same content, same renderValidationSummary/renderHealthScore/renderActivityLog calls,
+// just a full pane instead of a popup now.
 viewFullReportBtn.addEventListener("click", async () => {
   if (!lastValidationReport) await refreshHealthPanel();
   const categoryLabels = [
@@ -5527,10 +5531,7 @@ viewFullReportBtn.addEventListener("click", async () => {
   ];
   for (const label of categoryLabels) expandedValidationRows.add(label);
   renderValidationSummary(lastValidationReport);
-  healthReportModal.hidden = false;
-});
-healthReportCloseBtn.addEventListener("click", () => {
-  healthReportModal.hidden = true;
+  switchToWorkspace("health");
 });
 
 // ---------- Keyboard shortcuts modal ----------

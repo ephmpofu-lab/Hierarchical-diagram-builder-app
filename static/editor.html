@@ -36,7 +36,7 @@
           <div class="dropdown-section-label">Supporting</div>
           <button id="workspaceOptionDocumentation" data-workspace="documentation">Documentation</button>
           <button id="workspaceOptionDependencies" data-workspace="dependencies">Dependencies</button>
-          <button data-workspace="health" disabled>Architecture Health <span class="menu-shortcut">Soon</span></button>
+          <button id="workspaceOptionHealth" data-workspace="health">Architecture Health</button>
         </div>
       </div>
       <div class="view-mode-toggle">
@@ -275,12 +275,8 @@
     <div id="dependenciesBoard" class="dependencies-board"></div>
   </div>
 
-  <div id="healthReportModal" class="modal-backdrop" hidden>
-    <div class="modal health-report-modal">
-      <div class="modal-header-row">
-        <strong>Architecture Health — Full Report</strong>
-        <button id="healthReportCloseBtn" class="theme-toggle" title="Close">×</button>
-      </div>
+  <div class="pane health-pane" id="healthPane" hidden>
+    <div class="health-pane-content">
       <div class="health-card">
         <div class="pane-header" title="A single score (0-100) summarizing structural quality: duplicates, cycles, orphans, broken references, oversized modules, single-child levels, and missing owners/notes all subtract points. Why it matters: it is a quick proxy for how easy this architecture will be to navigate and maintain as it grows. How to improve: work through the Critical Issues first, then Warnings, then Suggestions below.">Architecture Health</div>
         <div id="healthScore" class="health-score"></div>

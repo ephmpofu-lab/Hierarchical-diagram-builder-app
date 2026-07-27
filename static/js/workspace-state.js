@@ -25,7 +25,7 @@ const WORKSPACE_REGISTRY = [
   { id: "timeline", label: "Timeline", family: "Execution", available: true },
   { id: "documentation", label: "Documentation", family: "Supporting", available: true },
   { id: "dependencies", label: "Dependencies", family: "Supporting", available: true },
-  { id: "health", label: "Architecture Health", family: "Supporting", available: false },
+  { id: "health", label: "Architecture Health", family: "Supporting", available: true },
 ];
 
 // Domain-scoping toggle within the Canvas family (section 2's Canvas family diagram) --
