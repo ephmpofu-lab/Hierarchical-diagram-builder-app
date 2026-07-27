@@ -513,6 +513,9 @@ class ProposedRisk(BaseModel):
 class ReasoningStageLog(BaseModel):
     stage: str
     summary: str
+    agent: str = ""  # which named agent performed this stage (Phase 7 WP7) -- blank
+    # when produced directly by intelligence.pipeline.run_pipeline without going through
+    # the Orchestrator, so older callers/tests are unaffected
 
 
 class ReasoningResult(BaseModel):
@@ -542,6 +545,9 @@ class GovernanceFinding(BaseModel):
     category: str  # structural | policy
     severity: str  # Critical | Warning
     message: str
+    agent: str = ""  # which named agent produced this finding (Phase 7 WP7) -- Validation
+    # Agent for structural, Governance Agent for policy; blank when produced directly by
+    # governance.workflow.run_decision_workflow without going through the Orchestrator
 
 
 class GovernanceReview(BaseModel):

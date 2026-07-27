@@ -5,11 +5,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from . import concept, storage, tree
+from .agents.agent import ALL_AGENTS
+from .agents.orchestrator import Orchestrator
 from .ai import service as ai_service
 from .ai.provider import AIProviderError
 from .auth import AuthenticatedUser, require_auth
-from .governance.workflow import run_decision_workflow
-from .intelligence.pipeline import run_pipeline
 from .intelligence.stages import ReasoningStageError
 from .knowledge import lifecycle
 from .knowledge.ingestion import parse_markdown
@@ -116,26 +116,34 @@ def api_ai_health():
     }
 
 
+@router.get("/agents")
+def api_list_agents():
+    """The Agent taxonomy and governance boundary (Phase 7 sections 2, 10 / WP7) --
+    inspectable data, not just documentation."""
+    return [a.__dict__ for a in ALL_AGENTS]
+
+
 @router.post("/intelligence/reason", response_model=ReasoningResult)
 def api_reason(body: ReasoningRequest):
-    """Runs the 8-stage Enterprise Reasoning Pipeline (WP5 / Phase 4) for one business
-    objective, synchronously, single-pass. Returns proposals only -- nothing here is
-    committed to any project; that requires the governance checkpoint WP6 will add."""
+    """Runs the 8-stage Enterprise Reasoning Pipeline (WP5 / Phase 4) via the Orchestrator
+    (WP7 / Phase 7), which dispatches to and attributes each stage to its named agent.
+    Synchronous, single-pass. Returns proposals only -- nothing here is committed to any
+    project; that requires the governance checkpoint below."""
     if not body.objective.strip():
         raise HTTPException(status_code=400, detail="Objective cannot be empty")
     try:
-        return run_pipeline(body.objective.strip())
+        return Orchestrator().run_pipeline(body.objective.strip())
     except ReasoningStageError as exc:
         raise HTTPException(status_code=502, detail=f"Reasoning pipeline failed: {exc}") from exc
 
 
 @router.post("/governance/review", response_model=GovernanceReview)
 def api_governance_review(result: ReasoningResult):
-    """Runs the Decision & Approval Workflow (WP6 / Phase 10 section 3) against a
-    ReasoningResult the caller already has from /api/intelligence/reason. Stateless --
-    nothing here is persisted; recording an actual human decision is a separate call
-    below, scoped to a real project."""
-    return run_decision_workflow(result)
+    """Runs the Decision & Approval Workflow (WP6 / Phase 10 section 3) via the
+    Orchestrator, against a ReasoningResult the caller already has from
+    /api/intelligence/reason. Stateless -- nothing here is persisted; recording an actual
+    human decision is a separate call below, scoped to a real project."""
+    return Orchestrator().review_proposal(result)
 
 
 @router.post("/projects/{project_id}/governance-decisions", response_model=GovernanceDecision, status_code=201)

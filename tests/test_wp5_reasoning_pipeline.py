@@ -290,7 +290,7 @@ def test_reason_endpoint_returns_pipeline_result(monkeypatch, authed_client):
     from backend.models import ReasoningResult
 
     canned = ReasoningResult(objective="test", domains=["Business"], confidence_tier="High", requires_human_review=False)
-    monkeypatch.setattr("backend.api.run_pipeline", lambda objective: canned)
+    monkeypatch.setattr("backend.agents.orchestrator.Orchestrator.run_pipeline", lambda self, objective: canned)
     response = authed_client.post("/api/intelligence/reason", json={"objective": "test"})
     assert response.status_code == 200
     assert response.json()["confidence_tier"] == "High"
@@ -302,10 +302,10 @@ def test_reason_endpoint_rejects_empty_objective(authed_client):
 
 
 def test_reason_endpoint_surfaces_stage_errors_as_502(monkeypatch, authed_client):
-    def _raise(objective):
+    def _raise(self, objective):
         raise ReasoningStageError("stage failed")
 
-    monkeypatch.setattr("backend.api.run_pipeline", _raise)
+    monkeypatch.setattr("backend.agents.orchestrator.Orchestrator.run_pipeline", _raise)
     response = authed_client.post("/api/intelligence/reason", json={"objective": "test"})
     assert response.status_code == 502
 
