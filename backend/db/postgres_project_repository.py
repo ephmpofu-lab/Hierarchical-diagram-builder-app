@@ -72,7 +72,7 @@ class PostgresProjectRepository:
                 select id, parent_id, sort_order, label, notes, canvas_x, canvas_y, collapsed,
                        node_type, status, priority, complexity, risk_level, tags, owner, shape,
                        group_children, is_group, classification, custom_color, planning_status,
-                       locked
+                       locked, abstraction_level, decomposition_terminal, held_for_change
                 from nodes where project_id = %s order by parent_id, sort_order
                 """,
                 (project_id,),
@@ -186,6 +186,7 @@ class PostgresProjectRepository:
                 nid, parent_id, _sort_order, label, notes, canvas_x, canvas_y, collapsed,
                 node_type, status, priority, complexity, risk_level, tags, owner, shape,
                 group_children, is_group, classification, custom_color, planning_status, locked,
+                abstraction_level, decomposition_terminal, held_for_change,
             ) = row
             node_id = str(nid)
             nodes[node_id] = Node(
@@ -212,6 +213,9 @@ class PostgresProjectRepository:
                 custom_color=custom_color,
                 planning_status=planning_status,
                 locked=locked,
+                abstraction_level=abstraction_level,
+                decomposition_terminal=decomposition_terminal,
+                held_for_change=held_for_change,
             )
         # Rebuild each parent's children array from every node's own parent_id + sort_order,
         # in a separate pass -- simpler than trying to append in the right order during a
@@ -414,10 +418,11 @@ class PostgresProjectRepository:
                             id, project_id, parent_id, sort_order, label, notes, canvas_x,
                             canvas_y, collapsed, node_type, status, priority, complexity,
                             risk_level, tags, owner, shape, group_children, is_group,
-                            classification, custom_color, planning_status, locked
+                            classification, custom_color, planning_status, locked,
+                            abstraction_level, decomposition_terminal, held_for_change
                         ) values (
                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                            %s, %s, %s, %s, %s, %s
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s
                         )
                         """,
                         (
@@ -444,6 +449,9 @@ class PostgresProjectRepository:
                             node.custom_color,
                             node.planning_status,
                             node.locked,
+                            node.abstraction_level,
+                            node.decomposition_terminal,
+                            node.held_for_change,
                         ),
                     )
 

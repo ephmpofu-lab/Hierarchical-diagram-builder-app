@@ -39,6 +39,9 @@ class Node(BaseModel):
     decomposition_terminal: Optional[bool] = None  # human override marking this node
     # terminal early (Phase 5 section 5, HITL point 4) -- None means "not overridden, use
     # the computed stopping rule"
+    held_for_change: bool = False  # Phase 5 section 3's "Held" state, applied specifically
+    # by Change Impact Analysis (Phase 10 section 8, WP9) -- cleared when a human Approves
+    # a GovernanceDecision against this node (Recommitted); a Reject leaves it Held
 
 
 class Reference(BaseModel):
@@ -580,6 +583,24 @@ class DecompositionResult(BaseModel):
     parallel_proposed_nodes: List[ProposedNode] = Field(default_factory=list)
     parallel_review: Optional[GovernanceReview] = None
     parallel_committed_node_ids: List[str] = Field(default_factory=list)
+
+
+class ChangeImpactRequest(BaseModel):
+    reason: str = ""  # optional human rationale for the change about to be made -- this
+    # endpoint computes and flags impact only; the actual edit still goes through the
+    # existing node-edit endpoints unchanged (Phase 10 section 8, WP9)
+
+
+class ChangeImpactFinding(BaseModel):
+    node_id: str
+    label: str
+    reason: str  # "Structural descendant..." | "Traced to the same Requirement (...) ..."
+
+
+class ChangeImpactResult(BaseModel):
+    trigger_node_id: str
+    findings: List[ChangeImpactFinding] = Field(default_factory=list)
+    held_count: int = 0
 
 
 Project.model_rebuild()

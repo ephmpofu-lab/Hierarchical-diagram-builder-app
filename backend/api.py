@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -10,6 +10,7 @@ from .agents.orchestrator import Orchestrator
 from .ai import service as ai_service
 from .ai.provider import AIProviderError
 from .auth import AuthenticatedUser, require_auth
+from .change.impact import analyze_impact
 from .intelligence.stages import ReasoningStageError
 from .knowledge import lifecycle
 from .knowledge.ingestion import parse_markdown
@@ -17,6 +18,8 @@ from .knowledge.qa import run_qa
 from .knowledge.retrieval import retrieve as retrieve_knowledge
 from .models import (
     AddParentRequest,
+    ChangeImpactRequest,
+    ChangeImpactResult,
     Comment,
     CommentCreate,
     ConceptObject,
@@ -166,9 +169,54 @@ def api_record_governance_decision(
         rationale=body.rationale,
     )
     project.governance_decisions.append(decision)
+    # An Approve decision against a Held node clears it (Recommitted, Phase 10 section 8) --
+    # a Reject leaves it Held, which needs no extra action since it's already flagged.
+    if body.decision_type == "Approve" and body.target_node_id is not None:
+        target = project.nodes.get(body.target_node_id)
+        if target is not None and target.held_for_change:
+            target.held_for_change = False
     tree.log_activity(project, f"Governance decision recorded: {body.decision_type} by {decision.actor}")
     storage.save_project(project)
     return decision
+
+
+@router.post("/projects/{project_id}/nodes/{node_id}/propose-change", response_model=ChangeImpactResult)
+def api_propose_change(
+    project_id: str, node_id: str, body: ChangeImpactRequest, user: AuthenticatedUser = Depends(require_auth)
+):
+    """Change Impact Analysis (Phase 10 section 8 / WP9). Computes what a proposed change
+    to this committed node ripples into -- structural descendants plus anything traced to
+    the same Requirement(s) -- and flags each affected node Held (Phase 5 section 3's
+    state). Held nodes are individually re-governed via the governance-decisions endpoint
+    above: an Approve decision against a Held node clears it (Recommitted); anything else
+    leaves it Held. This does not intercept or gate the node's own edit -- that still goes
+    through the existing, already-live edit endpoints unchanged; this only manages the
+    downstream fallout, per section 8's own diagram."""
+    project = storage.load_project(project_id)
+    _ensure_owner(project, user)
+    node = tree.get_node_or_404(project, node_id)
+    findings = analyze_impact(project, node_id)
+    for finding in findings:
+        project.nodes[finding.node_id].held_for_change = True
+    if findings:
+        activity = f"Change proposed to '{node.label}' held {len(findings)} affected node(s) for re-governance"
+        if body.reason:
+            activity = f"{activity}: {body.reason}"
+        tree.log_activity(project, activity)
+        storage.save_project(project)
+    return ChangeImpactResult(trigger_node_id=node_id, findings=findings, held_count=len(findings))
+
+
+@router.get("/projects/{project_id}/held-nodes", response_model=List[NodeWithLevel])
+def api_list_held_nodes(project_id: str, user: AuthenticatedUser = Depends(require_auth)):
+    """Nodes currently Held pending re-governance after a change (Phase 10 section 8)."""
+    project = storage.load_project(project_id)
+    _ensure_owner(project, user)
+    return [
+        NodeWithLevel(**n.model_dump(), level=tree.compute_level(project, n.id))
+        for n in project.nodes.values()
+        if n.held_for_change
+    ]
 
 
 @router.post("/projects/{project_id}/risks/{risk_id}/accept", response_model=Risk)
