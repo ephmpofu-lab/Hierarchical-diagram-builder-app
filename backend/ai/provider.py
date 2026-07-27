@@ -49,8 +49,19 @@ class AIInvalidRequestError(AIProviderError):
 
 class AIProvider(Protocol):
     def complete(
-        self, *, system: str, prompt: str, max_tokens: int = 4096, effort: str = "none"
+        self,
+        *,
+        system: str,
+        prompt: str,
+        max_tokens: int = 4096,
+        effort: str = "none",
+        json_mode: bool = False,
     ) -> AICompletionResult: ...
+    # `json_mode` asks the provider to guarantee syntactically valid JSON output (OpenAI:
+    # response_format={"type": "json_object"}) -- used by the Reasoning Pipeline (WP5) for
+    # stages that need structured extraction (candidate nodes/relationships/risks). It
+    # guarantees valid JSON *syntax*, not a specific schema -- callers still validate shape
+    # with Pydantic and treat a mismatch as a stage failure, not a crash.
     # `effort` is a provider-agnostic reasoning-depth knob (OpenAI: reasoning_effort --
     # confirmed live against gpt-5.5 to accept none/low/medium/high/xhigh, not the
     # "minimal" value some other GPT-5 variants document; Anthropic: effort

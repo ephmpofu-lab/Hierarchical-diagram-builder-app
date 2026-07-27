@@ -37,9 +37,18 @@ class OpenAIProvider:
         self._model = model
 
     def complete(
-        self, *, system: str, prompt: str, max_tokens: int = 4096, effort: str = "none"
+        self,
+        *,
+        system: str,
+        prompt: str,
+        max_tokens: int = 4096,
+        effort: str = "none",
+        json_mode: bool = False,
     ) -> AICompletionResult:
         def _call():
+            kwargs = {}
+            if json_mode:
+                kwargs["response_format"] = {"type": "json_object"}
             return self._client.chat.completions.create(
                 model=self._model,
                 max_completion_tokens=max_tokens,
@@ -48,6 +57,7 @@ class OpenAIProvider:
                     {"role": "system", "content": system},
                     {"role": "user", "content": prompt},
                 ],
+                **kwargs,
             )
 
         try:

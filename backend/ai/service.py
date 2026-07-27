@@ -43,5 +43,9 @@ def _get_provider() -> AIProvider:
     return _provider
 
 
-def complete(system: str, prompt: str, max_tokens: int = 4096, effort: str = "none") -> AICompletionResult:
-    return _get_provider().complete(system=system, prompt=prompt, max_tokens=max_tokens, effort=effort)
+def complete(
+    system: str, prompt: str, max_tokens: int = 4096, effort: str = "none", json_mode: bool = False
+) -> AICompletionResult:
+    return _get_provider().complete(
+        system=system, prompt=prompt, max_tokens=max_tokens, effort=effort, json_mode=json_mode
+    )

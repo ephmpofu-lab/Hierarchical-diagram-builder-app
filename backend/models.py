@@ -477,4 +477,56 @@ class GovernancePrincipleCreate(BaseModel):
     source_concept_id: Optional[str] = None
 
 
+# ============================================================================
+# Enterprise Reasoning Pipeline (Phase 4) -- WP5, Increment 3's synchronous MVP
+# of the 8-stage pipeline. A pure-reasoning result: proposals only, never
+# auto-committed to a Project -- Phase 4 section 2's lifecycle only commits
+# after a governance checkpoint, which this WP does not implement (WP6).
+# ============================================================================
+
+
+class ReasoningRequest(BaseModel):
+    objective: str
+
+
+class ProposedNode(BaseModel):
+    label: str
+    node_type: Optional[str] = None
+    parent_hint: Optional[str] = None  # label of the intended parent, if any --
+    # resolved by a human or a later decomposition step (Phase 5), not this WP
+    notes: str = ""
+
+
+class ProposedRelationship(BaseModel):
+    from_label: str
+    to_label: str
+    label: Optional[str] = None
+    reference_type: Optional[str] = None
+
+
+class ProposedRisk(BaseModel):
+    description: str
+    classification: Optional[str] = None
+    initial_level: Optional[str] = None  # Critical | High | Medium | Low
+
+
+class ReasoningStageLog(BaseModel):
+    stage: str
+    summary: str
+
+
+class ReasoningResult(BaseModel):
+    objective: str
+    domains: List[str] = Field(default_factory=list)
+    stages: List[ReasoningStageLog] = Field(default_factory=list)
+    proposed_nodes: List[ProposedNode] = Field(default_factory=list)
+    proposed_relationships: List[ProposedRelationship] = Field(default_factory=list)
+    proposed_risks: List[ProposedRisk] = Field(default_factory=list)
+    confidence_tier: str = "Low"  # High | Medium | Low (Phase 4 section 8)
+    confidence_rationale: str = ""
+    requires_human_review: bool = True  # Medium/Low always True; High still passes
+    # governance but without a MANDATORY blocking review (Phase 4 section 8's own rule)
+    governance_notes: List[str] = Field(default_factory=list)
+
+
 Project.model_rebuild()

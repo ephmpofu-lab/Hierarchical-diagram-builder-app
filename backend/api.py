@@ -7,6 +7,8 @@ from . import concept, storage, tree
 from .ai import service as ai_service
 from .ai.provider import AIProviderError
 from .auth import AuthenticatedUser, require_auth
+from .intelligence.pipeline import run_pipeline
+from .intelligence.stages import ReasoningStageError
 from .knowledge import lifecycle
 from .knowledge.ingestion import parse_markdown
 from .knowledge.qa import run_qa
@@ -39,6 +41,8 @@ from .models import (
     ProjectRename,
     ProjectSummary,
     QAReport,
+    ReasoningRequest,
+    ReasoningResult,
     Reference,
     ReferenceCreate,
     ReferenceUpdate,
@@ -103,6 +107,19 @@ def api_ai_health():
         "retries": result.retries,
         "response": result.text.strip(),
     }
+
+
+@router.post("/intelligence/reason", response_model=ReasoningResult)
+def api_reason(body: ReasoningRequest):
+    """Runs the 8-stage Enterprise Reasoning Pipeline (WP5 / Phase 4) for one business
+    objective, synchronously, single-pass. Returns proposals only -- nothing here is
+    committed to any project; that requires the governance checkpoint WP6 will add."""
+    if not body.objective.strip():
+        raise HTTPException(status_code=400, detail="Objective cannot be empty")
+    try:
+        return run_pipeline(body.objective.strip())
+    except ReasoningStageError as exc:
+        raise HTTPException(status_code=502, detail=f"Reasoning pipeline failed: {exc}") from exc
 
 
 @router.get("/projects", response_model=list[ProjectSummary])

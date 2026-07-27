@@ -240,7 +240,9 @@ def test_service_complete_delegates_to_configured_provider(monkeypatch):
     ai_service._provider = fake_provider
     result = ai_service.complete("sys", "prompt", max_tokens=50)
     assert result == "sentinel-result"
-    fake_provider.complete.assert_called_once_with(system="sys", prompt="prompt", max_tokens=50, effort="none")
+    fake_provider.complete.assert_called_once_with(
+        system="sys", prompt="prompt", max_tokens=50, effort="none", json_mode=False
+    )
 
 
 # ---------- Integration test: /api/ai/health endpoint ----------
