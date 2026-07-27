@@ -4,9 +4,10 @@ same shape of independence as PostgresTemplateRepository: these rows aren't nest
 any single project."""
 
 import uuid
-from typing import List
+from typing import List, Optional
 
 from fastapi import HTTPException
+from psycopg.types.json import Jsonb
 
 from ..models import (
     GovernancePrinciple,
@@ -18,28 +19,52 @@ from ..models import (
 )
 from .connection import get_pool
 
+_CONCEPT_COLUMNS = (
+    "id, concept_id, name, category, chapter_source, section_source, definition, "
+    "purpose, characteristics, rules, validation_criteria, related, extended, "
+    "supersedes, status"
+)
+
 
 class PostgresKnowledgeRepository:
-    def list_concepts(self) -> List[KnowledgeConcept]:
+    def list_concepts(
+        self, status: Optional[str] = None, category: Optional[str] = None
+    ) -> List[KnowledgeConcept]:
+        clauses = []
+        params: list = []
+        if status is not None:
+            clauses.append("status = %s")
+            params.append(status)
+        if category is not None:
+            clauses.append("category = %s")
+            params.append(category)
+        where = f"where {' and '.join(clauses)}" if clauses else ""
         with get_pool().connection() as conn:
             rows = conn.execute(
-                "select id, concept_id, name, category, chapter_source, section_source, "
-                "definition, rules, validation_criteria, related, status "
-                "from knowledge_concepts order by concept_id"
+                f"select {_CONCEPT_COLUMNS} from knowledge_concepts {where} order by concept_id",
+                params,
             ).fetchall()
         return [self._concept_from_row(r) for r in rows]
 
     def load_concept(self, concept_id: str) -> KnowledgeConcept:
         with get_pool().connection() as conn:
             row = conn.execute(
-                "select id, concept_id, name, category, chapter_source, section_source, "
-                "definition, rules, validation_criteria, related, status "
-                "from knowledge_concepts where concept_id = %s",
+                f"select {_CONCEPT_COLUMNS} from knowledge_concepts where concept_id = %s",
                 (concept_id,),
             ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Knowledge concept not found")
         return self._concept_from_row(row)
+
+    def find_concepts(self, concept_ids: List[str]) -> List[KnowledgeConcept]:
+        if not concept_ids:
+            return []
+        with get_pool().connection() as conn:
+            rows = conn.execute(
+                f"select {_CONCEPT_COLUMNS} from knowledge_concepts where concept_id = any(%s)",
+                (list(concept_ids),),
+            ).fetchall()
+        return [self._concept_from_row(r) for r in rows]
 
     def save_concept(self, concept: KnowledgeConceptCreate) -> KnowledgeConcept:
         new_id = str(uuid.uuid4())
@@ -48,13 +73,16 @@ class PostgresKnowledgeRepository:
                 """
                 insert into knowledge_concepts (
                     id, concept_id, name, category, chapter_source, section_source,
-                    definition, rules, validation_criteria, related
-                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    definition, purpose, characteristics, rules, validation_criteria,
+                    related, extended, supersedes
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 on conflict (concept_id) do update set
                     name = excluded.name, category = excluded.category,
                     chapter_source = excluded.chapter_source, section_source = excluded.section_source,
-                    definition = excluded.definition, rules = excluded.rules,
-                    validation_criteria = excluded.validation_criteria, related = excluded.related
+                    definition = excluded.definition, purpose = excluded.purpose,
+                    characteristics = excluded.characteristics, rules = excluded.rules,
+                    validation_criteria = excluded.validation_criteria, related = excluded.related,
+                    extended = excluded.extended, supersedes = excluded.supersedes
                 """,
                 (
                     new_id,
@@ -64,12 +92,26 @@ class PostgresKnowledgeRepository:
                     concept.chapter_source,
                     concept.section_source,
                     concept.definition,
+                    concept.purpose,
+                    concept.characteristics,
                     concept.rules,
                     concept.validation_criteria,
                     concept.related,
+                    Jsonb(concept.extended),
+                    concept.supersedes,
                 ),
             )
         return self.load_concept(concept.concept_id)
+
+    def set_status(self, concept_id: str, status: str) -> KnowledgeConcept:
+        with get_pool().connection() as conn:
+            result = conn.execute(
+                "update knowledge_concepts set status = %s where concept_id = %s",
+                (status, concept_id),
+            )
+            if result.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Knowledge concept not found")
+        return self.load_concept(concept_id)
 
     def delete_concept(self, concept_id: str) -> None:
         with get_pool().connection() as conn:
@@ -83,6 +125,16 @@ class PostgresKnowledgeRepository:
                 "select id, from_concept_id, to_concept_id, relation_type "
                 "from knowledge_relationships where from_concept_id = %s",
                 (concept_id,),
+            ).fetchall()
+        return [
+            KnowledgeRelationship(id=str(r[0]), from_concept_id=r[1], to_concept_id=r[2], relation_type=r[3])
+            for r in rows
+        ]
+
+    def list_all_relationships(self) -> List[KnowledgeRelationship]:
+        with get_pool().connection() as conn:
+            rows = conn.execute(
+                "select id, from_concept_id, to_concept_id, relation_type from knowledge_relationships"
             ).fetchall()
         return [
             KnowledgeRelationship(id=str(r[0]), from_concept_id=r[1], to_concept_id=r[2], relation_type=r[3])
@@ -149,8 +201,12 @@ class PostgresKnowledgeRepository:
             chapter_source=row[4],
             section_source=row[5],
             definition=row[6],
-            rules=list(row[7] or []),
-            validation_criteria=list(row[8] or []),
-            related=list(row[9] or []),
-            status=row[10],
+            purpose=row[7],
+            characteristics=list(row[8] or []),
+            rules=list(row[9] or []),
+            validation_criteria=list(row[10] or []),
+            related=list(row[11] or []),
+            extended=dict(row[12] or {}),
+            supersedes=row[13],
+            status=row[14],
         )

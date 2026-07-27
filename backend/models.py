@@ -390,10 +390,23 @@ class KnowledgeConcept(BaseModel):
     chapter_source: Optional[int] = None
     section_source: Optional[str] = None
     definition: str
+    purpose: Optional[str] = None
+    characteristics: List[str] = Field(default_factory=list)
     rules: List[str] = Field(default_factory=list)
     validation_criteria: List[str] = Field(default_factory=list)
     related: List[str] = Field(default_factory=list)
-    status: str = "Active"  # Proposed | UnderReview | Active | Superseded | Deprecated | Archived
+    extended: Dict[str, object] = Field(default_factory=dict)  # non-core YAML keys (e.g.
+    # domains:, lifecycle:) retained rather than discarded -- the schema is a common core
+    # plus an open extension (Phase 6 §3), not a rigid fixed shape.
+    supersedes: Optional[str] = None  # concept_id this one revises, if any -- informational
+    # lineage only (Phase 6 §9). The superseded concept keeps its own distinct concept_id and
+    # is independently transitioned to status="Superseded"; this is not an atomic version swap
+    # under one shared identity (which would require rewriting a live FK'd primary key), and
+    # true byte-for-byte historical content diffing is out of scope for this pass -- same kind
+    # of explicitly-named gap as the architecture's other repeatedly-flagged open items.
+    status: str = "Proposed"  # Proposed | UnderReview | Active | Rejected | Superseded |
+    # Deprecated | Archived (Phase 6 §9) -- new concepts always start Proposed; only WP1's
+    # original direct-write test data relied on the old "Active" default.
 
 
 class KnowledgeConceptCreate(BaseModel):
@@ -403,9 +416,38 @@ class KnowledgeConceptCreate(BaseModel):
     chapter_source: Optional[int] = None
     section_source: Optional[str] = None
     definition: str
+    purpose: Optional[str] = None
+    characteristics: List[str] = Field(default_factory=list)
     rules: List[str] = Field(default_factory=list)
     validation_criteria: List[str] = Field(default_factory=list)
     related: List[str] = Field(default_factory=list)
+    extended: Dict[str, object] = Field(default_factory=dict)
+    supersedes: Optional[str] = None
+
+
+class KnowledgeIngestRequest(BaseModel):
+    markdown: str
+
+
+class KnowledgeIngestResult(BaseModel):
+    created: List[KnowledgeConcept]
+    errors: List[str]  # parse-level failures (malformed YAML, missing required keys) --
+    # one bad block never aborts the rest of the batch (Phase 6 §3 stage 3).
+
+
+class QAFinding(BaseModel):
+    severity: str  # Critical | Warning
+    message: str
+
+
+class QAReport(BaseModel):
+    concept_id: str
+    passed: bool  # no Critical findings
+    findings: List[QAFinding]
+
+
+class GovernanceActionRequest(BaseModel):
+    rationale: Optional[str] = None
 
 
 class KnowledgeRelationship(BaseModel):

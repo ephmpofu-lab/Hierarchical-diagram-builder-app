@@ -69,16 +69,24 @@ def delete_template(template_id: str) -> None:
     _template_repo.delete(template_id)
 
 
-def list_knowledge_concepts() -> List[KnowledgeConcept]:
-    return _knowledge_repo.list_concepts()
+def list_knowledge_concepts(status: str | None = None, category: str | None = None) -> List[KnowledgeConcept]:
+    return _knowledge_repo.list_concepts(status, category)
 
 
 def load_knowledge_concept(concept_id: str) -> KnowledgeConcept:
     return _knowledge_repo.load_concept(concept_id)
 
 
+def find_knowledge_concepts(concept_ids: List[str]) -> List[KnowledgeConcept]:
+    return _knowledge_repo.find_concepts(concept_ids)
+
+
 def save_knowledge_concept(concept: KnowledgeConceptCreate) -> KnowledgeConcept:
     return _knowledge_repo.save_concept(concept)
+
+
+def set_knowledge_concept_status(concept_id: str, status: str) -> KnowledgeConcept:
+    return _knowledge_repo.set_status(concept_id, status)
 
 
 def delete_knowledge_concept(concept_id: str) -> None:
@@ -87,6 +95,10 @@ def delete_knowledge_concept(concept_id: str) -> None:
 
 def list_knowledge_relationships(concept_id: str) -> List[KnowledgeRelationship]:
     return _knowledge_repo.list_relationships(concept_id)
+
+
+def list_all_knowledge_relationships() -> List[KnowledgeRelationship]:
+    return _knowledge_repo.list_all_relationships()
 
 
 def save_knowledge_relationship(relationship: KnowledgeRelationshipCreate) -> KnowledgeRelationship:

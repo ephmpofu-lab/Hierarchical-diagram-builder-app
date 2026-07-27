@@ -192,10 +192,14 @@ create table knowledge_concepts (
   chapter_source integer,
   section_source text,
   definition text not null,
+  purpose text,
+  characteristics text[] not null default '{}',
   rules text[] not null default '{}',
   validation_criteria text[] not null default '{}',
   related text[] not null default '{}',
-  status text not null default 'Active'
+  extended jsonb not null default '{}'::jsonb,
+  supersedes text references knowledge_concepts(concept_id) on delete set null,
+  status text not null default 'Proposed'
 );
 create index idx_knowledge_concepts_category on knowledge_concepts(category);
 create index idx_knowledge_concepts_status on knowledge_concepts(status);

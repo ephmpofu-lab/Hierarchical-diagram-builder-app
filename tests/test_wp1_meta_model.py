@@ -172,7 +172,9 @@ def test_knowledge_concept_round_trips(test_concept):
     reloaded = storage.load_knowledge_concept(test_concept.concept_id)
     assert reloaded.name == "Architecture Domains"
     assert reloaded.rules == ["Enterprise Architecture shall include Business Architecture."]
-    assert reloaded.status == "Active"
+    # WP3 (Phase 6 §3) changed the default for newly-saved concepts to "Proposed" -- they
+    # enter the acquisition pipeline unreviewed, not already Active.
+    assert reloaded.status == "Proposed"
 
     all_concepts = storage.list_knowledge_concepts()
     assert test_concept.concept_id in {c.concept_id for c in all_concepts}

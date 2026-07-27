@@ -5,6 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from . import concept, storage, tree
 from .auth import AuthenticatedUser, require_auth
+from .knowledge import lifecycle
+from .knowledge.ingestion import parse_markdown
+from .knowledge.qa import run_qa
+from .knowledge.retrieval import retrieve as retrieve_knowledge
 from .models import (
     AddParentRequest,
     Comment,
@@ -13,6 +17,14 @@ from .models import (
     ConceptObjectCreate,
     ConceptObjectUpdate,
     ConvertToNodeRequest,
+    GovernanceActionRequest,
+    GovernancePrinciple,
+    GovernancePrincipleCreate,
+    KnowledgeConcept,
+    KnowledgeIngestRequest,
+    KnowledgeIngestResult,
+    KnowledgeRelationship,
+    KnowledgeRelationshipCreate,
     MoveSiblingRequest,
     NodeCreate,
     NodePosition,
@@ -24,6 +36,7 @@ from .models import (
     ProjectCreate,
     ProjectRename,
     ProjectSummary,
+    QAReport,
     Reference,
     ReferenceCreate,
     ReferenceUpdate,
@@ -523,3 +536,144 @@ def api_convert_node_to_object(project_id: str, node_id: str):
     tree.log_activity(project, f"Converted '{project.nodes[node_id].label}' into a planning object")
     storage.save_project(project)
     return obj
+
+
+# ---------- Knowledge Layer (Phase 6 / WP3) ----------
+# Project-independent -- the Knowledge Domain + Standards Library, not nested under any
+# project. Acquisition -> Parser -> Classifier -> QA -> Repository -> Versioning ->
+# Retrieval, per the approved Knowledge & Reasoning Framework.
+
+
+def _require_transition(current_status: str, target_status: str) -> None:
+    try:
+        lifecycle.require_transition(current_status, target_status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/knowledge/ingest", response_model=KnowledgeIngestResult, status_code=201)
+def api_ingest_knowledge(body: KnowledgeIngestRequest):
+    """Parses one or more ```yaml blocks out of a curated Markdown document into Proposed
+    KnowledgeConcepts (Phase 6 §3). A malformed block is reported as an error string rather
+    than aborting the whole batch."""
+    candidates, errors = parse_markdown(body.markdown)
+    created = [storage.save_knowledge_concept(candidate) for candidate in candidates]
+    return KnowledgeIngestResult(created=created, errors=errors)
+
+
+@router.get("/knowledge/concepts", response_model=list[KnowledgeConcept])
+def api_list_knowledge_concepts(status: Optional[str] = Query(None), category: Optional[str] = Query(None)):
+    return storage.list_knowledge_concepts(status, category)
+
+
+@router.get("/knowledge/concepts/{concept_id}", response_model=KnowledgeConcept)
+def api_get_knowledge_concept(concept_id: str):
+    return storage.load_knowledge_concept(concept_id)
+
+
+@router.delete("/knowledge/concepts/{concept_id}", status_code=204)
+def api_delete_knowledge_concept(concept_id: str):
+    storage.delete_knowledge_concept(concept_id)
+
+
+@router.post("/knowledge/concepts/{concept_id}/submit-for-qa", response_model=QAReport)
+def api_submit_knowledge_concept_for_qa(concept_id: str):
+    """Proposed -> UnderReview, then runs the automated half of QA (§6). A Critical finding
+    auto-rejects (fails QA / conflicts, per the state diagram); Warnings never block --
+    the concept stays UnderReview, pending a human Knowledge Governance decision."""
+    current = storage.load_knowledge_concept(concept_id)
+    _require_transition(current.status, "UnderReview")
+    storage.set_knowledge_concept_status(concept_id, "UnderReview")
+    others = [c for c in storage.list_knowledge_concepts() if c.concept_id != concept_id]
+    updated = storage.load_knowledge_concept(concept_id)
+    report = run_qa(updated, others)
+    if not report.passed:
+        storage.set_knowledge_concept_status(concept_id, "Rejected")
+    return report
+
+
+@router.post("/knowledge/concepts/{concept_id}/approve", response_model=KnowledgeConcept)
+def api_approve_knowledge_concept(concept_id: str, body: GovernanceActionRequest = GovernanceActionRequest()):
+    """UnderReview -> Active: Knowledge Governance sign-off (§10), distinct from Architecture
+    Governance. If this concept declares `supersedes`, the concept it replaces is moved
+    Active -> Superseded in the same call, matching §9's versioning model."""
+    current = storage.load_knowledge_concept(concept_id)
+    _require_transition(current.status, "Active")
+    approved = storage.set_knowledge_concept_status(concept_id, "Active")
+    if approved.supersedes:
+        try:
+            superseded = storage.load_knowledge_concept(approved.supersedes)
+        except HTTPException:
+            superseded = None
+        if superseded and lifecycle.can_transition(superseded.status, "Superseded"):
+            storage.set_knowledge_concept_status(superseded.concept_id, "Superseded")
+    return approved
+
+
+@router.post("/knowledge/concepts/{concept_id}/reject", response_model=KnowledgeConcept)
+def api_reject_knowledge_concept(concept_id: str, body: GovernanceActionRequest = GovernanceActionRequest()):
+    current = storage.load_knowledge_concept(concept_id)
+    _require_transition(current.status, "Rejected")
+    return storage.set_knowledge_concept_status(concept_id, "Rejected")
+
+
+@router.post("/knowledge/concepts/{concept_id}/deprecate", response_model=KnowledgeConcept)
+def api_deprecate_knowledge_concept(concept_id: str, body: GovernanceActionRequest = GovernanceActionRequest()):
+    current = storage.load_knowledge_concept(concept_id)
+    _require_transition(current.status, "Deprecated")
+    return storage.set_knowledge_concept_status(concept_id, "Deprecated")
+
+
+@router.post("/knowledge/concepts/{concept_id}/archive", response_model=KnowledgeConcept)
+def api_archive_knowledge_concept(concept_id: str, body: GovernanceActionRequest = GovernanceActionRequest()):
+    """Deprecated -> Archived is a manual action here. §9 describes this happening
+    automatically "after a retention window" -- no scheduler/background-job infrastructure
+    exists in this project yet, so that sweep is left as a named future operational concern
+    rather than invented for this pass."""
+    current = storage.load_knowledge_concept(concept_id)
+    _require_transition(current.status, "Archived")
+    return storage.set_knowledge_concept_status(concept_id, "Archived")
+
+
+@router.get("/knowledge/retrieve", response_model=list[KnowledgeConcept])
+def api_retrieve_knowledge(
+    objective: str = Query(...),
+    stage: Optional[str] = Query(None),
+    domain: Optional[str] = Query(None),
+):
+    """The retrieve(objective, stage, domain hints) contract (Phase 4 §4 / Phase 6 §5) --
+    knowledge-side context assembly only. Only Active concepts are ever served here."""
+    active_concepts = storage.list_knowledge_concepts(status=lifecycle.RETRIEVABLE_STATUS)
+    relationships = storage.list_all_knowledge_relationships()
+    return retrieve_knowledge(objective, active_concepts, relationships, stage, domain)
+
+
+@router.post("/knowledge/relationships", response_model=KnowledgeRelationship, status_code=201)
+def api_add_knowledge_relationship(body: KnowledgeRelationshipCreate):
+    storage.load_knowledge_concept(body.from_concept_id)  # 404s if either side doesn't exist
+    storage.load_knowledge_concept(body.to_concept_id)
+    return storage.save_knowledge_relationship(body)
+
+
+@router.get("/knowledge/concepts/{concept_id}/relationships", response_model=list[KnowledgeRelationship])
+def api_list_knowledge_relationships(concept_id: str):
+    return storage.list_knowledge_relationships(concept_id)
+
+
+@router.post("/knowledge/principles", response_model=GovernancePrinciple, status_code=201)
+def api_add_governance_principle(body: GovernancePrincipleCreate):
+    """A GovernancePrinciple is a deliberate human derivation from a KnowledgeConcept's
+    rules (§7/§10) -- this endpoint records that derivation, it never runs automatically."""
+    if body.source_concept_id:
+        storage.load_knowledge_concept(body.source_concept_id)  # 404s if it doesn't exist
+    return storage.save_governance_principle(body)
+
+
+@router.get("/knowledge/principles", response_model=list[GovernancePrinciple])
+def api_list_governance_principles():
+    return storage.list_governance_principles()
+
+
+@router.delete("/knowledge/principles/{principle_id}", status_code=204)
+def api_delete_governance_principle(principle_id: str):
+    storage.delete_governance_principle(principle_id)
