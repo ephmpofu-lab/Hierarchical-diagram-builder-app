@@ -151,6 +151,7 @@ const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
 const refModeBanner = document.getElementById("refModeBanner");
 const zoomLevelEl = document.getElementById("zoomLevel");
+const cullIndicatorEl = document.getElementById("cullIndicator");
 const fitSelectionBtn = document.getElementById("fitSelectionBtn");
 const fitBranchBtn = document.getElementById("fitBranchBtn");
 const fitAllBtn = document.getElementById("fitAllBtn");
@@ -1296,6 +1297,10 @@ function renderFocusCanvas(viewW, viewH) {
   viewport.appendChild(buildFreeObjectsLayer());
   canvasSvg.appendChild(viewport);
 
+  // Focus Mode is already inherently bounded (ancestor chain + immediate children +
+  // context siblings, never the whole tree regardless of its size) -- viewport culling
+  // (WP12) only ever applies in Full Architecture mode, so the indicator never applies here.
+  updateCullIndicator(0);
   lastVisiblePositions = positions;
   lastViewW = viewW;
   lastViewH = viewH;
@@ -1395,6 +1400,54 @@ function computeDeterministicFullLayout(viewW, viewH) {
   return computeSubtreeLayout(viewW).positions;
 }
 
+// Viewport culling (Phase 11 section 11, WP12) -- Full Architecture mode lays out every
+// non-collapsed node in the project regardless of tree size (the mode's own long-standing
+// design, unchanged here); on a genuinely large tree, creating a full drawNode() SVG
+// element (box, text, icons, progress badge, hover handlers) for every one of them is what
+// actually stops scaling gracefully past a few hundred nodes (Phase 1's finding), not the
+// underlying layout computation itself (computeFullArchitectureLayout, untouched below --
+// its positions/bounds still cover the whole tree, so Fit/Center and the minimap are
+// unaffected). Trunk+bus branch lines and references stay unculled (cheap, and needed for
+// visual continuity as the viewport pans); only the expensive per-node drawNode() call is
+// skipped for positions that fall outside the current viewport.
+function computeVisibleWorldBounds(viewW, viewH) {
+  // Inverse of the exact transform string renderFullArchitectureCanvas applies below
+  // (translate -> scale -> translate) -- screen point (sx, sy) maps back to world point:
+  //   wx = (sx - viewW/2 - panOffsetX) / zoomScale + viewW/2
+  // A margin of a full viewport's worth of world-space is deliberately generous: culling
+  // should only ever skip things genuinely far outside view, never something borderline --
+  // erring toward rendering slightly more than necessary is a far safer failure mode than
+  // erring toward hiding something that should be visible, especially with no browser
+  // available in this environment to visually confirm the transform math against.
+  const toWorldX = (sx) => (sx - viewW / 2 - panOffsetX) / zoomScale + viewW / 2;
+  const toWorldY = (sy) => (sy - viewH / 2 - panOffsetY) / zoomScale + viewH / 2;
+  const marginX = viewW;
+  const marginY = viewH;
+  return {
+    minX: toWorldX(0) - marginX,
+    maxX: toWorldX(viewW) + marginX,
+    minY: toWorldY(0) - marginY,
+    maxY: toWorldY(viewH) + marginY,
+  };
+}
+
+function isPositionWithinBounds(pos, bounds) {
+  return (
+    pos.x + NODE_W / 2 >= bounds.minX &&
+    pos.x - NODE_W / 2 <= bounds.maxX &&
+    pos.y + NODE_H / 2 >= bounds.minY &&
+    pos.y - NODE_H / 2 <= bounds.maxY
+  );
+}
+
+function updateCullIndicator(culledCount) {
+  if (!cullIndicatorEl) return;
+  cullIndicatorEl.hidden = culledCount === 0;
+  if (culledCount > 0) {
+    cullIndicatorEl.textContent = `⊙ ${culledCount} component${culledCount === 1 ? "" : "s"} off-screen`;
+  }
+}
+
 function renderFullArchitectureCanvas(viewW, viewH) {
   const { positions, childrenByParent, overflowByParent, bounds } = computeFullArchitectureLayout(viewW, viewH);
   const visibleIds = new Set(positions.keys());
@@ -1455,7 +1508,13 @@ function renderFullArchitectureCanvas(viewW, viewH) {
     }
   }
 
+  const cullBounds = computeVisibleWorldBounds(viewW, viewH);
+  let culledCount = 0;
   for (const [nodeId, pos] of positions.entries()) {
+    if (!isPositionWithinBounds(pos, cullBounds)) {
+      culledCount++;
+      continue;
+    }
     const n = project.nodes[nodeId];
     nodesGroup.appendChild(drawNode(n, pos, !nodeMatchesActiveFilters(n)));
     const overflow = overflowByParent.get(nodeId);
@@ -1475,6 +1534,7 @@ function renderFullArchitectureCanvas(viewW, viewH) {
   viewport.appendChild(buildFreeObjectsLayer());
   canvasSvg.appendChild(viewport);
 
+  updateCullIndicator(culledCount);
   lastVisiblePositions = positions;
   lastViewW = viewW;
   lastViewH = viewH;
