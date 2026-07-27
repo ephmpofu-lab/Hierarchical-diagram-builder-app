@@ -603,4 +603,26 @@ class ChangeImpactResult(BaseModel):
     held_count: int = 0
 
 
+class CycleEvent(BaseModel):
+    id: str
+    timestamp: str
+    event_type: str  # CycleStarted | StageCompleted | Compliant | Violation | Committed | CycleFailed
+    detail: str = ""
+
+
+class Cycle(BaseModel):
+    id: str
+    project_id: Optional[str] = None  # None for a "reasoning" cycle -- the existing
+    # /api/intelligence/reason it wraps was never project-scoped either (WP5)
+    kind: str  # "reasoning" | "decomposition" (Phase 11 section 5's "AI-driven, inherently
+    # long-running operations" -- everything else stays on the existing synchronous REST API)
+    status: str = "Running"  # Running | Completed | Failed
+    objective: Optional[str] = None  # reasoning cycles
+    node_id: Optional[str] = None  # decomposition cycles
+    events: List[CycleEvent] = Field(default_factory=list)
+    result: Optional[dict] = None  # the completed ReasoningResult/DecompositionResult, as a
+    # plain dict -- deliberately untyped here since a Cycle can wrap either shape
+    error: Optional[str] = None
+
+
 Project.model_rebuild()

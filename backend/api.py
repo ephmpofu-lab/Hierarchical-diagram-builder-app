@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from . import concept, storage, tree
 from .agents.agent import ALL_AGENTS
@@ -11,6 +11,9 @@ from .ai import service as ai_service
 from .ai.provider import AIProviderError
 from .auth import AuthenticatedUser, require_auth
 from .change.impact import analyze_impact
+from .cycles.service import run_decomposition_cycle, run_reasoning_cycle
+from .db import postgres_cycle_repository as cycle_repo
+from .decomposition.commit import commit_children
 from .intelligence.stages import ReasoningStageError
 from .knowledge import lifecycle
 from .knowledge.ingestion import parse_markdown
@@ -21,6 +24,7 @@ from .models import (
     ChangeImpactRequest,
     ChangeImpactResult,
     Comment,
+    Cycle,
     CommentCreate,
     ConceptObject,
     ConceptObjectCreate,
@@ -140,6 +144,45 @@ def api_reason(body: ReasoningRequest):
         return Orchestrator().run_pipeline(body.objective.strip())
     except ReasoningStageError as exc:
         raise HTTPException(status_code=502, detail=f"Reasoning pipeline failed: {exc}") from exc
+
+
+@router.post("/intelligence/reason-async", response_model=Cycle, status_code=202)
+def api_reason_async(
+    body: ReasoningRequest, background_tasks: BackgroundTasks, user: AuthenticatedUser = Depends(require_auth)
+):
+    """The event-driven counterpart to /intelligence/reason above (Phase 11 sections 5-6,
+    WP10): accepts the request and returns a Cycle acknowledgment immediately instead of
+    blocking on the full 8-stage pipeline. The same Orchestrator call runs in the
+    background; poll GET /cycles/{cycle_id} for progress and the final result. Not
+    project-scoped, matching the synchronous endpoint it wraps (WP5's reasoning pipeline
+    never belonged to a project either)."""
+    if not body.objective.strip():
+        raise HTTPException(status_code=400, detail="Objective cannot be empty")
+    cycle = cycle_repo.create_cycle(kind="reasoning", objective=body.objective.strip())
+    background_tasks.add_task(run_reasoning_cycle, cycle.id, body.objective.strip())
+    return cycle
+
+
+@router.get("/cycles/{cycle_id}", response_model=Cycle)
+def api_get_cycle(cycle_id: str, user: AuthenticatedUser = Depends(require_auth)):
+    """Polls a Cycle's current status/events/result (Phase 11 section 6) -- this stack has
+    no websocket/push infrastructure, so a client observes progress by polling this
+    endpoint rather than receiving a true server push; the Cycle record itself is exactly
+    what section 6's diagram calls "CycleUpdated"."""
+    cycle = cycle_repo.get_cycle(cycle_id)
+    if cycle is None:
+        raise HTTPException(status_code=404, detail="Cycle not found")
+    if cycle.project_id is not None:
+        _ensure_owner(storage.load_project(cycle.project_id), user)
+    return cycle
+
+
+@router.get("/projects/{project_id}/cycles", response_model=list[Cycle])
+def api_list_cycles(project_id: str, user: AuthenticatedUser = Depends(require_auth)):
+    """Recent decomposition Cycles for this project (Phase 11 section 6), newest first."""
+    project = storage.load_project(project_id)
+    _ensure_owner(project, user)
+    return cycle_repo.list_cycles(project_id)
 
 
 @router.post("/governance/review", response_model=GovernanceReview)
@@ -368,40 +411,44 @@ def api_decompose_node(
     except ReasoningStageError as exc:
         raise HTTPException(status_code=502, detail=f"Decomposition failed: {exc}") from exc
 
-    def _commit(children, strategy_name: str) -> list:
-        committed_ids = []
-        for child in children:
-            child_id = str(uuid.uuid4())
-            tree.add_node(project, node_id, child.label, child_id)
-            committed = project.nodes[child_id]
-            committed.classification = strategy_name
-            committed.node_type = child.node_type
-            committed.notes = child.notes
-            committed_ids.append(child_id)
-            project.governance_decisions.append(
-                GovernanceDecision(
-                    id=str(uuid.uuid4()),
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                    actor=user.email or user.id,
-                    decision_type="Approve",
-                    target_node_id=child_id,
-                    rationale=f"Auto-approved {strategy_name} decomposition of '{node.label}'",
-                )
-            )
-        return committed_ids
-
+    actor = user.email or user.id
     committed_any = False
     if result.review is not None and result.review.outcome == "approved":
-        result.committed_node_ids = _commit(result.proposed_nodes, result.strategy)
+        result.committed_node_ids = commit_children(project, node, result.proposed_nodes, result.strategy, actor)
         committed_any = True
     if result.parallel_review is not None and result.parallel_review.outcome == "approved":
-        result.parallel_committed_node_ids = _commit(result.parallel_proposed_nodes, result.parallel_strategy)
+        result.parallel_committed_node_ids = commit_children(
+            project, node, result.parallel_proposed_nodes, result.parallel_strategy, actor
+        )
         committed_any = True
     if committed_any:
         total = len(result.committed_node_ids) + len(result.parallel_committed_node_ids)
         tree.log_activity(project, f"Decomposed '{node.label}' ({total} child(ren) committed)")
         storage.save_project(project)
     return result
+
+
+@router.post("/projects/{project_id}/nodes/{node_id}/decompose-async", response_model=Cycle, status_code=202)
+def api_decompose_node_async(
+    project_id: str,
+    node_id: str,
+    body: DecomposeRequest,
+    background_tasks: BackgroundTasks,
+    user: AuthenticatedUser = Depends(require_auth),
+):
+    """The event-driven counterpart to the decompose endpoint above (Phase 11 sections
+    5-6, WP10): accepts the request and returns a Cycle acknowledgment immediately instead
+    of blocking on the AI call + governance review + commit. The exact same Orchestrator
+    call and commit_children helper run in the background; poll GET /cycles/{cycle_id}
+    for progress and the final DecompositionResult (as Cycle.result)."""
+    project = storage.load_project(project_id)
+    _ensure_owner(project, user)
+    tree.get_node_or_404(project, node_id)  # 404s early, before acknowledging a bad request
+    cycle = cycle_repo.create_cycle(kind="decomposition", project_id=project_id, node_id=node_id)
+    background_tasks.add_task(
+        run_decomposition_cycle, cycle.id, project_id, node_id, body.strategy_override, user.email or user.id
+    )
+    return cycle
 
 
 @router.put("/projects/{project_id}/nodes/{node_id}", response_model=NodeWithLevel)
