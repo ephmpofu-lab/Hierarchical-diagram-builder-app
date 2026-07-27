@@ -15,7 +15,9 @@ from ..governance.workflow import run_decision_workflow
 from ..intelligence.context import assemble_reasoning_context
 from ..intelligence.pipeline import _score_confidence
 from ..intelligence.pipeline import run_pipeline as _run_reasoning_pipeline
+from ..intelligence.stages import ReasoningStageError
 from ..models import DecompositionResult, GovernanceReview, Node, Project, ReasoningResult, ReasoningStageLog
+from ..observability.metrics import record_agent_invocation
 from .agent import (
     APPLICATION_ARCHITECTURE_AGENT,
     ARCHITECTURE_THINKING_AGENT,
@@ -63,21 +65,45 @@ _STRATEGY_TO_AGENT = {
 }
 
 
+def _safe_record_agent_invocation(agent_name: str, success: bool, project_id=None, error_type=None) -> None:
+    # Observability (Phase 11 section 13, WP13b) is deliberately best-effort here too --
+    # same reasoning as backend/ai/service.py's AI call metrics: a metrics write failure
+    # must never become a second, unrelated failure on top of (or instead of) a real result.
+    try:
+        record_agent_invocation(agent_name, success, project_id=project_id, error_type=error_type)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 class Orchestrator:
     def run_pipeline(self, objective: str) -> ReasoningResult:
         """Dispatches the Reasoning Pipeline (WP5), attributing each stage to its named
         agent -- the audit-trail extension Phase 7 section 10 calls for."""
-        result = _run_reasoning_pipeline(objective)
+        try:
+            result = _run_reasoning_pipeline(objective)
+        except ReasoningStageError as exc:
+            # Which specific stage failed isn't known here without instrumenting
+            # intelligence/pipeline.py itself (deliberately not touched, per this
+            # increment's whole "no new engine" discipline) -- attributed to the
+            # Orchestrator as the dispatcher, an honest, coarser signal rather than a
+            # fabricated precise one.
+            _safe_record_agent_invocation(ORCHESTRATOR.name, False, error_type=type(exc).__name__)
+            raise
         for stage_log in result.stages:
             stage_log.agent = _STAGE_TO_AGENT.get(stage_log.stage, ORCHESTRATOR.name)
+            _safe_record_agent_invocation(stage_log.agent, True)
         return result
 
     def review_proposal(self, result: ReasoningResult) -> GovernanceReview:
         """Dispatches the Governance Service (WP6), attributing each finding to its
         named agent."""
         review = run_decision_workflow(result)
+        seen_agents = set()
         for finding in review.findings:
             finding.agent = _FINDING_CATEGORY_TO_AGENT.get(finding.category, ORCHESTRATOR.name)
+            if finding.agent not in seen_agents:
+                seen_agents.add(finding.agent)
+                _safe_record_agent_invocation(finding.agent, True)
         return review
 
     def decompose_node(self, project: Project, node: Node, strategy_override=None) -> DecompositionResult:
@@ -97,14 +123,22 @@ class Orchestrator:
 
         result = DecompositionResult(strategy=strategy_name, parallel_strategy=parallel_name, terminal=terminal)
         if not terminal:
-            result.proposed_nodes, result.review = self._run_strategy(node, strategy_name)
+            result.proposed_nodes, result.review = self._run_strategy(node, strategy_name, project.id)
         if parallel_name and not decomposition_stopping.is_terminal(node, parallel_name):
-            result.parallel_proposed_nodes, result.parallel_review = self._run_strategy(node, parallel_name)
+            result.parallel_proposed_nodes, result.parallel_review = self._run_strategy(
+                node, parallel_name, project.id
+            )
         return result
 
-    def _run_strategy(self, node: Node, strategy_name: str):
+    def _run_strategy(self, node: Node, strategy_name: str, project_id: str):
+        agent_name = _STRATEGY_TO_AGENT.get(strategy_name, ORCHESTRATOR.name)
         reasoning_context = assemble_reasoning_context(f"{node.label}. {node.notes}".strip())
-        children = generate_children(node, strategy_name, reasoning_context)
+        try:
+            children = generate_children(node, strategy_name, reasoning_context)
+        except ReasoningStageError as exc:
+            _safe_record_agent_invocation(agent_name, False, project_id=project_id, error_type=type(exc).__name__)
+            raise
+        _safe_record_agent_invocation(agent_name, True, project_id=project_id)
         confidence_tier, rationale = _score_confidence(reasoning_context, [], True, 0)
         reasoning_result = ReasoningResult(
             objective=node.label,
@@ -113,7 +147,7 @@ class Orchestrator:
                 ReasoningStageLog(
                     stage=f"decompose:{strategy_name}",
                     summary=f"{len(children)} candidate child(ren)",
-                    agent=_STRATEGY_TO_AGENT.get(strategy_name, ORCHESTRATOR.name),
+                    agent=agent_name,
                 )
             ],
             proposed_nodes=children,
@@ -122,6 +156,10 @@ class Orchestrator:
             requires_human_review=confidence_tier != "High",
         )
         review = run_decision_workflow(reasoning_result)
+        seen_agents = set()
         for finding in review.findings:
             finding.agent = _FINDING_CATEGORY_TO_AGENT.get(finding.category, ORCHESTRATOR.name)
+            if finding.agent not in seen_agents:
+                seen_agents.add(finding.agent)
+                _safe_record_agent_invocation(finding.agent, True, project_id=project_id)
         return children, review

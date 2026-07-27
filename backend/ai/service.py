@@ -9,10 +9,12 @@ configuration-over-code-change pattern `backend/db/connection.py`/`backend/auth.
 already use for SUPABASE_URL/DATABASE_URL."""
 
 import os
+import time
 
 from dotenv import load_dotenv
 
-from .provider import AICompletionResult, AIProvider
+from ..observability.metrics import record_ai_call
+from .provider import AICompletionResult, AIProvider, AIProviderError
 
 load_dotenv()
 
@@ -46,6 +48,31 @@ def _get_provider() -> AIProvider:
 def complete(
     system: str, prompt: str, max_tokens: int = 4096, effort: str = "none", json_mode: bool = False
 ) -> AICompletionResult:
-    return _get_provider().complete(
-        system=system, prompt=prompt, max_tokens=max_tokens, effort=effort, json_mode=json_mode
-    )
+    """The sole AI entry point (ADR-002) -- also the sole chokepoint for AI call metrics
+    (Phase 11 section 13, WP13b), so every provider/every caller is instrumented for free.
+    Metrics recording is deliberately best-effort: a metrics write failure is logged and
+    swallowed, never allowed to turn an otherwise-successful (or already-failed) AI call
+    into a second, unrelated failure."""
+    started = time.monotonic()
+    try:
+        result = _get_provider().complete(
+            system=system, prompt=prompt, max_tokens=max_tokens, effort=effort, json_mode=json_mode
+        )
+    except AIProviderError as exc:
+        _safe_record_ai_call(AI_MODEL, False, started, error_type=type(exc).__name__)
+        raise
+    _safe_record_ai_call(AI_MODEL, True, started, result=result)
+    return result
+
+
+def _safe_record_ai_call(model: str, success: bool, started: float, result=None, error_type=None) -> None:
+    # Reading `result.retries` happens INSIDE this already-guarded function, not in
+    # complete()'s own body -- a provider (real or a test double) that returns something
+    # without a `.retries` attribute must never turn an otherwise-successful call into a
+    # failure just because the metrics side-path choked on it.
+    try:
+        retries = getattr(result, "retries", 0) or 0
+        duration_ms = int((time.monotonic() - started) * 1000)
+        record_ai_call(model, success, duration_ms, retries=retries, error_type=error_type)
+    except Exception:  # noqa: BLE001 -- observability must never become a new failure mode
+        pass

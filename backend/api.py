@@ -14,6 +14,7 @@ from .change.impact import analyze_impact
 from .cycles.service import run_decomposition_cycle, run_reasoning_cycle
 from .db import postgres_cycle_repository as cycle_repo
 from .decomposition.commit import commit_children
+from .observability.metrics import summarize
 from .intelligence.stages import ReasoningStageError
 from .knowledge import lifecycle
 from .knowledge.ingestion import parse_markdown
@@ -123,6 +124,16 @@ def api_ai_health():
         "retries": result.retries,
         "response": result.text.strip(),
     }
+
+
+@router.get("/observability/summary")
+def api_observability_summary(hours: int = Query(24, ge=1, le=24 * 30)):
+    """The technical substrate Phase 10 section 10's Governance Performance Monitoring
+    reads from (Phase 11 section 13 / WP13b) -- AI service call metrics and agent
+    invocation success/failure rates, aggregated over a recent rolling window. Building
+    the monitoring dashboard itself remains out of scope (WP6's own scope line: "not
+    requested") -- this only exposes the raw, already-recorded signals."""
+    return summarize(hours=hours)
 
 
 @router.get("/agents")

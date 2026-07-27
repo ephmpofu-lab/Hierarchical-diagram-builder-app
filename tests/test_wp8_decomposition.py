@@ -107,6 +107,7 @@ def _canned_review(outcome="approved") -> GovernanceReview:
 class _FakeProject:
     def __init__(self, risks=None):
         self.risks = risks or []
+        self.id = "fake-project-id"
 
 
 def test_decompose_node_stops_at_terminal_without_calling_ai(monkeypatch):
