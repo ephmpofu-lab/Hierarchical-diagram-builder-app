@@ -4,6 +4,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from . import concept, storage, tree
+from .ai import service as ai_service
+from .ai.provider import AIProviderError
 from .auth import AuthenticatedUser, require_auth
 from .knowledge import lifecycle
 from .knowledge.ingestion import parse_markdown
@@ -81,6 +83,26 @@ def api_get_session(user: AuthenticatedUser = Depends(require_auth)):
     ping-pong: the login page trusted the local check, the app pages trusted the backend,
     and the two disagreed). Both pages now defer to this endpoint as the one source of truth."""
     return {"id": user.id, "email": user.email, "role": user.role}
+
+
+@router.get("/ai/health")
+def api_ai_health():
+    """Verifies the AI Service abstraction end-to-end with one trivial completion call
+    (WP4 / ADR-002) -- exercises the configured provider, not any specific vendor SDK."""
+    try:
+        result = ai_service.complete(
+            system="You respond with exactly one word and nothing else.",
+            prompt="Reply with the single word: OK",
+            max_tokens=16,
+        )
+    except AIProviderError as exc:
+        raise HTTPException(status_code=502, detail=f"AI provider error: {exc}") from exc
+    return {
+        "provider": ai_service.AI_PROVIDER,
+        "model": result.model,
+        "retries": result.retries,
+        "response": result.text.strip(),
+    }
 
 
 @router.get("/projects", response_model=list[ProjectSummary])
