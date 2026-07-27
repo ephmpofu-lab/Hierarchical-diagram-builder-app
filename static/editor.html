@@ -34,7 +34,7 @@
           <button id="workspaceOptionTimeline" data-workspace="timeline">Timeline</button>
           <div class="dropdown-divider"></div>
           <div class="dropdown-section-label">Supporting</div>
-          <button data-workspace="documentation" disabled>Documentation <span class="menu-shortcut">Soon</span></button>
+          <button id="workspaceOptionDocumentation" data-workspace="documentation">Documentation</button>
           <button data-workspace="dependencies" disabled>Dependencies <span class="menu-shortcut">Soon</span></button>
           <button data-workspace="health" disabled>Architecture Health <span class="menu-shortcut">Soon</span></button>
         </div>
@@ -265,6 +265,10 @@
 
   <div class="pane timeline-pane" id="timelinePane" hidden>
     <div id="timelineBoard" class="timeline-board"></div>
+  </div>
+
+  <div class="pane documentation-pane" id="documentationPane" hidden>
+    <div id="documentationBoard" class="documentation-board"></div>
   </div>
 
   <div id="healthReportModal" class="modal-backdrop" hidden>

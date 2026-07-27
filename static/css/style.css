@@ -836,6 +836,122 @@ html[data-inspector-collapsed="true"] .health-footer {
   text-align: center;
 }
 
+/* Documentation workspace (WP11c) -- same sibling-pane pattern as Kanban/Timeline */
+.documentation-pane {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+  padding: 20px;
+}
+
+.documentation-pane[hidden] {
+  display: none;
+}
+
+.documentation-board {
+  display: flex;
+  gap: 16px;
+  height: 100%;
+}
+
+.documentation-column {
+  flex: 1;
+  min-width: 280px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.documentation-column-header {
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.documentation-list {
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.documentation-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.documentation-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  margin-bottom: 2px;
+}
+
+.documentation-card-title:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.documentation-card-path {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.documentation-card-notes {
+  font-size: 12.5px;
+  color: var(--text);
+  white-space: pre-wrap;
+  margin-bottom: 8px;
+}
+
+.documentation-comment {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.documentation-comment-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.documentation-comment-form input {
+  flex: 1;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+
+.documentation-kb-status {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 1px 7px;
+  border-radius: 100px;
+  background: var(--accent-bg);
+  color: var(--accent-text);
+  margin-left: 6px;
+}
+
 .kanban-board {
   display: flex;
   gap: 16px;

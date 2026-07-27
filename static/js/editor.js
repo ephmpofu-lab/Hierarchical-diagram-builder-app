@@ -118,6 +118,8 @@ const kanbanPane = document.getElementById("kanbanPane");
 const kanbanBoard = document.getElementById("kanbanBoard");
 const timelinePane = document.getElementById("timelinePane");
 const timelineBoard = document.getElementById("timelineBoard");
+const documentationPane = document.getElementById("documentationPane");
+const documentationBoard = document.getElementById("documentationBoard");
 const showDepsCheckbox = document.getElementById("showDepsCheckbox");
 const showGridCheckbox = document.getElementById("showGridCheckbox");
 const snapGridCheckbox = document.getElementById("snapGridCheckbox");
@@ -455,6 +457,7 @@ function render() {
   updateEmptyCanvasPrompt();
   if (!kanbanPane.hidden) renderKanbanBoard();
   if (!timelinePane.hidden) renderTimelineBoard();
+  if (!documentationPane.hidden) renderDocumentationBoard();
 }
 
 // Shown only on a genuinely empty project (just the root, nothing placed yet) — the
@@ -4161,8 +4164,10 @@ function switchToWorkspace(workspaceId) {
   editorPanesEl.hidden = workspaceId !== "canvas";
   kanbanPane.hidden = workspaceId !== "kanban";
   timelinePane.hidden = workspaceId !== "timeline";
+  documentationPane.hidden = workspaceId !== "documentation";
   if (workspaceId === "kanban") renderKanbanBoard();
   if (workspaceId === "timeline") renderTimelineBoard();
+  if (workspaceId === "documentation") renderDocumentationBoard();
 }
 
 // Breadcrumb-style path for a card, reusing the same parent_id chain compute_level already
@@ -4364,6 +4369,160 @@ function renderTimelineRow(node, rangeStart, rangeSpan) {
   row.appendChild(track);
 
   return row;
+}
+
+// ---------- Documentation workspace (Phase 9 section 12, WP11c) ----------
+// Reads: Architecture Landscape (node notes/comments) + Knowledge Domain -- both already
+// existed with real endpoints (Phase 9's own claim, confirmed true), so this needs no new
+// backend at all: the existing per-node Comment endpoint and WP3's /api/knowledge/concepts
+// list. A consolidated, browsable view of documentation scattered one-node-at-a-time across
+// the tree today, not a new content model.
+
+function renderDocumentationBoard() {
+  if (!documentationBoard) return;
+  documentationBoard.innerHTML = "";
+  if (!project) return;
+
+  const notesColumn = document.createElement("div");
+  notesColumn.className = "documentation-column";
+  const notesHeader = document.createElement("div");
+  notesHeader.className = "documentation-column-header";
+  notesHeader.textContent = "Architecture Notes & Comments";
+  notesColumn.appendChild(notesHeader);
+  const notesList = document.createElement("div");
+  notesList.className = "documentation-list";
+
+  const documented = Object.values(project.nodes)
+    .filter((n) => n.notes.trim() || n.comments.length > 0)
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  if (documented.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "kanban-empty-state";
+    empty.textContent = "No notes or comments yet -- add notes to a node, or comment on one, to see it here.";
+    notesList.appendChild(empty);
+  } else {
+    for (const node of documented) notesList.appendChild(renderDocumentationNoteCard(node));
+  }
+  notesColumn.appendChild(notesList);
+  documentationBoard.appendChild(notesColumn);
+
+  const kbColumn = document.createElement("div");
+  kbColumn.className = "documentation-column";
+  const kbHeader = document.createElement("div");
+  kbHeader.className = "documentation-column-header";
+  kbHeader.textContent = "Knowledge Base";
+  kbColumn.appendChild(kbHeader);
+  const kbList = document.createElement("div");
+  kbList.className = "documentation-list";
+  kbList.innerHTML = '<div class="kanban-empty-state">Loading…</div>';
+  kbColumn.appendChild(kbList);
+  documentationBoard.appendChild(kbColumn);
+  loadKnowledgeConceptsInto(kbList);
+}
+
+function renderDocumentationNoteCard(node) {
+  const card = document.createElement("div");
+  card.className = "documentation-card";
+
+  const title = document.createElement("div");
+  title.className = "documentation-card-title";
+  title.textContent = node.label;
+  title.title = "Jump to this component in Hierarchy";
+  title.addEventListener("click", async () => {
+    switchToWorkspace("canvas");
+    await focusNode(node.id);
+  });
+  card.appendChild(title);
+
+  const path = kanbanCardPath(node);
+  if (path) {
+    const pathEl = document.createElement("div");
+    pathEl.className = "documentation-card-path";
+    pathEl.textContent = path;
+    card.appendChild(pathEl);
+  }
+
+  if (node.notes.trim()) {
+    const notesEl = document.createElement("div");
+    notesEl.className = "documentation-card-notes";
+    notesEl.textContent = node.notes;
+    card.appendChild(notesEl);
+  }
+
+  for (const comment of node.comments) {
+    const commentEl = document.createElement("div");
+    commentEl.className = "documentation-comment";
+    commentEl.textContent = comment.text;
+    card.appendChild(commentEl);
+  }
+
+  const form = document.createElement("div");
+  form.className = "documentation-comment-form";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "Add a comment…";
+  const addBtn = document.createElement("button");
+  addBtn.className = "btn btn-small";
+  addBtn.textContent = "Add";
+  addBtn.addEventListener("click", async () => {
+    const text = input.value.trim();
+    if (!text) return;
+    await fetch(`/api/projects/${projectId}/nodes/${node.id}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    await loadProject();
+  });
+  form.appendChild(input);
+  form.appendChild(addBtn);
+  card.appendChild(form);
+
+  return card;
+}
+
+async function loadKnowledgeConceptsInto(container) {
+  let concepts = [];
+  try {
+    const res = await fetch("/api/knowledge/concepts");
+    if (res.ok) concepts = await res.json();
+  } catch {
+    // Knowledge Base is a separate, project-independent domain (Phase 6) -- a failed fetch
+    // here just means an empty section, never blocks the rest of the Documentation workspace.
+  }
+  // The workspace may have been switched away from before this resolved.
+  if (documentationPane.hidden) return;
+  container.innerHTML = "";
+  if (concepts.length === 0) {
+    container.innerHTML = '<div class="kanban-empty-state">No Knowledge Base concepts yet.</div>';
+    return;
+  }
+  for (const concept of concepts) {
+    const card = document.createElement("div");
+    card.className = "documentation-card";
+
+    const title = document.createElement("div");
+    title.className = "documentation-card-title";
+    title.textContent = concept.name;
+    const statusBadge = document.createElement("span");
+    statusBadge.className = "documentation-kb-status";
+    statusBadge.textContent = concept.status;
+    title.appendChild(statusBadge);
+    card.appendChild(title);
+
+    const path = document.createElement("div");
+    path.className = "documentation-card-path";
+    path.textContent = `${concept.category} · ${concept.concept_id}`;
+    card.appendChild(path);
+
+    const definition = document.createElement("div");
+    definition.className = "documentation-card-notes";
+    definition.textContent = concept.definition;
+    card.appendChild(definition);
+
+    container.appendChild(card);
+  }
 }
 
 selMoreBtn.addEventListener("click", (e) => {
