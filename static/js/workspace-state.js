@@ -24,7 +24,7 @@ const WORKSPACE_REGISTRY = [
   { id: "kanban", label: "Kanban", family: "Execution", available: true },
   { id: "timeline", label: "Timeline", family: "Execution", available: true },
   { id: "documentation", label: "Documentation", family: "Supporting", available: true },
-  { id: "dependencies", label: "Dependencies", family: "Supporting", available: false },
+  { id: "dependencies", label: "Dependencies", family: "Supporting", available: true },
   { id: "health", label: "Architecture Health", family: "Supporting", available: false },
 ];
 

@@ -120,6 +120,8 @@ const timelinePane = document.getElementById("timelinePane");
 const timelineBoard = document.getElementById("timelineBoard");
 const documentationPane = document.getElementById("documentationPane");
 const documentationBoard = document.getElementById("documentationBoard");
+const dependenciesPane = document.getElementById("dependenciesPane");
+const dependenciesBoard = document.getElementById("dependenciesBoard");
 const showDepsCheckbox = document.getElementById("showDepsCheckbox");
 const showGridCheckbox = document.getElementById("showGridCheckbox");
 const snapGridCheckbox = document.getElementById("snapGridCheckbox");
@@ -458,6 +460,7 @@ function render() {
   if (!kanbanPane.hidden) renderKanbanBoard();
   if (!timelinePane.hidden) renderTimelineBoard();
   if (!documentationPane.hidden) renderDocumentationBoard();
+  if (!dependenciesPane.hidden) renderDependenciesBoard();
 }
 
 // Shown only on a genuinely empty project (just the root, nothing placed yet) — the
@@ -4165,9 +4168,11 @@ function switchToWorkspace(workspaceId) {
   kanbanPane.hidden = workspaceId !== "kanban";
   timelinePane.hidden = workspaceId !== "timeline";
   documentationPane.hidden = workspaceId !== "documentation";
+  dependenciesPane.hidden = workspaceId !== "dependencies";
   if (workspaceId === "kanban") renderKanbanBoard();
   if (workspaceId === "timeline") renderTimelineBoard();
   if (workspaceId === "documentation") renderDocumentationBoard();
+  if (workspaceId === "dependencies") renderDependenciesBoard();
 }
 
 // Breadcrumb-style path for a card, reusing the same parent_id chain compute_level already
@@ -4523,6 +4528,168 @@ async function loadKnowledgeConceptsInto(container) {
 
     container.appendChild(card);
   }
+}
+
+// ---------- Dependencies workspace (Phase 9 sections 5/12, WP11d) ----------
+// A Matrix artifact, deliberately typed differently from Kanban/Timeline/Documentation's
+// Catalog artifacts (Phase 9 section 2). Reads: Architecture Landscape (Relationships) --
+// scoped to node-to-node references only, excluding any reference touching a free-form
+// Concept Mode object, since those live outside the formal node tree. Writes: relationship
+// edits via the existing PUT/DELETE reference endpoints -- no new backend needed.
+
+const REFERENCE_TYPE_OPTIONS = ["", "Dependency", "Warning", "Broken", "Data Flow", "Optional"];
+let selectedDependencyRefId = null;
+
+function renderDependenciesBoard() {
+  if (!dependenciesBoard) return;
+  dependenciesBoard.innerHTML = "";
+  if (!project) return;
+
+  const nodeRefs = project.references.filter((r) => project.nodes[r.from] && project.nodes[r.to]);
+  if (nodeRefs.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "dependencies-empty-state";
+    empty.textContent = "No relationships between components yet -- draw a connection on the canvas to see it here.";
+    dependenciesBoard.appendChild(empty);
+    return;
+  }
+
+  const nodeIds = new Set();
+  for (const r of nodeRefs) {
+    nodeIds.add(r.from);
+    nodeIds.add(r.to);
+  }
+  const orderedNodes = [...nodeIds].map((id) => project.nodes[id]).sort((a, b) => a.label.localeCompare(b.label));
+
+  const wrap = document.createElement("div");
+  wrap.className = "dependencies-matrix-wrap";
+  const table = document.createElement("table");
+  table.className = "dependencies-matrix";
+
+  const headRow = document.createElement("tr");
+  headRow.appendChild(document.createElement("th"));
+  for (const node of orderedNodes) {
+    headRow.appendChild(makeDependencyHeaderCell(node, "dep-col-header"));
+  }
+  table.appendChild(headRow);
+
+  for (const rowNode of orderedNodes) {
+    const row = document.createElement("tr");
+    row.appendChild(makeDependencyHeaderCell(rowNode, "dep-row-header"));
+    for (const colNode of orderedNodes) {
+      row.appendChild(makeDependencyCell(rowNode, colNode, nodeRefs));
+    }
+    table.appendChild(row);
+  }
+  wrap.appendChild(table);
+  dependenciesBoard.appendChild(wrap);
+
+  const panelHost = document.createElement("div");
+  dependenciesBoard.appendChild(panelHost);
+  const selectedRef = nodeRefs.find((r) => r.id === selectedDependencyRefId);
+  if (selectedRef) {
+    panelHost.appendChild(renderDependencyEditPanel(selectedRef));
+  } else {
+    selectedDependencyRefId = null;
+  }
+}
+
+function makeDependencyHeaderCell(node, className) {
+  const th = document.createElement("th");
+  th.className = className;
+  th.textContent = node.label;
+  th.title = "Jump to this component in Hierarchy";
+  th.addEventListener("click", async () => {
+    switchToWorkspace("canvas");
+    await focusNode(node.id);
+  });
+  return th;
+}
+
+function makeDependencyCell(rowNode, colNode, nodeRefs) {
+  const td = document.createElement("td");
+  if (rowNode.id === colNode.id) {
+    td.className = "dependencies-cell diagonal";
+    return td;
+  }
+  const ref = nodeRefs.find(
+    (r) => (r.from === rowNode.id && r.to === colNode.id) || (r.from === colNode.id && r.to === rowNode.id)
+  );
+  td.className = "dependencies-cell" + (ref ? " has-ref" : "");
+  if (ref) {
+    td.textContent = ref.from === rowNode.id ? "→" : "←";
+    td.title = `${ref.reference_type || "Relationship"}${ref.label ? ": " + ref.label : ""}`;
+    td.addEventListener("click", () => {
+      selectedDependencyRefId = ref.id;
+      renderDependenciesBoard();
+    });
+  }
+  return td;
+}
+
+function renderDependencyEditPanel(ref) {
+  const panel = document.createElement("div");
+  panel.className = "dependencies-edit-panel";
+
+  const title = document.createElement("div");
+  title.style.fontWeight = "700";
+  title.textContent = `${project.nodes[ref.from].label} → ${project.nodes[ref.to].label}`;
+  panel.appendChild(title);
+
+  const labelField = document.createElement("label");
+  labelField.textContent = "Label";
+  const labelInput = document.createElement("input");
+  labelInput.type = "text";
+  labelInput.value = ref.label || "";
+  panel.appendChild(labelField);
+  panel.appendChild(labelInput);
+
+  const typeField = document.createElement("label");
+  typeField.textContent = "Relationship Type";
+  const typeSelect = document.createElement("select");
+  for (const opt of REFERENCE_TYPE_OPTIONS) {
+    const option = document.createElement("option");
+    option.value = opt;
+    option.textContent = opt || "(none)";
+    if ((ref.reference_type || "") === opt) option.selected = true;
+    typeSelect.appendChild(option);
+  }
+  panel.appendChild(typeField);
+  panel.appendChild(typeSelect);
+
+  const actions = document.createElement("div");
+  actions.className = "dependencies-edit-actions";
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "btn btn-small btn-primary";
+  saveBtn.textContent = "Save";
+  saveBtn.addEventListener("click", async () => {
+    // Both label and reference_type must be sent as real strings, never null -- the
+    // backend's "None means leave unchanged" convention (tree.update_reference) means an
+    // empty string is how a field actually gets cleared, not null.
+    await fetch(`/api/projects/${projectId}/references/${ref.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: ref.from,
+        to: ref.to,
+        label: labelInput.value.trim(),
+        reference_type: typeSelect.value,
+      }),
+    });
+    await loadProject();
+  });
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "btn btn-small";
+  closeBtn.textContent = "Close";
+  closeBtn.addEventListener("click", () => {
+    selectedDependencyRefId = null;
+    renderDependenciesBoard();
+  });
+  actions.appendChild(saveBtn);
+  actions.appendChild(closeBtn);
+  panel.appendChild(actions);
+
+  return panel;
 }
 
 selMoreBtn.addEventListener("click", (e) => {

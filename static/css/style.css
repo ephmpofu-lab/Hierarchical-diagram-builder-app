@@ -952,6 +952,125 @@ html[data-inspector-collapsed="true"] .health-footer {
   margin-left: 6px;
 }
 
+/* Dependencies workspace (WP11d) -- same sibling-pane pattern, a Matrix artifact this time
+   rather than a Catalog (Kanban/Timeline/Documentation/Health), per Phase 9's own typing. */
+.dependencies-pane {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg);
+  padding: 20px;
+}
+
+.dependencies-pane[hidden] {
+  display: none;
+}
+
+.dependencies-board {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dependencies-matrix-wrap {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  max-width: 100%;
+}
+
+.dependencies-matrix {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.dependencies-matrix th,
+.dependencies-matrix td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.dependencies-matrix th.dep-row-header,
+.dependencies-matrix th.dep-col-header {
+  cursor: pointer;
+  background: var(--surface-2);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dependencies-matrix th.dep-row-header {
+  text-align: left;
+  position: sticky;
+  left: 0;
+}
+
+.dependencies-matrix th.dep-row-header:hover,
+.dependencies-matrix th.dep-col-header:hover {
+  color: var(--accent);
+}
+
+.dependencies-cell {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.dependencies-cell.has-ref {
+  background: var(--accent-bg);
+  color: var(--accent-text);
+  font-weight: 700;
+}
+
+.dependencies-cell.diagonal {
+  background: var(--surface-2);
+  cursor: default;
+}
+
+.dependencies-edit-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 420px;
+}
+
+.dependencies-edit-panel label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.dependencies-edit-panel input,
+.dependencies-edit-panel select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+}
+
+.dependencies-edit-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.dependencies-empty-state {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 40px 20px;
+  text-align: center;
+}
+
 .kanban-board {
   display: flex;
   gap: 16px;

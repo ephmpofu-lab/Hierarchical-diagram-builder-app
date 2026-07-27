@@ -35,7 +35,7 @@
           <div class="dropdown-divider"></div>
           <div class="dropdown-section-label">Supporting</div>
           <button id="workspaceOptionDocumentation" data-workspace="documentation">Documentation</button>
-          <button data-workspace="dependencies" disabled>Dependencies <span class="menu-shortcut">Soon</span></button>
+          <button id="workspaceOptionDependencies" data-workspace="dependencies">Dependencies</button>
           <button data-workspace="health" disabled>Architecture Health <span class="menu-shortcut">Soon</span></button>
         </div>
       </div>
@@ -269,6 +269,10 @@
 
   <div class="pane documentation-pane" id="documentationPane" hidden>
     <div id="documentationBoard" class="documentation-board"></div>
+  </div>
+
+  <div class="pane dependencies-pane" id="dependenciesPane" hidden>
+    <div id="dependenciesBoard" class="dependencies-board"></div>
   </div>
 
   <div id="healthReportModal" class="modal-backdrop" hidden>
