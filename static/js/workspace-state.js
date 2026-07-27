@@ -6,12 +6,12 @@
 // static/js/. Persisted via localStorage under the existing "diagram-builder-" prefix
 // (theme.js, pane-collapse), not a new persistence pattern.
 //
-// This WP builds the workspace INFRASTRUCTURE only -- the switcher shell, the domain
-// filter, and this shared registry/state layer. It does not implement Kanban, Timeline,
-// Documentation, Dependencies, or Architecture Health as workspaces; those are each their
-// own future, independently testable WP (a standing project rule, not an oversight) and
-// register into WORKSPACE_REGISTRY below when they're built, rather than this file being
-// rewritten per workspace.
+// WP11 built the workspace INFRASTRUCTURE only -- the switcher shell, the domain filter,
+// and this shared registry/state layer. Each concrete workspace is its own independently
+// testable follow-up WP (a standing project rule, not an oversight): WP11a (Kanban) is
+// the first to flip its `available` flag to true and register real content; Timeline,
+// Documentation, Dependencies, and Architecture Health remain named placeholders below
+// until their own WPs are built.
 
 const WORKSPACE_STORAGE_KEY = "diagram-builder-workspace";
 const DOMAIN_FILTER_STORAGE_KEY = "diagram-builder-domain-filter";
@@ -21,7 +21,7 @@ const DOMAIN_FILTER_STORAGE_KEY = "diagram-builder-domain-filter";
 // and flipping `available` to true, not by changing this list's shape.
 const WORKSPACE_REGISTRY = [
   { id: "canvas", label: "Hierarchy", family: "Canvas", available: true },
-  { id: "kanban", label: "Kanban", family: "Execution", available: false },
+  { id: "kanban", label: "Kanban", family: "Execution", available: true },
   { id: "timeline", label: "Timeline", family: "Execution", available: false },
   { id: "documentation", label: "Documentation", family: "Supporting", available: false },
   { id: "dependencies", label: "Dependencies", family: "Supporting", available: false },

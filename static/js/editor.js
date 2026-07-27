@@ -114,6 +114,8 @@ const workspaceSwitcherBtn = document.getElementById("workspaceSwitcherBtn");
 const workspaceSwitcherMenu = document.getElementById("workspaceSwitcherMenu");
 const domainFilterBtn = document.getElementById("domainFilterBtn");
 const domainFilterMenu = document.getElementById("domainFilterMenu");
+const kanbanPane = document.getElementById("kanbanPane");
+const kanbanBoard = document.getElementById("kanbanBoard");
 const showDepsCheckbox = document.getElementById("showDepsCheckbox");
 const showGridCheckbox = document.getElementById("showGridCheckbox");
 const snapGridCheckbox = document.getElementById("snapGridCheckbox");
@@ -449,6 +451,7 @@ function render() {
   renderInspector();
   refreshHealthPanel();
   updateEmptyCanvasPrompt();
+  if (!kanbanPane.hidden) renderKanbanBoard();
 }
 
 // Shown only on a genuinely empty project (just the root, nothing placed yet) — the
@@ -4116,7 +4119,7 @@ domainFilterBtn.addEventListener("click", () => {
 workspaceSwitcherMenu.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-workspace]");
   if (!btn || btn.disabled) return;
-  setCurrentWorkspaceId(btn.dataset.workspace);
+  switchToWorkspace(btn.dataset.workspace);
   workspaceSwitcherMenu.hidden = true;
 });
 domainFilterMenu.addEventListener("click", (e) => {
@@ -4129,6 +4132,133 @@ domainFilterMenu.addEventListener("click", (e) => {
   domainFilterMenu.hidden = true;
   renderCanvas();
 });
+
+// ---------- Workspace switching (Phase 9 section 2, WP11 Framework + WP11a Kanban) ----------
+// Every workspace fills the same primary-content region below the topbar (Phase 9's own
+// generic shell) -- switching means showing exactly one of .editor-panes / #kanbanPane and
+// hiding the rest, never both. Only "canvas" and "kanban" have real content; switching to
+// any other id is unreachable today since the switcher only ever enables real entries.
+const KANBAN_STATUS_ORDER = ["Not Started", "In Progress", "Blocked", "Needs Review", "Completed"];
+const KANBAN_STATUS_ICONS = {
+  "Not Started": "○",
+  "In Progress": "◐",
+  Blocked: "⛔",
+  "Needs Review": "⚠",
+  Completed: "✓",
+};
+
+function switchToWorkspace(workspaceId) {
+  setCurrentWorkspaceId(workspaceId);
+  const entry = getWorkspaceRegistry().find((w) => w.id === workspaceId) || getWorkspaceRegistry()[0];
+  workspaceSwitcherBtn.textContent = `🗂 ${entry.label} ▾`;
+  for (const btn of workspaceSwitcherMenu.querySelectorAll("button[data-workspace]")) {
+    btn.textContent = btn.textContent.replace(/^✓\s*/, "");
+    if (btn.dataset.workspace === workspaceId) btn.textContent = `✓ ${btn.textContent}`;
+  }
+  editorPanesEl.hidden = workspaceId !== "canvas";
+  kanbanPane.hidden = workspaceId !== "kanban";
+  if (workspaceId === "kanban") renderKanbanBoard();
+}
+
+// Breadcrumb-style path for a card, reusing the same parent_id chain compute_level already
+// walks server-side -- traceability (Phase 9 section 3) made visible on every card, not just
+// a "jump" affordance.
+function kanbanCardPath(node) {
+  const labels = [];
+  let current = node.parent_id ? project.nodes[node.parent_id] : null;
+  while (current) {
+    labels.unshift(current.label);
+    current = current.parent_id ? project.nodes[current.parent_id] : null;
+  }
+  return labels.join(" / ");
+}
+
+async function setNodePlanningStatus(nodeId, status) {
+  await fetch(`/api/projects/${projectId}/nodes/${nodeId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ planning_status: status }),
+  });
+  await loadProject();
+}
+
+function renderKanbanBoard() {
+  if (!kanbanBoard) return;
+  kanbanBoard.innerHTML = "";
+  if (!project) return;
+
+  const cardsByStatus = new Map(KANBAN_STATUS_ORDER.map((s) => [s, []]));
+  for (const node of Object.values(project.nodes)) {
+    if (node.planning_status && cardsByStatus.has(node.planning_status)) {
+      cardsByStatus.get(node.planning_status).push(node);
+    }
+  }
+
+  for (const status of KANBAN_STATUS_ORDER) {
+    const cards = cardsByStatus.get(status);
+    const column = document.createElement("div");
+    column.className = "kanban-column";
+
+    const header = document.createElement("div");
+    header.className = "kanban-column-header";
+    header.innerHTML =
+      `<span>${KANBAN_STATUS_ICONS[status]} ${status}</span>` + `<span class="kanban-column-count">${cards.length}</span>`;
+    column.appendChild(header);
+
+    const list = document.createElement("div");
+    list.className = "kanban-cards";
+    if (cards.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "kanban-empty-state";
+      empty.textContent = "No items";
+      list.appendChild(empty);
+    }
+    for (const node of cards) {
+      list.appendChild(renderKanbanCard(node, status));
+    }
+    column.appendChild(list);
+    kanbanBoard.appendChild(column);
+  }
+}
+
+function renderKanbanCard(node, status) {
+  const card = document.createElement("div");
+  card.className = "kanban-card";
+
+  const label = document.createElement("div");
+  label.className = "kanban-card-label";
+  label.textContent = node.label;
+  label.title = "Jump to this component in Hierarchy";
+  label.addEventListener("click", async () => {
+    switchToWorkspace("canvas");
+    await focusNode(node.id);
+  });
+  card.appendChild(label);
+
+  const path = kanbanCardPath(node);
+  if (path) {
+    const pathEl = document.createElement("div");
+    pathEl.className = "kanban-card-path";
+    pathEl.textContent = path;
+    pathEl.title = path;
+    card.appendChild(pathEl);
+  }
+
+  const select = document.createElement("select");
+  select.className = "kanban-card-status-select";
+  for (const s of KANBAN_STATUS_ORDER) {
+    const opt = document.createElement("option");
+    opt.value = s;
+    opt.textContent = `${KANBAN_STATUS_ICONS[s]} ${s}`;
+    if (s === status) opt.selected = true;
+    select.appendChild(opt);
+  }
+  select.addEventListener("change", () => setNodePlanningStatus(node.id, select.value));
+  card.appendChild(select);
+
+  return card;
+}
+
 selMoreBtn.addEventListener("click", (e) => {
   e.stopPropagation();
   const wasHidden = selMoreMenu.hidden;
@@ -4732,6 +4862,11 @@ function renderMinimap() {
 // ---------- Right panel: collapsible side panels ----------
 
 const editorPanesEl = document.querySelector(".editor-panes");
+
+// Restores whichever workspace was last active (WP11 Framework), now that editorPanesEl
+// exists -- switchToWorkspace/renderKanbanBoard are function declarations (hoisted), but
+// editorPanesEl itself is a const that must actually execute first.
+switchToWorkspace(getCurrentWorkspaceId());
 
 const OUTLINE_COLLAPSED_KEY = "diagram-builder-outline-collapsed";
 const INSPECTOR_COLLAPSED_KEY = "diagram-builder-inspector-collapsed";

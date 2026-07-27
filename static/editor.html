@@ -27,10 +27,10 @@
         <button id="workspaceSwitcherBtn" class="btn btn-small" title="Switch workspace — Hierarchy is the only one built so far; the rest are planned future work packages">🗂 Hierarchy ▾</button>
         <div id="workspaceSwitcherMenu" class="dropdown-menu" hidden>
           <div class="dropdown-section-label">Canvas</div>
-          <button id="workspaceOptionCanvas" data-workspace="canvas">✓ Hierarchy</button>
+          <button id="workspaceOptionCanvas" data-workspace="canvas">Hierarchy</button>
           <div class="dropdown-divider"></div>
           <div class="dropdown-section-label">Execution</div>
-          <button data-workspace="kanban" disabled>Kanban <span class="menu-shortcut">Soon</span></button>
+          <button id="workspaceOptionKanban" data-workspace="kanban">Kanban</button>
           <button data-workspace="timeline" disabled>Timeline <span class="menu-shortcut">Soon</span></button>
           <div class="dropdown-divider"></div>
           <div class="dropdown-section-label">Supporting</div>
@@ -257,6 +257,10 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <div class="pane kanban-pane" id="kanbanPane" hidden>
+    <div id="kanbanBoard" class="kanban-board"></div>
   </div>
 
   <div id="healthReportModal" class="modal-backdrop" hidden>
