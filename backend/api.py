@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -7,6 +8,7 @@ from . import concept, storage, tree
 from .ai import service as ai_service
 from .ai.provider import AIProviderError
 from .auth import AuthenticatedUser, require_auth
+from .governance.workflow import run_decision_workflow
 from .intelligence.pipeline import run_pipeline
 from .intelligence.stages import ReasoningStageError
 from .knowledge import lifecycle
@@ -22,8 +24,11 @@ from .models import (
     ConceptObjectUpdate,
     ConvertToNodeRequest,
     GovernanceActionRequest,
+    GovernanceDecision,
+    GovernanceDecisionCreate,
     GovernancePrinciple,
     GovernancePrincipleCreate,
+    GovernanceReview,
     KnowledgeConcept,
     KnowledgeIngestRequest,
     KnowledgeIngestResult,
@@ -47,6 +52,8 @@ from .models import (
     ReferenceCreate,
     ReferenceUpdate,
     ReparentRequest,
+    Risk,
+    RiskAssessment,
     Template,
     TemplateCreate,
     TemplateNode,
@@ -120,6 +127,64 @@ def api_reason(body: ReasoningRequest):
         return run_pipeline(body.objective.strip())
     except ReasoningStageError as exc:
         raise HTTPException(status_code=502, detail=f"Reasoning pipeline failed: {exc}") from exc
+
+
+@router.post("/governance/review", response_model=GovernanceReview)
+def api_governance_review(result: ReasoningResult):
+    """Runs the Decision & Approval Workflow (WP6 / Phase 10 section 3) against a
+    ReasoningResult the caller already has from /api/intelligence/reason. Stateless --
+    nothing here is persisted; recording an actual human decision is a separate call
+    below, scoped to a real project."""
+    return run_decision_workflow(result)
+
+
+@router.post("/projects/{project_id}/governance-decisions", response_model=GovernanceDecision, status_code=201)
+def api_record_governance_decision(
+    project_id: str, body: GovernanceDecisionCreate, user: AuthenticatedUser = Depends(require_auth)
+):
+    """Records a human's approve/edit/reject decision (Phase 10 section 3/9) -- the first
+    real persistence path for the GovernanceDecision model WP1 defined. `actor` is always
+    the authenticated caller, never client-supplied, so the audit trail (section 9's "who
+    approved, and why") can't be spoofed."""
+    project = storage.load_project(project_id)
+    decision = GovernanceDecision(
+        id=str(uuid.uuid4()),
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        actor=user.email or user.id,
+        decision_type=body.decision_type,
+        target_node_id=body.target_node_id,
+        rationale=body.rationale,
+    )
+    project.governance_decisions.append(decision)
+    tree.log_activity(project, f"Governance decision recorded: {body.decision_type} by {decision.actor}")
+    storage.save_project(project)
+    return decision
+
+
+@router.post("/projects/{project_id}/risks/{risk_id}/accept", response_model=Risk)
+def api_accept_risk(
+    project_id: str, risk_id: str, body: GovernanceActionRequest = GovernanceActionRequest(),
+    user: AuthenticatedUser = Depends(require_auth),
+):
+    """Risk acceptance (Phase 10 section 6) -- a Risk is only 'managed' once formally
+    accepted, and that is always a human act, never automatic (ARC-0021)."""
+    project = storage.load_project(project_id)
+    risk = next((r for r in project.risks if r.id == risk_id), None)
+    if risk is None:
+        raise HTTPException(status_code=404, detail="Risk not found")
+    risk.status = "Accepted"
+    project.risk_assessments.append(
+        RiskAssessment(
+            id=str(uuid.uuid4()),
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            risk_id=risk_id,
+            assessment_type="Residual",
+            level=risk.residual_level or risk.initial_level or "Unknown",
+        )
+    )
+    tree.log_activity(project, f"Risk accepted by {user.email or user.id}: {risk.description[:60]}")
+    storage.save_project(project)
+    return risk
 
 
 @router.get("/projects", response_model=list[ProjectSummary])

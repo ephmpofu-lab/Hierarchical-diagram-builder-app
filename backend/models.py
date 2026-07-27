@@ -529,4 +529,27 @@ class ReasoningResult(BaseModel):
     governance_notes: List[str] = Field(default_factory=list)
 
 
+# ============================================================================
+# Governance Service (Phase 10) -- WP6. The Decision & Approval Workflow (section 3)
+# and the Validation Framework's structural + policy checks (section 4), formalizing
+# what WP5's reasoning pipeline already produces into an enforcement decision, plus
+# real persistence for the WP1-era GovernanceDecision/Risk-acceptance actions, which
+# have had a model since WP1 but no API surface until this WP.
+# ============================================================================
+
+
+class GovernanceFinding(BaseModel):
+    category: str  # structural | policy
+    severity: str  # Critical | Warning
+    message: str
+
+
+class GovernanceReview(BaseModel):
+    outcome: str  # approved | rejected | held_pending_human_review | held_pending_risk_acceptance
+    findings: List[GovernanceFinding] = Field(default_factory=list)
+    requires_human_review: bool = False
+    requires_risk_acceptance: bool = False
+    rationale: str = ""
+
+
 Project.model_rebuild()
