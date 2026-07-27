@@ -116,6 +116,8 @@ const domainFilterBtn = document.getElementById("domainFilterBtn");
 const domainFilterMenu = document.getElementById("domainFilterMenu");
 const kanbanPane = document.getElementById("kanbanPane");
 const kanbanBoard = document.getElementById("kanbanBoard");
+const timelinePane = document.getElementById("timelinePane");
+const timelineBoard = document.getElementById("timelineBoard");
 const showDepsCheckbox = document.getElementById("showDepsCheckbox");
 const showGridCheckbox = document.getElementById("showGridCheckbox");
 const snapGridCheckbox = document.getElementById("snapGridCheckbox");
@@ -452,6 +454,7 @@ function render() {
   refreshHealthPanel();
   updateEmptyCanvasPrompt();
   if (!kanbanPane.hidden) renderKanbanBoard();
+  if (!timelinePane.hidden) renderTimelineBoard();
 }
 
 // Shown only on a genuinely empty project (just the root, nothing placed yet) — the
@@ -4157,7 +4160,9 @@ function switchToWorkspace(workspaceId) {
   }
   editorPanesEl.hidden = workspaceId !== "canvas";
   kanbanPane.hidden = workspaceId !== "kanban";
+  timelinePane.hidden = workspaceId !== "timeline";
   if (workspaceId === "kanban") renderKanbanBoard();
+  if (workspaceId === "timeline") renderTimelineBoard();
 }
 
 // Breadcrumb-style path for a card, reusing the same parent_id chain compute_level already
@@ -4257,6 +4262,108 @@ function renderKanbanCard(node, status) {
   card.appendChild(select);
 
   return card;
+}
+
+// ---------- Timeline workspace (Phase 9 section 6, WP11b) ----------
+// Resolves section 6's own flagged gap: target_date/duration_days now exist on Node
+// (migration_wp11b_node_temporal.sql). A shared date axis across every scheduled node,
+// not independent per-row scales -- otherwise the bars wouldn't actually convey relative
+// timing, which is the entire point of a timeline over a plain list.
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+async function setNodeSchedule(nodeId, targetDate, durationDays) {
+  await fetch(`/api/projects/${projectId}/nodes/${nodeId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target_date: targetDate, duration_days: durationDays }),
+  });
+  await loadProject();
+}
+
+function renderTimelineBoard() {
+  if (!timelineBoard) return;
+  timelineBoard.innerHTML = "";
+  if (!project) return;
+
+  const scheduled = Object.values(project.nodes)
+    .filter((n) => n.target_date)
+    .sort((a, b) => a.target_date.localeCompare(b.target_date));
+
+  if (scheduled.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "timeline-empty-state";
+    empty.textContent = "No scheduled items yet -- set a target date on any node to place it here.";
+    timelineBoard.appendChild(empty);
+    return;
+  }
+
+  const starts = scheduled.map((n) => new Date(n.target_date).getTime());
+  const ends = scheduled.map(
+    (n) => new Date(n.target_date).getTime() + (n.duration_days || 1) * MS_PER_DAY
+  );
+  const rangeStart = Math.min(...starts);
+  const rangeEnd = Math.max(...ends);
+  const rangeSpan = Math.max(rangeEnd - rangeStart, MS_PER_DAY);
+
+  const axis = document.createElement("div");
+  axis.className = "timeline-axis";
+  axis.innerHTML = `<span>${new Date(rangeStart).toISOString().slice(0, 10)}</span><span>${new Date(rangeEnd)
+    .toISOString()
+    .slice(0, 10)}</span>`;
+  timelineBoard.appendChild(axis);
+
+  for (const node of scheduled) {
+    timelineBoard.appendChild(renderTimelineRow(node, rangeStart, rangeSpan));
+  }
+}
+
+function renderTimelineRow(node, rangeStart, rangeSpan) {
+  const row = document.createElement("div");
+  row.className = "timeline-row";
+
+  const label = document.createElement("div");
+  label.className = "timeline-row-label";
+  label.textContent = node.label;
+  label.title = "Jump to this component in Hierarchy";
+  label.addEventListener("click", async () => {
+    switchToWorkspace("canvas");
+    await focusNode(node.id);
+  });
+  row.appendChild(label);
+
+  const inputs = document.createElement("div");
+  inputs.className = "timeline-row-inputs";
+
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = node.target_date || "";
+  const durationInput = document.createElement("input");
+  durationInput.type = "number";
+  durationInput.min = "1";
+  durationInput.title = "Duration (days)";
+  durationInput.value = node.duration_days || 1;
+
+  const commit = () => setNodeSchedule(node.id, dateInput.value, Number(durationInput.value) || 1);
+  dateInput.addEventListener("change", commit);
+  durationInput.addEventListener("change", commit);
+  inputs.appendChild(dateInput);
+  inputs.appendChild(durationInput);
+  row.appendChild(inputs);
+
+  const track = document.createElement("div");
+  track.className = "timeline-row-track";
+  const bar = document.createElement("div");
+  bar.className = "timeline-bar";
+  const startOffset = new Date(node.target_date).getTime() - rangeStart;
+  const durationMs = (node.duration_days || 1) * MS_PER_DAY;
+  bar.style.left = `${(startOffset / rangeSpan) * 100}%`;
+  bar.style.width = `${Math.max((durationMs / rangeSpan) * 100, 1)}%`;
+  bar.title = `${node.target_date} · ${node.duration_days || 1}d`;
+  track.appendChild(bar);
+  row.appendChild(track);
+
+  return row;
 }
 
 selMoreBtn.addEventListener("click", (e) => {

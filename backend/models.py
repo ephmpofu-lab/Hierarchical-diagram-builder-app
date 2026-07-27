@@ -42,6 +42,10 @@ class Node(BaseModel):
     held_for_change: bool = False  # Phase 5 section 3's "Held" state, applied specifically
     # by Change Impact Analysis (Phase 10 section 8, WP9) -- cleared when a human Approves
     # a GovernanceDecision against this node (Recommitted); a Reject leaves it Held
+    target_date: Optional[str] = None  # ISO date (YYYY-MM-DD) -- Phase 9 section 6's own
+    # flagged gap ("temporal attributes... do not yet exist on DecompositionNode"), resolved
+    # here for WP11b (Timeline workspace) rather than left deferred again
+    duration_days: Optional[int] = None  # whole days; None means "no estimate yet"
 
 
 class Reference(BaseModel):
@@ -207,6 +211,8 @@ class NodeUpdate(BaseModel):
     custom_color: Optional[str] = None
     planning_status: Optional[str] = None
     locked: Optional[bool] = None
+    target_date: Optional[str] = None
+    duration_days: Optional[int] = None
 
 
 class MoveSiblingRequest(BaseModel):

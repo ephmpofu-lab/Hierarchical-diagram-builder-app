@@ -31,7 +31,7 @@
           <div class="dropdown-divider"></div>
           <div class="dropdown-section-label">Execution</div>
           <button id="workspaceOptionKanban" data-workspace="kanban">Kanban</button>
-          <button data-workspace="timeline" disabled>Timeline <span class="menu-shortcut">Soon</span></button>
+          <button id="workspaceOptionTimeline" data-workspace="timeline">Timeline</button>
           <div class="dropdown-divider"></div>
           <div class="dropdown-section-label">Supporting</div>
           <button data-workspace="documentation" disabled>Documentation <span class="menu-shortcut">Soon</span></button>
@@ -261,6 +261,10 @@
 
   <div class="pane kanban-pane" id="kanbanPane" hidden>
     <div id="kanbanBoard" class="kanban-board"></div>
+  </div>
+
+  <div class="pane timeline-pane" id="timelinePane" hidden>
+    <div id="timelineBoard" class="timeline-board"></div>
   </div>
 
   <div id="healthReportModal" class="modal-backdrop" hidden>

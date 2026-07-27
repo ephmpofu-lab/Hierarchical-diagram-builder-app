@@ -732,6 +732,110 @@ html[data-inspector-collapsed="true"] .health-footer {
   display: none;
 }
 
+/* Timeline workspace (WP11a's sibling-pane pattern, reused exactly for WP11b) */
+.timeline-pane {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg);
+  padding: 20px;
+}
+
+.timeline-pane[hidden] {
+  display: none;
+}
+
+.timeline-board {
+  display: flex;
+  flex-direction: column;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.timeline-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 0 0 8px 232px;
+}
+
+.timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.timeline-row-label {
+  flex: 0 0 160px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-row-label:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.timeline-row-inputs {
+  flex: 0 0 220px;
+  display: flex;
+  gap: 6px;
+}
+
+.timeline-row-inputs input {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+}
+
+.timeline-row-inputs input[type="date"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.timeline-row-inputs input[type="number"] {
+  width: 56px;
+}
+
+.timeline-row-track {
+  flex: 1;
+  position: relative;
+  height: 22px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  min-width: 100px;
+}
+
+.timeline-bar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  min-width: 4px;
+  background: var(--accent);
+  border-radius: 4px;
+  opacity: 0.85;
+}
+
+.timeline-empty-state {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 40px 20px;
+  text-align: center;
+}
+
 .kanban-board {
   display: flex;
   gap: 16px;

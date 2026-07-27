@@ -72,7 +72,8 @@ class PostgresProjectRepository:
                 select id, parent_id, sort_order, label, notes, canvas_x, canvas_y, collapsed,
                        node_type, status, priority, complexity, risk_level, tags, owner, shape,
                        group_children, is_group, classification, custom_color, planning_status,
-                       locked, abstraction_level, decomposition_terminal, held_for_change
+                       locked, abstraction_level, decomposition_terminal, held_for_change,
+                       target_date, duration_days
                 from nodes where project_id = %s order by parent_id, sort_order
                 """,
                 (project_id,),
@@ -187,6 +188,7 @@ class PostgresProjectRepository:
                 node_type, status, priority, complexity, risk_level, tags, owner, shape,
                 group_children, is_group, classification, custom_color, planning_status, locked,
                 abstraction_level, decomposition_terminal, held_for_change,
+                target_date, duration_days,
             ) = row
             node_id = str(nid)
             nodes[node_id] = Node(
@@ -216,6 +218,8 @@ class PostgresProjectRepository:
                 abstraction_level=abstraction_level,
                 decomposition_terminal=decomposition_terminal,
                 held_for_change=held_for_change,
+                target_date=target_date.isoformat() if target_date else None,
+                duration_days=duration_days,
             )
         # Rebuild each parent's children array from every node's own parent_id + sort_order,
         # in a separate pass -- simpler than trying to append in the right order during a
@@ -419,10 +423,11 @@ class PostgresProjectRepository:
                             canvas_y, collapsed, node_type, status, priority, complexity,
                             risk_level, tags, owner, shape, group_children, is_group,
                             classification, custom_color, planning_status, locked,
-                            abstraction_level, decomposition_terminal, held_for_change
+                            abstraction_level, decomposition_terminal, held_for_change,
+                            target_date, duration_days
                         ) values (
                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                         )
                         """,
                         (
@@ -452,6 +457,8 @@ class PostgresProjectRepository:
                             node.abstraction_level,
                             node.decomposition_terminal,
                             node.held_for_change,
+                            node.target_date,
+                            node.duration_days,
                         ),
                     )
 

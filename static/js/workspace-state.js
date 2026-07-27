@@ -22,7 +22,7 @@ const DOMAIN_FILTER_STORAGE_KEY = "diagram-builder-domain-filter";
 const WORKSPACE_REGISTRY = [
   { id: "canvas", label: "Hierarchy", family: "Canvas", available: true },
   { id: "kanban", label: "Kanban", family: "Execution", available: true },
-  { id: "timeline", label: "Timeline", family: "Execution", available: false },
+  { id: "timeline", label: "Timeline", family: "Execution", available: true },
   { id: "documentation", label: "Documentation", family: "Supporting", available: false },
   { id: "dependencies", label: "Dependencies", family: "Supporting", available: false },
   { id: "health", label: "Architecture Health", family: "Supporting", available: false },

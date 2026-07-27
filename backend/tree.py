@@ -181,11 +181,16 @@ def rename_node(
     custom_color: Optional[str] = None,
     planning_status: Optional[str] = None,
     locked: Optional[bool] = None,
+    target_date: Optional[str] = None,
+    duration_days: Optional[int] = None,
 ) -> None:
     node = get_node_or_404(project, node_id)
     is_editing = any(
         v is not None
-        for v in (label, notes, node_type, status, priority, complexity, risk_level, tags, owner, classification, custom_color, planning_status)
+        for v in (
+            label, notes, node_type, status, priority, complexity, risk_level, tags, owner, classification,
+            custom_color, planning_status, target_date, duration_days,
+        )
     )
     if node.locked and is_editing and locked is None:
         raise HTTPException(status_code=400, detail="This component is locked")
@@ -223,6 +228,10 @@ def rename_node(
         node.planning_status = planning_status
     if locked is not None:
         node.locked = locked
+    if target_date is not None:
+        node.target_date = target_date
+    if duration_days is not None:
+        node.duration_days = duration_days
 
 
 def move_sibling(project: Project, node_id: str, direction: str) -> None:

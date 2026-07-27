@@ -475,6 +475,8 @@ def api_update_node(project_id: str, node_id: str, body: NodeUpdate):
         body.custom_color,
         body.planning_status,
         body.locked,
+        body.target_date,
+        body.duration_days,
     )
     if body.label is not None and body.label != old_label:
         tree.log_activity(project, f"Renamed '{old_label}' to '{body.label}'")
