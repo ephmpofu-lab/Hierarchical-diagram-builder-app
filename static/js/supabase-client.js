@@ -39,7 +39,12 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLI
 // none of those anticipated, this stops an actual infinite loop rather than letting it run.
 const REDIRECT_GUARD_KEY = "diagram-builder-auth-redirect-guard";
 
-function guardedRedirect(targetUrl) {
+// A redirect to login.html is often caused by something the *user* should be told about
+// (a rejected token, an ended session) -- but it's a full-page navigation, so the only way
+// to carry that reason across is a handoff key login.html reads once on load, then clears.
+const AUTH_MESSAGE_KEY = "diagram-builder-auth-message";
+
+function guardedRedirect(targetUrl, message) {
   const now = Date.now();
   let guard = { count: 0, firstAt: now };
   try {
@@ -62,5 +67,6 @@ function guardedRedirect(targetUrl) {
     return;
   }
   sessionStorage.setItem(REDIRECT_GUARD_KEY, JSON.stringify(guard));
+  if (message) sessionStorage.setItem(AUTH_MESSAGE_KEY, message);
   window.location.href = targetUrl;
 }

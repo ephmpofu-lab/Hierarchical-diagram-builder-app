@@ -210,6 +210,16 @@
     // here, while this page kept trusting the stale local session and bouncing forward
     // again). Not mid password-recovery, which also carries a session but needs the reset
     // form, not a redirect.
+    // If a redirect handed off a reason (a rejected token, an ended session), show it now --
+    // this is the one and only place it's read, so clear it immediately after.
+    (() => {
+      const handoff = sessionStorage.getItem(AUTH_MESSAGE_KEY);
+      if (handoff) {
+        sessionStorage.removeItem(AUTH_MESSAGE_KEY);
+        showBanner(errorBanner, handoff);
+      }
+    })();
+
     (async () => {
       const { data } = await supabaseClient.auth.getSession();
       if (!data.session || mode === "reset") return;
@@ -220,7 +230,17 @@
         if (res.ok) {
           guardedRedirect("index.html");
         } else {
-          await supabaseClient.auth.signOut(); // stale/invalid session -- clear it, don't loop on it
+          // stale/invalid session -- clear it and say so, rather than silently
+          // dropping back to a blank form with no explanation.
+          let detail = "Your session could not be verified. Please sign in again.";
+          try {
+            const body = await res.clone().json();
+            if (body && body.detail) detail = body.detail;
+          } catch {
+            // no JSON body -- fall back to the generic message
+          }
+          await supabaseClient.auth.signOut();
+          showBanner(errorBanner, detail);
         }
       } catch {
         // Network hiccup checking the session -- stay on the login page rather than guess.
@@ -249,6 +269,18 @@
       return ok;
     }
 
+    // Without this, a hung request (dropped connection, Supabase unreachable) leaves the
+    // submit button spinning forever with no eventual feedback -- a genuine "nothing
+    // happens" case, distinct from an outright error response.
+    function withTimeout(promise, ms = 15000) {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Request timed out. Please check your connection and try again.")), ms)
+        ),
+      ]);
+    }
+
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       if (!validate()) return;
@@ -260,29 +292,37 @@
       try {
         if (mode === "signin") {
           setRememberMe(rememberMeCheckbox.checked);
-          const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+          const { error } = await withTimeout(supabaseClient.auth.signInWithPassword({ email, password }));
           if (error) throw error;
           guardedRedirect("index.html");
         } else if (mode === "signup") {
-          const { data, error } = await supabaseClient.auth.signUp({ email, password });
+          const { data, error } = await withTimeout(supabaseClient.auth.signUp({ email, password }));
           if (error) throw error;
           if (data.session) {
             guardedRedirect("index.html");
+          } else if (data.user && data.user.identities && data.user.identities.length === 0) {
+            // Supabase's anti-enumeration behavior: signing up an email that already has an
+            // account returns success with no error and sends no email -- `identities` is the
+            // one reliable signal that this happened, so the message shown matches reality
+            // instead of always claiming an email was sent.
+            clearForm();
+            setMode("signin");
+            showBanner(infoBanner, "An account with this email already exists. Try signing in, or use Forgot password.");
           } else {
             clearForm();
             setMode("signin"); // before showBanner -- setMode() clears banners as part of switching
             showBanner(infoBanner, "Account created — check your email to verify your account, then sign in.");
           }
         } else if (mode === "forgot") {
-          const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+          const { error } = await withTimeout(supabaseClient.auth.resetPasswordForEmail(email, {
             redirectTo: window.location.origin + window.location.pathname,
-          });
+          }));
           if (error) throw error;
           clearForm();
           setMode("signin"); // before showBanner -- setMode() clears banners as part of switching
           showBanner(successBanner, "Check your email for a password reset link.");
         } else if (mode === "reset") {
-          const { error } = await supabaseClient.auth.updateUser({ password });
+          const { error } = await withTimeout(supabaseClient.auth.updateUser({ password }));
           if (error) throw error;
           clearForm();
           showBanner(successBanner, "Password updated — redirecting…");

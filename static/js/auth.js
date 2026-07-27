@@ -27,7 +27,7 @@ async function requireSession() {
 supabaseClient.auth.onAuthStateChange((event, session) => {
   currentSession = session;
   if (event === "SIGNED_OUT") {
-    guardedRedirect("login.html");
+    guardedRedirect("login.html", "Your session ended. Please sign in again.");
   }
 });
 
@@ -54,7 +54,18 @@ window.fetch = async (input, init = {}) => {
   }
   const response = await _nativeFetch(input, init);
   if (isOwnApiCall && response.status === 401) {
-    guardedRedirect("login.html");
+    // Surface *why* -- backend/auth.py's require_auth sends a specific detail message
+    // (e.g. "Invalid or expired session: <reason>"); silently redirecting on the status
+    // code alone and discarding the body is exactly the kind of "nothing happened" gap
+    // that makes a real auth failure indistinguishable from a UI bug.
+    let detail = "Your session could not be verified. Please sign in again.";
+    try {
+      const body = await response.clone().json();
+      if (body && body.detail) detail = body.detail;
+    } catch {
+      // no JSON body -- fall back to the generic message
+    }
+    guardedRedirect("login.html", detail);
   }
   return response;
 };
