@@ -110,6 +110,10 @@ const searchWrap = document.querySelector(".search-wrap");
 const searchResults = document.getElementById("searchResults");
 const exportBtn = document.getElementById("exportBtn");
 const exportMenu = document.getElementById("exportMenu");
+const workspaceSwitcherBtn = document.getElementById("workspaceSwitcherBtn");
+const workspaceSwitcherMenu = document.getElementById("workspaceSwitcherMenu");
+const domainFilterBtn = document.getElementById("domainFilterBtn");
+const domainFilterMenu = document.getElementById("domainFilterMenu");
 const showDepsCheckbox = document.getElementById("showDepsCheckbox");
 const showGridCheckbox = document.getElementById("showGridCheckbox");
 const snapGridCheckbox = document.getElementById("snapGridCheckbox");
@@ -238,6 +242,13 @@ let expandedGroupOverflow = false; // "show all" for progressive disclosure of m
 let lastValidationReport = null;
 let viewMode = "focus"; // "focus" | "full"
 let activeStatusFilters = new Set(PLANNING_STATUSES);
+// Domain-scoping toggle within the Canvas family (Phase 9 section 2, WP11's Workspace
+// Framework) -- unlike activeStatusFilters above, this one is deliberately persisted
+// (workspace-state.js), matching the theme/pane-collapse precedent rather than the
+// per-session status-filter one, since a domain lens is more like a standing preference.
+let activeDomainFilter = getCurrentDomainFilter();
+domainFilterBtn.textContent = `Domain: ${activeDomainFilter} ▾`;
+domainFilterBtn.classList.toggle("active", activeDomainFilter !== "Hierarchy");
 let nodeDragJustHappened = false; // suppresses the click-to-select that follows a drag's mouseup
 
 // Nodes with no planning_status set are never filtered out — only nodes that HAVE an
@@ -246,6 +257,18 @@ let nodeDragJustHappened = false; // suppresses the click-to-select that follows
 function nodeMatchesStatusFilter(node) {
   if (!node.planning_status) return true;
   return activeStatusFilters.has(node.planning_status);
+}
+
+// Same "unclassified is never hidden" policy as the status filter above -- a domain lens
+// narrows focus, it never makes freshly-added or not-yet-classified nodes disappear.
+function nodeMatchesDomainFilter(node) {
+  if (activeDomainFilter === "Hierarchy") return true;
+  if (!node.classification) return true;
+  return node.classification === activeDomainFilter;
+}
+
+function nodeMatchesActiveFilters(node) {
+  return nodeMatchesStatusFilter(node) && nodeMatchesDomainFilter(node);
 }
 
 // ---------- Multi-selection ----------
@@ -1242,14 +1265,14 @@ function renderFocusCanvas(viewW, viewH) {
   }
 
   for (const ancestor of ancestorChain) {
-    nodesGroup.appendChild(drawNode(ancestor, positions.get(ancestor.id), !nodeMatchesStatusFilter(ancestor)));
+    nodesGroup.appendChild(drawNode(ancestor, positions.get(ancestor.id), !nodeMatchesActiveFilters(ancestor)));
   }
   for (const fadedId of fadedIds) {
     nodesGroup.appendChild(drawNode(project.nodes[fadedId], positions.get(fadedId), true));
   }
   nodesGroup.appendChild(drawNode(focus, positions.get(focus.id)));
   for (const child of visibleChildren) {
-    nodesGroup.appendChild(drawNode(child, positions.get(child.id), !nodeMatchesStatusFilter(child)));
+    nodesGroup.appendChild(drawNode(child, positions.get(child.id), !nodeMatchesActiveFilters(child)));
   }
   if (hiddenCount > 0) {
     const lastPos = positions.get(visibleChildren[visibleChildren.length - 1].id);
@@ -1423,7 +1446,7 @@ function renderFullArchitectureCanvas(viewW, viewH) {
 
   for (const [nodeId, pos] of positions.entries()) {
     const n = project.nodes[nodeId];
-    nodesGroup.appendChild(drawNode(n, pos, !nodeMatchesStatusFilter(n)));
+    nodesGroup.appendChild(drawNode(n, pos, !nodeMatchesActiveFilters(n)));
     const overflow = overflowByParent.get(nodeId);
     if (overflow) {
       const label = document.createElementNS(SVG_NS, "text");
@@ -4063,6 +4086,8 @@ function closeToolbarMenus() {
   settingsMenu.hidden = true;
   shapesFlyout.hidden = true;
   selMoreMenu.hidden = true;
+  workspaceSwitcherMenu.hidden = true;
+  domainFilterMenu.hidden = true;
   closeImportModal();
 }
 layoutMenuBtn.addEventListener("click", () => {
@@ -4074,6 +4099,35 @@ settingsMenuBtn.addEventListener("click", () => {
   const wasHidden = settingsMenu.hidden;
   closeToolbarMenus();
   settingsMenu.hidden = !wasHidden;
+});
+workspaceSwitcherBtn.addEventListener("click", () => {
+  const wasHidden = workspaceSwitcherMenu.hidden;
+  closeToolbarMenus();
+  workspaceSwitcherMenu.hidden = !wasHidden;
+});
+domainFilterBtn.addEventListener("click", () => {
+  const wasHidden = domainFilterMenu.hidden;
+  closeToolbarMenus();
+  domainFilterMenu.hidden = !wasHidden;
+});
+// Only "canvas" (Hierarchy) has real content today (WP11 builds the Workspace Framework
+// infrastructure only, per this project's one-capability-per-WP rule) -- every other entry
+// is rendered disabled in the HTML, so this only ever needs to close the menu.
+workspaceSwitcherMenu.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-workspace]");
+  if (!btn || btn.disabled) return;
+  setCurrentWorkspaceId(btn.dataset.workspace);
+  workspaceSwitcherMenu.hidden = true;
+});
+domainFilterMenu.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-domain]");
+  if (!btn) return;
+  activeDomainFilter = btn.dataset.domain;
+  setCurrentDomainFilter(activeDomainFilter);
+  domainFilterBtn.textContent = `Domain: ${activeDomainFilter} ▾`;
+  domainFilterBtn.classList.toggle("active", activeDomainFilter !== "Hierarchy");
+  domainFilterMenu.hidden = true;
+  renderCanvas();
 });
 selMoreBtn.addEventListener("click", (e) => {
   e.stopPropagation();
@@ -4090,6 +4144,16 @@ document.addEventListener("click", (e) => {
   }
   if (!selMoreMenu.hidden && !selMoreMenu.contains(e.target) && e.target !== selMoreBtn) {
     selMoreMenu.hidden = true;
+  }
+  if (
+    !workspaceSwitcherMenu.hidden &&
+    !workspaceSwitcherMenu.contains(e.target) &&
+    e.target !== workspaceSwitcherBtn
+  ) {
+    workspaceSwitcherMenu.hidden = true;
+  }
+  if (!domainFilterMenu.hidden && !domainFilterMenu.contains(e.target) && e.target !== domainFilterBtn) {
+    domainFilterMenu.hidden = true;
   }
 });
 fitSelectionBtn.addEventListener("click", () => {

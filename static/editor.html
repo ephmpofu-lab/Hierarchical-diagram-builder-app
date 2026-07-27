@@ -23,9 +23,36 @@
       <div id="breadcrumb" class="breadcrumb"></div>
     </div>
     <div class="topbar-actions">
+      <div class="dropdown-wrap">
+        <button id="workspaceSwitcherBtn" class="btn btn-small" title="Switch workspace — Hierarchy is the only one built so far; the rest are planned future work packages">🗂 Hierarchy ▾</button>
+        <div id="workspaceSwitcherMenu" class="dropdown-menu" hidden>
+          <div class="dropdown-section-label">Canvas</div>
+          <button id="workspaceOptionCanvas" data-workspace="canvas">✓ Hierarchy</button>
+          <div class="dropdown-divider"></div>
+          <div class="dropdown-section-label">Execution</div>
+          <button data-workspace="kanban" disabled>Kanban <span class="menu-shortcut">Soon</span></button>
+          <button data-workspace="timeline" disabled>Timeline <span class="menu-shortcut">Soon</span></button>
+          <div class="dropdown-divider"></div>
+          <div class="dropdown-section-label">Supporting</div>
+          <button data-workspace="documentation" disabled>Documentation <span class="menu-shortcut">Soon</span></button>
+          <button data-workspace="dependencies" disabled>Dependencies <span class="menu-shortcut">Soon</span></button>
+          <button data-workspace="health" disabled>Architecture Health <span class="menu-shortcut">Soon</span></button>
+        </div>
+      </div>
       <div class="view-mode-toggle">
         <button id="focusModeBtn" class="btn btn-small icon-only active" title="Focus Mode: shows the ancestor chain plus this node's children, with other branches faded">◎</button>
         <button id="fullArchModeBtn" class="btn btn-small icon-only" title="Full Architecture: shows the whole tree at once">▦</button>
+      </div>
+      <div class="dropdown-wrap">
+        <button id="domainFilterBtn" class="btn btn-small" title="Filter the canvas to one TOGAF domain — a lens on the same tree, not a separate view">Domain: Hierarchy ▾</button>
+        <div id="domainFilterMenu" class="dropdown-menu" hidden>
+          <button data-domain="Hierarchy">Hierarchy <span class="menu-shortcut">All domains</span></button>
+          <div class="dropdown-divider"></div>
+          <button data-domain="Business">Business</button>
+          <button data-domain="Data">Data</button>
+          <button data-domain="Application">Application</button>
+          <button data-domain="Technology">Technology</button>
+        </div>
       </div>
       <div class="search-wrap">
         <input id="searchBox" type="text" placeholder="Search nodes…" autocomplete="off">
@@ -300,6 +327,7 @@
   <script src="js/supabase-client.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/theme.js"></script>
+  <script src="js/workspace-state.js"></script>
   <script src="js/editor.js"></script>
 </body>
 </html>

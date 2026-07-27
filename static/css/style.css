@@ -251,6 +251,21 @@ button {
   color: var(--danger-text);
 }
 
+.dropdown-menu button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.dropdown-menu button:disabled:hover {
+  background: none;
+}
+
+#domainFilterBtn.active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
 .connector-panel {
   position: fixed;
   z-index: 160;
