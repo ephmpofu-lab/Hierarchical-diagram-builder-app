@@ -1,0 +1,45 @@
+name: CI
+
+# Formalizes what Phase 11 section 12 flagged as missing: an automated test suite gates
+# every merge instead of relying on a developer to remember to run pytest locally
+# (Phase 12 Implementation Roadmap, WP13c -- the third and final slice of ADR-004's WP13
+# split, after WP13a's migration runner and WP13b's observability instrumentation).
+#
+# This project has no separate test database -- every test hits the live Supabase
+# Postgres database directly via DATABASE_URL, using throwaway __WPn_TEST__-prefixed rows
+# with try/finally cleanup (see any tests/test_wp*.py file's own module docstring). CI
+# runs against that same live database, matching local development exactly, rather than
+# standing up a second database this project doesn't otherwise have or need yet.
+#
+# `concurrency` cancels an in-progress run when a newer push arrives on the same branch,
+# since two overlapping runs would both be exercising throwaway data against the one
+# shared live database at the same time -- a real consideration specific to this
+# project's testing model, not a generic template default.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run test suite
+        run: pytest tests/ -q
