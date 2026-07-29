@@ -46,6 +46,9 @@ class Node(BaseModel):
     # flagged gap ("temporal attributes... do not yet exist on DecompositionNode"), resolved
     # here for WP11b (Timeline workspace) rather than left deferred again
     duration_days: Optional[int] = None  # whole days; None means "no estimate yet"
+    milestone: Optional[str] = None  # free-text grouping label (mirrors classification's
+    # convention) -- set by committing an Implementation Blueprint proposal (WP19), grouping
+    # Task nodes that belong to the same delivery milestone; not a separate Milestone entity
 
 
 class Reference(BaseModel):
@@ -213,6 +216,7 @@ class NodeUpdate(BaseModel):
     locked: Optional[bool] = None
     target_date: Optional[str] = None
     duration_days: Optional[int] = None
+    milestone: Optional[str] = None
 
 
 class MoveSiblingRequest(BaseModel):
@@ -589,6 +593,44 @@ class DecompositionResult(BaseModel):
     parallel_proposed_nodes: List[ProposedNode] = Field(default_factory=list)
     parallel_review: Optional[GovernanceReview] = None
     parallel_committed_node_ids: List[str] = Field(default_factory=list)
+
+
+# ============================================================================
+# Implementation Blueprint (Journey 3, WP19) -- turns an already-decomposed subtree's
+# leaf Task nodes into a real work plan: milestone grouping, schedule (reusing WP11b's
+# target_date/duration_days rather than new scheduling state), and build-order
+# dependencies between the existing nodes. Testing/CI-CD guidance is advisory prose
+# only, never persisted -- same treatment ReasoningResult.governance_notes gets.
+# ============================================================================
+
+
+class ProposedWorkPackage(BaseModel):
+    node_id: str  # an already-real Task node's id -- Blueprint enriches existing leaves,
+    # it does not propose new nodes the way Reasoning/Decomposition do
+    milestone: str
+    target_date: Optional[str] = None
+    duration_days: Optional[int] = None
+    testing_notes: str = ""
+
+
+class ProposedDependency(BaseModel):
+    from_node_id: str  # already-real node ids -- build-order edges between existing Tasks
+    to_node_id: str
+    label: Optional[str] = None
+
+
+class BlueprintResult(BaseModel):
+    root_node_id: str
+    proposed_work_packages: List[ProposedWorkPackage] = Field(default_factory=list)
+    proposed_dependencies: List[ProposedDependency] = Field(default_factory=list)
+    testing_strategy: str = ""
+    ci_cd_strategy: str = ""
+    ready: bool = True  # False when the subtree still has non-terminal leaves -- informs,
+    # never blocks generation (same "warn, don't block" posture as the Health dashboard)
+    non_terminal_leaf_labels: List[str] = Field(default_factory=list)
+    review: Optional[GovernanceReview] = None
+    committed_work_package_node_ids: List[str] = Field(default_factory=list)
+    committed_dependency_ids: List[str] = Field(default_factory=list)
 
 
 class ChangeImpactRequest(BaseModel):

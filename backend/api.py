@@ -26,6 +26,7 @@ from .auth import AuthenticatedUser, require_auth
 from .change.impact import analyze_impact
 from .cycles.service import run_decomposition_cycle, run_reasoning_cycle
 from .db import postgres_cycle_repository as cycle_repo
+from .blueprint.commit import commit_blueprint
 from .decomposition.commit import commit_children
 from .intelligence.commit import commit_reasoning_proposal
 from .observability.metrics import summarize
@@ -40,6 +41,7 @@ from .models import (
     AISuitabilitySignals,
     APIDesignResult,
     APIDesignSignals,
+    BlueprintResult,
     ChangeImpactRequest,
     ChangeImpactResult,
     Comment,
@@ -667,6 +669,56 @@ def api_commit_decomposition(
     tree.log_activity(project, f"Committed decomposition of '{node.label}' ({len(committed_node_ids)} child(ren))")
     storage.save_project(project)
     return {"committed_node_ids": committed_node_ids}
+
+
+@router.post("/projects/{project_id}/nodes/{node_id}/blueprint", response_model=BlueprintResult)
+def api_generate_blueprint(project_id: str, node_id: str, user: AuthenticatedUser = Depends(require_auth)):
+    """Journey 3 (Decomposition -> Implementation Blueprint, WP19): turns an already-
+    decomposed subtree's leaf Task nodes into a real work plan -- milestone grouping,
+    schedule, build-order dependencies -- via the Orchestrator (attributed to the
+    Execution Planning Agent), then the same Governance Service review WP6/WP7 already
+    established. An approved proposal commits immediately, exactly mirroring
+    api_decompose_node above; anything held or rejected is returned for review but
+    nothing is committed -- override a hold via commit-blueprint below."""
+    project = storage.load_project(project_id)
+    _ensure_owner(project, user)
+    node = tree.get_node_or_404(project, node_id)
+    try:
+        result = Orchestrator().generate_blueprint(project, node)
+    except ReasoningStageError as exc:
+        raise HTTPException(status_code=502, detail=f"Blueprint generation failed: {exc}") from exc
+
+    if result.review is not None and result.review.outcome == "approved":
+        committed_wp_ids, committed_dep_ids = commit_blueprint(project, result, user.email or user.id)
+        result.committed_work_package_node_ids = committed_wp_ids
+        result.committed_dependency_ids = committed_dep_ids
+        tree.log_activity(
+            project, f"Blueprint committed for '{node.label}' ({len(committed_wp_ids)} work package(s))"
+        )
+        storage.save_project(project)
+    return result
+
+
+@router.post("/projects/{project_id}/nodes/{node_id}/commit-blueprint")
+def api_commit_blueprint(
+    project_id: str, node_id: str, body: BlueprintResult, user: AuthenticatedUser = Depends(require_auth)
+):
+    """Journey 3's human-override commit point, mirroring commit-decomposition/commit-
+    reasoning exactly: a Blueprint held at held_pending_human_review (the expected common
+    case -- a specific subtree's build plan rarely has High-confidence Knowledge Base
+    coverage) is never auto-committed by api_generate_blueprint above. Accepts the whole
+    BlueprintResult the original /blueprint call returned rather than a narrower
+    purpose-built shape, same reuse precedent. No response_model, matching the plain-dict
+    precedent already established by commit-reasoning/commit-decomposition."""
+    project = storage.load_project(project_id)
+    _ensure_owner(project, user)
+    node = tree.get_node_or_404(project, node_id)
+    committed_wp_ids, committed_dep_ids = commit_blueprint(project, body, user.email or user.id)
+    tree.log_activity(
+        project, f"Committed Implementation Blueprint for '{node.label}' ({len(committed_wp_ids)} work package(s))"
+    )
+    storage.save_project(project)
+    return {"committed_work_package_node_ids": committed_wp_ids, "committed_dependency_ids": committed_dep_ids}
 
 
 @router.put("/projects/{project_id}/nodes/{node_id}", response_model=NodeWithLevel)

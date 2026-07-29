@@ -73,7 +73,7 @@ class PostgresProjectRepository:
                        node_type, status, priority, complexity, risk_level, tags, owner, shape,
                        group_children, is_group, classification, custom_color, planning_status,
                        locked, abstraction_level, decomposition_terminal, held_for_change,
-                       target_date, duration_days
+                       target_date, duration_days, milestone
                 from nodes where project_id = %s order by parent_id, sort_order
                 """,
                 (project_id,),
@@ -188,7 +188,7 @@ class PostgresProjectRepository:
                 node_type, status, priority, complexity, risk_level, tags, owner, shape,
                 group_children, is_group, classification, custom_color, planning_status, locked,
                 abstraction_level, decomposition_terminal, held_for_change,
-                target_date, duration_days,
+                target_date, duration_days, milestone,
             ) = row
             node_id = str(nid)
             nodes[node_id] = Node(
@@ -220,6 +220,7 @@ class PostgresProjectRepository:
                 held_for_change=held_for_change,
                 target_date=target_date.isoformat() if target_date else None,
                 duration_days=duration_days,
+                milestone=milestone,
             )
         # Rebuild each parent's children array from every node's own parent_id + sort_order,
         # in a separate pass -- simpler than trying to append in the right order during a
@@ -424,10 +425,10 @@ class PostgresProjectRepository:
                             risk_level, tags, owner, shape, group_children, is_group,
                             classification, custom_color, planning_status, locked,
                             abstraction_level, decomposition_terminal, held_for_change,
-                            target_date, duration_days
+                            target_date, duration_days, milestone
                         ) values (
                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                         )
                         """,
                         (
@@ -459,6 +460,7 @@ class PostgresProjectRepository:
                             node.held_for_change,
                             node.target_date,
                             node.duration_days,
+                            node.milestone,
                         ),
                     )
 

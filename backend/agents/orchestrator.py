@@ -7,6 +7,8 @@ pipeline, or governance mechanism was introduced in this phase" (Phase 7's own c
 mapping). Recovery from a failed stage is already just re-invocation against the same
 stateless AI Service call (WP4/WP5) -- nothing new needed for Phase 7 section 11 either."""
 
+from ..blueprint import readiness as blueprint_readiness
+from ..blueprint import service as blueprint_service
 from ..decomposition import selector as decomposition_selector
 from ..decomposition import stopping as decomposition_stopping
 from ..decomposition.service import generate_children
@@ -16,8 +18,20 @@ from ..intelligence.context import assemble_reasoning_context
 from ..intelligence.pipeline import _score_confidence
 from ..intelligence.pipeline import run_pipeline as _run_reasoning_pipeline
 from ..intelligence.stages import ReasoningStageError
-from ..models import DecompositionResult, GovernanceReview, Node, Project, ReasoningResult, ReasoningStageLog
+from ..models import (
+    BlueprintResult,
+    DecompositionResult,
+    GovernanceFinding,
+    GovernanceReview,
+    Node,
+    ProposedNode,
+    Project,
+    ReasoningResult,
+    ReasoningStageLog,
+    WorkflowEdge,
+)
 from ..observability.metrics import record_agent_invocation
+from ..tools import workflow_verification
 from .agent import (
     APPLICATION_ARCHITECTURE_AGENT,
     ARCHITECTURE_THINKING_AGENT,
@@ -75,6 +89,18 @@ def _safe_record_agent_invocation(agent_name: str, success: bool, project_id=Non
         pass
 
 
+def _dependency_graph_has_cycle(leaves, dependencies) -> bool:
+    # Reuses workflow_verification's own reachability/cycle-detection helpers directly
+    # (same cross-module reuse convention as intelligence.stages._ask_json/_build) rather
+    # than calling its assess() entry point -- assess() also scores start/end-reachability
+    # against BPMN's start/end-event requirement, which a plain task-dependency graph (no
+    # inherent single start/end) doesn't cleanly map onto. Only the cycle check applies here.
+    node_ids = [leaf.id for leaf in leaves]
+    edges = [WorkflowEdge(from_id=dep.from_node_id, to_id=dep.to_node_id) for dep in dependencies]
+    graph = workflow_verification._build_adjacency(node_ids, edges)
+    return workflow_verification._has_cycle(node_ids, graph)
+
+
 class Orchestrator:
     def run_pipeline(self, objective: str) -> ReasoningResult:
         """Dispatches the Reasoning Pipeline (WP5), attributing each stage to its named
@@ -128,6 +154,65 @@ class Orchestrator:
             result.parallel_proposed_nodes, result.parallel_review = self._run_strategy(
                 node, parallel_name, project.id
             )
+        return result
+
+    def generate_blueprint(self, project: Project, root: Node) -> BlueprintResult:
+        """Implementation Blueprint (Journey 3, WP19) for an already-decomposed subtree:
+        turns its leaf Task nodes into a real work plan -- milestone grouping, schedule,
+        build-order dependencies -- via one AI call reasoning over the whole leaf set at
+        once (cross-task build-order reasoning needs the whole set together, not one call
+        per leaf), then the same Governance Service review WP6/WP7 already established.
+        Follows decomposition's own `_run_strategy` precedent of building a throwaway
+        ReasoningResult to reuse that review "for free" rather than writing parallel
+        validate_blueprint_* functions -- but `proposed_relationships` stays empty always,
+        since that check is label-based and doesn't fit dependencies between already-real
+        nodes; the proposed dependency graph is instead checked deterministically via the
+        already-built Workflow Verification Tool (ADR-006/WP16g), attributing a detected
+        cycle as a Warning finding rather than a blocking one, matching that tool's own
+        stance that a cycle doesn't by itself make a graph unsound."""
+        ready, non_terminal_labels = blueprint_readiness.check_readiness(project, root.id)
+        leaves = blueprint_readiness.collect_leaf_nodes(project, root.id)
+        reasoning_context = assemble_reasoning_context(f"{root.label}. {root.notes}".strip())
+
+        agent_name = EXECUTION_PLANNING_AGENT.name
+        try:
+            result = blueprint_service.generate_blueprint(root, leaves, reasoning_context)
+        except ReasoningStageError as exc:
+            _safe_record_agent_invocation(agent_name, False, project_id=project.id, error_type=type(exc).__name__)
+            raise
+        _safe_record_agent_invocation(agent_name, True, project_id=project.id)
+        result.ready = ready
+        result.non_terminal_leaf_labels = non_terminal_labels
+
+        confidence_tier, rationale = _score_confidence(reasoning_context, [], True, 0)
+        reasoning_result = ReasoningResult(
+            objective=root.label,
+            domains=["Technology"],
+            proposed_nodes=[ProposedNode(label=leaf.label) for leaf in leaves],
+            confidence_tier=confidence_tier,
+            confidence_rationale=rationale,
+            requires_human_review=confidence_tier != "High",
+        )
+        review = run_decision_workflow(reasoning_result)
+        seen_agents = set()
+        for finding in review.findings:
+            finding.agent = _FINDING_CATEGORY_TO_AGENT.get(finding.category, ORCHESTRATOR.name)
+            if finding.agent not in seen_agents:
+                seen_agents.add(finding.agent)
+                _safe_record_agent_invocation(finding.agent, True, project_id=project.id)
+
+        if _dependency_graph_has_cycle(leaves, result.proposed_dependencies):
+            review.findings.append(
+                GovernanceFinding(
+                    category="structural",
+                    severity="Warning",
+                    message="The proposed build-order dependencies contain a cycle -- may be "
+                    "an intentional retry/review loop, but worth a second look before committing.",
+                    agent=VALIDATION_AGENT.name,
+                )
+            )
+
+        result.review = review
         return result
 
     def _run_strategy(self, node: Node, strategy_name: str, project_id: str):

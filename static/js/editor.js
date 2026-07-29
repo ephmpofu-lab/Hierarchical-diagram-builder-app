@@ -3647,6 +3647,17 @@ function openContextMenu(nodeId, clientX, clientY) {
     )
   );
   menu.appendChild(
+    contextMenuItem(
+      "🧭 Blueprint",
+      () => {
+        focusedNodeId = nodeId;
+        inspectorActiveTab = "blueprint";
+        render();
+      },
+      { disabled: locked }
+    )
+  );
+  menu.appendChild(
     contextMenuItem("+ Add Parallel", () => addSiblingBelow(nodeId), { disabled: isRoot || locked })
   );
   menu.appendChild(
@@ -4952,6 +4963,237 @@ function renderDecomposeTab(container, node) {
   }
 }
 
+// ---------- Blueprint tab (Journey 3: Decomposition -> Implementation Blueprint) ----------
+// Lives in the Inspector, same node-scoped placement as Decompose (not a workspace) --
+// Blueprint is always triggered against a specific, already-selected subtree root. State
+// is per-node (blueprintStateByNode), same reason as Decompose's own per-node state.
+// Reuses the .reasoning-* CSS classes and card/banner idioms verbatim. ----------
+
+const blueprintStateByNode = new Map(); // nodeId -> { status: "idle"|"running"|"result", result }
+
+function getBlueprintState(nodeId) {
+  if (!blueprintStateByNode.has(nodeId)) {
+    blueprintStateByNode.set(nodeId, { status: "idle", result: null });
+  }
+  return blueprintStateByNode.get(nodeId);
+}
+
+async function runBlueprint(node) {
+  const state = getBlueprintState(node.id);
+  state.status = "running";
+  renderInspector();
+  const response = await fetch(`/api/projects/${projectId}/nodes/${node.id}/blueprint`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    state.status = "idle";
+    renderInspector();
+    return;
+  }
+  const result = await response.json();
+  state.status = "result";
+  state.result = result;
+  if ((result.committed_work_package_node_ids || []).length > 0) {
+    await loadProject();
+    await autoArrangeLayout(); // same reasoning as Reasoning/Decompose's own commit --
+    // grid-math defaults don't respect subtree ownership, don't let a fresh commit start jumbled
+  }
+  renderInspector();
+}
+
+async function approveBlueprintProposal(node) {
+  const state = getBlueprintState(node.id);
+  const result = state.result;
+  const response = await fetch(`/api/projects/${projectId}/nodes/${node.id}/commit-blueprint`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(result),
+  });
+  if (!response.ok) return;
+  const payload = await response.json();
+  result.committed_work_package_node_ids = payload.committed_work_package_node_ids;
+  result.committed_dependency_ids = payload.committed_dependency_ids;
+  result.review = { ...result.review, outcome: "approved" };
+  await loadProject();
+  await autoArrangeLayout();
+  renderInspector();
+}
+
+async function discardBlueprintProposal(node) {
+  const state = getBlueprintState(node.id);
+  await fetch(`/api/projects/${projectId}/governance-decisions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      actor: "",
+      decision_type: "Reject",
+      target_node_id: null,
+      rationale: `Rejected Implementation Blueprint proposal for '${node.label}'`,
+    }),
+  });
+  state.status = "idle";
+  state.result = null;
+  renderInspector();
+}
+
+function renderBlueprintTab(container, node) {
+  const state = getBlueprintState(node.id);
+
+  const actionsRow = document.createElement("div");
+  actionsRow.className = "reasoning-actions";
+  const button = document.createElement("button");
+  button.className = "btn btn-primary";
+  button.textContent =
+    state.status === "running" ? "Generating…" : state.status === "result" ? "Regenerate" : "Generate Blueprint";
+  button.disabled = state.status === "running" || !!node.locked;
+  button.addEventListener("click", () => runBlueprint(node));
+  actionsRow.appendChild(button);
+  container.appendChild(actionsRow);
+
+  if (state.status !== "result" || !state.result) return;
+
+  const result = state.result;
+
+  if (result.ready === false && (result.non_terminal_leaf_labels || []).length) {
+    const note = document.createElement("div");
+    note.className = "reasoning-intake-hint";
+    note.textContent = `Some leaves may still need further decomposition: ${result.non_terminal_leaf_labels.join(", ")}.`;
+    container.appendChild(note);
+  }
+
+  const review = result.review;
+  if (!review) return;
+  const outcome = review.outcome;
+
+  if (outcome === "approved") {
+    const banner = document.createElement("div");
+    banner.className = "reasoning-verdict-banner approved";
+    const title = document.createElement("div");
+    title.className = "reasoning-verdict-title";
+    title.textContent = `Committed ${(result.committed_work_package_node_ids || []).length} work package(s)`;
+    banner.appendChild(title);
+    container.appendChild(banner);
+
+    const nodeRow = document.createElement("div");
+    nodeRow.className = "reasoning-node-row";
+    for (const wpNodeId of result.committed_work_package_node_ids || []) {
+      const wpNode = project.nodes[wpNodeId];
+      if (!wpNode) continue;
+      const card = document.createElement("div");
+      card.className = "reasoning-node-card";
+      card.title = "Jump to this task in Hierarchy";
+      card.textContent = wpNode.milestone ? `${wpNode.label} (${wpNode.milestone})` : wpNode.label;
+      card.addEventListener("click", async () => {
+        switchToWorkspace("canvas");
+        await focusNode(wpNode.id);
+      });
+      nodeRow.appendChild(card);
+    }
+    container.appendChild(nodeRow);
+  } else {
+    const bannerClass = outcome === "rejected" ? "rejected" : "held";
+    const banner = document.createElement("div");
+    banner.className = `reasoning-verdict-banner ${bannerClass}`;
+    const title = document.createElement("div");
+    title.className = "reasoning-verdict-title";
+    title.textContent = REASONING_VERDICT_LABELS[outcome] || outcome;
+    banner.appendChild(title);
+    if (review.rationale) {
+      const rationale = document.createElement("div");
+      rationale.className = "reasoning-finding-line";
+      rationale.textContent = review.rationale;
+      banner.appendChild(rationale);
+    }
+    for (const finding of review.findings || []) {
+      const line = document.createElement("div");
+      line.className = "reasoning-finding-line";
+      line.textContent = `${finding.severity}: ${finding.message}`;
+      banner.appendChild(line);
+    }
+    container.appendChild(banner);
+
+    const nodeRow = document.createElement("div");
+    nodeRow.className = "reasoning-node-row";
+    for (const wp of result.proposed_work_packages || []) {
+      const wpNode = project.nodes[wp.node_id];
+      const card = document.createElement("div");
+      card.className = "reasoning-node-card";
+      const label = document.createElement("div");
+      label.textContent = wpNode ? wpNode.label : wp.node_id;
+      card.appendChild(label);
+      const meta = document.createElement("div");
+      meta.className = "reasoning-node-card-type";
+      const bits = [wp.milestone];
+      if (wp.target_date) bits.push(wp.target_date);
+      if (wp.duration_days != null) bits.push(`${wp.duration_days}d`);
+      meta.textContent = bits.filter(Boolean).join(" · ");
+      card.appendChild(meta);
+      nodeRow.appendChild(card);
+    }
+    container.appendChild(nodeRow);
+
+    if ((result.proposed_dependencies || []).length) {
+      const depSection = document.createElement("div");
+      depSection.className = "reasoning-section-label";
+      depSection.textContent = "Build order";
+      container.appendChild(depSection);
+      for (const dep of result.proposed_dependencies) {
+        const fromNode = project.nodes[dep.from_node_id];
+        const toNode = project.nodes[dep.to_node_id];
+        const row = document.createElement("div");
+        row.className = "reasoning-relationship-row";
+        row.textContent = `${fromNode ? fromNode.label : dep.from_node_id} → ${toNode ? toNode.label : dep.to_node_id}`;
+        if (dep.label) {
+          const relLabel = document.createElement("span");
+          relLabel.className = "rel-label";
+          relLabel.textContent = dep.label;
+          row.appendChild(relLabel);
+        }
+        container.appendChild(row);
+      }
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "reasoning-actions";
+    if (outcome === "held_pending_human_review") {
+      const approveBtn = document.createElement("button");
+      approveBtn.className = "btn btn-primary";
+      approveBtn.textContent = "Approve";
+      approveBtn.addEventListener("click", () => approveBlueprintProposal(node));
+      actions.appendChild(approveBtn);
+    }
+    const discardBtn = document.createElement("button");
+    discardBtn.className = "btn btn-small";
+    discardBtn.textContent = "Discard";
+    discardBtn.addEventListener("click", () => discardBlueprintProposal(node));
+    actions.appendChild(discardBtn);
+    container.appendChild(actions);
+  }
+
+  if (result.testing_strategy || result.ci_cd_strategy) {
+    const details = document.createElement("details");
+    details.className = "reasoning-disclosure";
+    const summary = document.createElement("summary");
+    summary.textContent = "Testing & CI/CD guidance";
+    details.appendChild(summary);
+    if (result.testing_strategy) {
+      const p = document.createElement("div");
+      p.className = "reasoning-finding-line";
+      p.textContent = `Testing: ${result.testing_strategy}`;
+      details.appendChild(p);
+    }
+    if (result.ci_cd_strategy) {
+      const p = document.createElement("div");
+      p.className = "reasoning-finding-line";
+      p.textContent = `CI/CD: ${result.ci_cd_strategy}`;
+      details.appendChild(p);
+    }
+    container.appendChild(details);
+  }
+}
+
 // Breadcrumb-style path for a card, reusing the same parent_id chain compute_level already
 // walks server-side -- traceability (Phase 9 section 3) made visible on every card, not just
 // a "jump" affordance.
@@ -5117,6 +5359,12 @@ function renderTimelineRow(node, rangeStart, rangeSpan) {
     switchToWorkspace("canvas");
     await focusNode(node.id);
   });
+  if (node.milestone) {
+    const chip = document.createElement("span");
+    chip.className = "timeline-milestone-chip";
+    chip.textContent = node.milestone;
+    label.appendChild(chip);
+  }
   row.appendChild(label);
 
   const inputs = document.createElement("div");
@@ -7108,6 +7356,7 @@ function renderInspector() {
   const tabDefs = [
     ["overview", "Overview"],
     ["decompose", "Decompose"],
+    ["blueprint", "Blueprint"],
     ["properties", "Properties"],
     ["references", `References${touchingRefCount ? ` (${touchingRefCount})` : ""}`],
     ["documentation", "Documentation"],
@@ -7134,6 +7383,7 @@ function renderInspector() {
 
   if (inspectorActiveTab === "overview") renderOverviewTab(tabContent, node);
   else if (inspectorActiveTab === "decompose") renderDecomposeTab(tabContent, node);
+  else if (inspectorActiveTab === "blueprint") renderBlueprintTab(tabContent, node);
   else if (inspectorActiveTab === "properties") renderPropertiesTab(tabContent, node);
   else if (inspectorActiveTab === "references") renderReferencesTab(tabContent, node);
   else if (inspectorActiveTab === "documentation") renderDocumentationTab(tabContent, node);
