@@ -691,4 +691,21 @@ class GovernanceAssessmentResult(BaseModel):
     explanation: Optional[str] = None  # populated only when explain=true is requested
 
 
+class RequirementQualitySignals(BaseModel):
+    """Structured inputs to the Requirement Analysis Tool (ADR-006, WP16d) -- the raw
+    requirement text plus two structural facts the tool can't infer from text alone (see
+    backend/tools/requirement_analysis.py's own docstring)."""
+
+    description: str
+    has_acceptance_criteria: bool = False
+    has_assigned_owner: bool = False
+
+
+class RequirementQualityResult(BaseModel):
+    verdict: str  # Well-Formed | Needs Revision -- computed, never AI-authored
+    findings: List[str] = Field(default_factory=list)
+    signals: RequirementQualitySignals
+    explanation: Optional[str] = None  # populated only when explain=true is requested
+
+
 Project.model_rebuild()

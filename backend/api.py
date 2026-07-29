@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from . import concept, storage, tree
 from .agents.agent import ALL_AGENTS
 from .agents.orchestrator import Orchestrator
-from .tools import ai_suitability, governance_assessment, risk_assessment
+from .tools import ai_suitability, governance_assessment, requirement_analysis, risk_assessment
 from .tools.tool import ALL_TOOLS
 from .ai import service as ai_service
 from .ai.provider import AIProviderError
@@ -68,6 +68,8 @@ from .models import (
     ReferenceCreate,
     ReferenceUpdate,
     ReparentRequest,
+    RequirementQualityResult,
+    RequirementQualitySignals,
     Risk,
     RiskAssessment,
     RiskAssessmentResult,
@@ -191,6 +193,18 @@ def api_assess_governance(signals: GovernanceAssessmentSignals, explain: bool = 
     result = governance_assessment.assess(signals)
     if explain:
         result = result.model_copy(update={"explanation": governance_assessment.explain(result)})
+    return result
+
+
+@router.post("/tools/requirement-analysis", response_model=RequirementQualityResult)
+def api_analyze_requirement(signals: RequirementQualitySignals, explain: bool = Query(False)):
+    """Requirement Analysis Tool (ADR-006, WP16d) -- deterministic INCOSE/IEEE 830
+    weak-word and completeness checks, never an LLM call. `explain=true` additionally
+    asks the AI Service to phrase the already-computed findings in prose; it never adds
+    or removes a finding."""
+    result = requirement_analysis.assess(signals)
+    if explain:
+        result = result.model_copy(update={"explanation": requirement_analysis.explain(result)})
     return result
 
 

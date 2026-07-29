@@ -43,8 +43,13 @@ REQUIREMENT_ANALYSIS_TOOL = Tool(
     operating_model_activity="Discover Constraints",
     needs_tool="Partial",
     evidence_base="Requirements Engineering",
-    status="partial",
-    implementation="backend.models.Requirement (WP1) -- no interactive discovery loop yet",
+    status="built",
+    implementation="backend.tools.requirement_analysis (deterministic INCOSE Guide for "
+    "Writing Requirements / IEEE 830 weak-word and completeness checks; explain() "
+    "optionally phrases the result via the AI Service but never adds/removes a finding) "
+    "-- WP16d. The interactive discovery loop itself (asking follow-up questions until "
+    "sufficient understanding, WP0a Part 04) remains unbuilt -- this tool assesses "
+    "requirement text quality, it does not elicit requirements.",
 )
 AI_SUITABILITY_ASSESSMENT_TOOL = Tool(
     name="AI Suitability Assessment Tool",
