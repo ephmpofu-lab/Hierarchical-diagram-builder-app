@@ -731,4 +731,24 @@ class SecurityAssessmentResult(BaseModel):
     explanation: Optional[str] = None  # populated only when explain=true is requested
 
 
+class DatabaseDesignSignals(BaseModel):
+    """Structured inputs to the Database Design Tool (ADR-006, WP16f) -- explicit facts
+    about one entity's key structure and dependencies, not raw schema text (see
+    backend/tools/database_design.py's own docstring)."""
+
+    has_primary_key: bool = False
+    has_repeating_groups: bool = False  # multi-valued/list-typed attribute -- 1NF violation
+    has_composite_key: bool = False
+    has_partial_key_dependency: bool = False  # only meaningful when has_composite_key
+    has_transitive_dependency: bool = False  # a non-key attribute depends on another non-key attribute
+
+
+class DatabaseDesignResult(BaseModel):
+    normal_form: str  # Not 1NF | 1NF | 2NF | 3NF -- the highest form satisfied, computed
+    rationale: str
+    findings: List[str] = Field(default_factory=list)
+    signals: DatabaseDesignSignals
+    explanation: Optional[str] = None  # populated only when explain=true is requested
+
+
 Project.model_rebuild()

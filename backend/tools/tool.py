@@ -123,8 +123,10 @@ DATABASE_DESIGN_TOOL = Tool(
     operating_model_activity="Database Design",
     needs_tool="Yes",
     evidence_base="Codd's Relational Model, Normalization",
-    status="not_built",
-    implementation="",
+    status="built",
+    implementation="backend.tools.database_design (deterministic 1NF/2NF/3NF check over "
+    "explicit key-structure signals; explain() optionally phrases the result via the AI "
+    "Service but never decides it) -- WP16f",
 )
 API_DESIGN_TOOL = Tool(
     name="API Design Tool",

@@ -9,6 +9,7 @@ from .agents.agent import ALL_AGENTS
 from .agents.orchestrator import Orchestrator
 from .tools import (
     ai_suitability,
+    database_design,
     governance_assessment,
     requirement_analysis,
     risk_assessment,
@@ -41,6 +42,8 @@ from .models import (
     ConceptObjectCreate,
     ConceptObjectUpdate,
     ConvertToNodeRequest,
+    DatabaseDesignResult,
+    DatabaseDesignSignals,
     DecomposeRequest,
     DecompositionResult,
     GovernanceActionRequest,
@@ -224,6 +227,17 @@ def api_assess_security(signals: SecurityAssessmentSignals, explain: bool = Quer
     result = security_assessment.assess(signals)
     if explain:
         result = result.model_copy(update={"explanation": security_assessment.explain(result)})
+    return result
+
+
+@router.post("/tools/database-design", response_model=DatabaseDesignResult)
+def api_assess_database_design(signals: DatabaseDesignSignals, explain: bool = Query(False)):
+    """Database Design Tool (ADR-006, WP16f) -- a deterministic Codd normal-form check
+    (1NF/2NF/3NF), never an LLM call. `explain=true` additionally asks the AI Service to
+    phrase the already-computed result in prose; it never changes it."""
+    result = database_design.assess(signals)
+    if explain:
+        result = result.model_copy(update={"explanation": database_design.explain(result)})
     return result
 
 
