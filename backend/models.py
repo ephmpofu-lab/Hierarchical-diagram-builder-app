@@ -652,4 +652,21 @@ class AISuitabilityAssessment(BaseModel):
     # phrasing only, never re-decides recommended_pattern
 
 
+class RiskAssessmentSignals(BaseModel):
+    """Structured inputs to the Risk Assessment Tool (ADR-006, WP16b) -- ISO 31000-style
+    5-point likelihood/impact scales, assessed separately rather than guessed as one
+    combined level (see backend/tools/risk_assessment.py's own module docstring)."""
+
+    likelihood: str  # Rare | Unlikely | Possible | Likely | Almost Certain
+    impact: str  # Negligible | Minor | Moderate | Major | Severe
+
+
+class RiskAssessmentResult(BaseModel):
+    level: str  # Critical | High | Medium | Low -- computed, never AI-authored
+    rationale: str  # the matrix computation that produced level
+    likelihood: str
+    impact: str
+    explanation: Optional[str] = None  # populated only when explain=true is requested
+
+
 Project.model_rebuild()

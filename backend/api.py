@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from . import concept, storage, tree
 from .agents.agent import ALL_AGENTS
 from .agents.orchestrator import Orchestrator
-from .tools import ai_suitability
+from .tools import ai_suitability, risk_assessment
 from .tools.tool import ALL_TOOLS
 from .ai import service as ai_service
 from .ai.provider import AIProviderError
@@ -68,6 +68,8 @@ from .models import (
     ReparentRequest,
     Risk,
     RiskAssessment,
+    RiskAssessmentResult,
+    RiskAssessmentSignals,
     Template,
     TemplateCreate,
     TemplateNode,
@@ -163,6 +165,20 @@ def api_assess_ai_suitability(signals: AISuitabilitySignals, explain: bool = Que
     if explain:
         assessment = assessment.model_copy(update={"explanation": ai_suitability.explain(assessment)})
     return assessment
+
+
+@router.post("/tools/risk-assessment", response_model=RiskAssessmentResult)
+def api_assess_risk(signals: RiskAssessmentSignals, explain: bool = Query(False)):
+    """Risk Assessment Tool (ADR-006, WP16b) -- a deterministic ISO 31000-style
+    likelihood x impact matrix, never an LLM call. `explain=true` additionally asks the
+    AI Service to phrase the already-computed level in prose; it never changes it."""
+    try:
+        result = risk_assessment.assess(signals)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if explain:
+        result = result.model_copy(update={"explanation": risk_assessment.explain(result)})
+    return result
 
 
 @router.post("/intelligence/reason", response_model=ReasoningResult)

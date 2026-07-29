@@ -134,9 +134,11 @@ RISK_ASSESSMENT_TOOL = Tool(
     operating_model_activity="Risk Assessment",
     needs_tool="Yes",
     evidence_base="ISO 31000, COSO, NIST RMF",
-    status="partial",
-    implementation="backend.intelligence.stages (risk_reasoning) -- prompt-driven, not a "
-    "formal ISO 31000/COSO scoring model; backend.models.Risk/RiskAssessment (WP1)",
+    status="built",
+    implementation="backend.tools.risk_assessment (deterministic likelihood x impact "
+    "matrix; explain() optionally phrases the result via the AI Service but never "
+    "decides it) -- WP16b. WP5's risk_reasoning stage remains prompt-driven and is not "
+    "yet wired to call this tool.",
 )
 SECURITY_ARCHITECTURE_TOOL = Tool(
     name="Security Architecture Tool",
