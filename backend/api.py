@@ -9,6 +9,7 @@ from .agents.agent import ALL_AGENTS
 from .agents.orchestrator import Orchestrator
 from .tools import (
     ai_suitability,
+    api_design,
     database_design,
     governance_assessment,
     requirement_analysis,
@@ -34,6 +35,8 @@ from .models import (
     AddParentRequest,
     AISuitabilityAssessment,
     AISuitabilitySignals,
+    APIDesignResult,
+    APIDesignSignals,
     ChangeImpactRequest,
     ChangeImpactResult,
     Comment,
@@ -253,6 +256,18 @@ def api_verify_workflow(signals: WorkflowVerificationSignals, explain: bool = Qu
     result = workflow_verification.assess(signals)
     if explain:
         result = result.model_copy(update={"explanation": workflow_verification.explain(result)})
+    return result
+
+
+@router.post("/tools/api-design", response_model=APIDesignResult)
+def api_assess_api_design(signals: APIDesignSignals, explain: bool = Query(False)):
+    """API Design Tool (ADR-006, WP16h) -- deterministic REST convention checks
+    (noun-resource naming, method/body semantics), never an LLM call. `explain=true`
+    additionally asks the AI Service to phrase the already-computed findings in prose;
+    it never adds, removes, or reweights a finding."""
+    result = api_design.assess(signals)
+    if explain:
+        result = result.model_copy(update={"explanation": api_design.explain(result)})
     return result
 
 

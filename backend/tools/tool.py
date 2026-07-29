@@ -136,8 +136,10 @@ API_DESIGN_TOOL = Tool(
     operating_model_activity="API Design",
     needs_tool="Yes",
     evidence_base="REST, OpenAPI, API Design Guidelines",
-    status="not_built",
-    implementation="",
+    status="built",
+    implementation="backend.tools.api_design (deterministic noun-resource-naming and "
+    "method/body convention checks; explain() optionally phrases the result via the AI "
+    "Service but never adds/removes/reweights a finding) -- WP16h",
 )
 RISK_ASSESSMENT_TOOL = Tool(
     name="Risk Assessment Tool",

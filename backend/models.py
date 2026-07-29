@@ -777,4 +777,23 @@ class WorkflowVerificationResult(BaseModel):
     explanation: Optional[str] = None  # populated only when explain=true is requested
 
 
+class APIDesignSignals(BaseModel):
+    """Structured inputs to the API Design Tool (ADR-006, WP16h) -- one endpoint's
+    method/path plus two facts a path string alone can't reveal (see
+    backend/tools/api_design.py's own docstring)."""
+
+    method: str  # GET | POST | PUT | PATCH | DELETE
+    path: str
+    has_request_body: bool = False
+    has_version_segment: bool = False
+
+
+class APIDesignResult(BaseModel):
+    verdict: str  # Follows REST Conventions | Needs Revision -- computed, never AI-authored
+    rationale: str
+    findings: List[str] = Field(default_factory=list)
+    signals: APIDesignSignals
+    explanation: Optional[str] = None  # populated only when explain=true is requested
+
+
 Project.model_rebuild()
