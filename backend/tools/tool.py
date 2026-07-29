@@ -107,8 +107,11 @@ WORKFLOW_VERIFICATION_TOOL = Tool(
     operating_model_activity="Workflow Validation",
     needs_tool="Yes",
     evidence_base="BPMN, Workflow Theory",
-    status="not_built",
-    implementation="",
+    status="built",
+    implementation="backend.tools.workflow_verification (deterministic BPMN "
+    "reachability/cycle-detection graph algorithms over an explicit directed graph; "
+    "explain() optionally phrases the result via the AI Service but never decides it) "
+    "-- WP16g",
 )
 ENGINEERING_STANDARDS_TOOL = Tool(
     name="Engineering Standards Tool",

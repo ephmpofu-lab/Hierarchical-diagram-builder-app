@@ -14,6 +14,7 @@ from .tools import (
     requirement_analysis,
     risk_assessment,
     security_assessment,
+    workflow_verification,
 )
 from .tools.tool import ALL_TOOLS
 from .ai import service as ai_service
@@ -90,6 +91,8 @@ from .models import (
     TemplateNode,
     TemplateSummary,
     ValidationReport,
+    WorkflowVerificationResult,
+    WorkflowVerificationSignals,
 )
 
 # Every route in this router requires a valid Supabase session -- "login required before
@@ -238,6 +241,18 @@ def api_assess_database_design(signals: DatabaseDesignSignals, explain: bool = Q
     result = database_design.assess(signals)
     if explain:
         result = result.model_copy(update={"explanation": database_design.explain(result)})
+    return result
+
+
+@router.post("/tools/workflow-verification", response_model=WorkflowVerificationResult)
+def api_verify_workflow(signals: WorkflowVerificationSignals, explain: bool = Query(False)):
+    """Workflow Verification Tool (ADR-006, WP16g) -- deterministic BPMN structural
+    well-formedness checks (reachability, cycle detection) over an explicit directed
+    graph, never an LLM call. `explain=true` additionally asks the AI Service to phrase
+    the already-computed verdict in prose; it never changes it."""
+    result = workflow_verification.assess(signals)
+    if explain:
+        result = result.model_copy(update={"explanation": workflow_verification.explain(result)})
     return result
 
 

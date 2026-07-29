@@ -751,4 +751,30 @@ class DatabaseDesignResult(BaseModel):
     explanation: Optional[str] = None  # populated only when explain=true is requested
 
 
+class WorkflowEdge(BaseModel):
+    from_id: str
+    to_id: str
+
+
+class WorkflowVerificationSignals(BaseModel):
+    """Structured inputs to the Workflow Verification Tool (ADR-006, WP16g) -- an
+    explicit directed graph (node ids, marked start/end ids, edges), not raw text (see
+    backend/tools/workflow_verification.py's own docstring)."""
+
+    node_ids: List[str] = Field(default_factory=list)
+    start_ids: List[str] = Field(default_factory=list)
+    end_ids: List[str] = Field(default_factory=list)
+    edges: List[WorkflowEdge] = Field(default_factory=list)
+
+
+class WorkflowVerificationResult(BaseModel):
+    verdict: str  # Sound | Unsound -- computed, never AI-authored
+    rationale: str
+    has_cycle: bool = False  # informational -- not itself a soundness failure
+    unreachable_node_ids: List[str] = Field(default_factory=list)
+    findings: List[str] = Field(default_factory=list)
+    signals: WorkflowVerificationSignals
+    explanation: Optional[str] = None  # populated only when explain=true is requested
+
+
 Project.model_rebuild()
