@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from . import concept, storage, tree
 from .agents.agent import ALL_AGENTS
 from .agents.orchestrator import Orchestrator
+from .tools.tool import ALL_TOOLS
 from .ai import service as ai_service
 from .ai.provider import AIProviderError
 from .auth import AuthenticatedUser, require_auth
@@ -141,6 +142,13 @@ def api_list_agents():
     """The Agent taxonomy and governance boundary (Phase 7 sections 2, 10 / WP7) --
     inspectable data, not just documentation."""
     return [a.__dict__ for a in ALL_AGENTS]
+
+
+@router.get("/tools")
+def api_list_tools():
+    """The Tool Registry (Tool Engineering Architecture, ADR-006 / WP16) -- inspectable
+    data, honestly marked built/partial/not_built rather than assumed complete."""
+    return [t.__dict__ for t in ALL_TOOLS]
 
 
 @router.post("/intelligence/reason", response_model=ReasoningResult)
