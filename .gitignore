@@ -6,3 +6,4 @@ server_err.log
 projects/*.json
 templates.json
 .env
+backups/
