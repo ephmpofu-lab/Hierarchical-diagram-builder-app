@@ -818,4 +818,26 @@ class TestDesignResult(BaseModel):
     explanation: Optional[str] = None  # populated only when explain=true is requested
 
 
+class DeploymentReadinessSignals(BaseModel):
+    """Structured inputs to the Deployment Architecture Tool (ADR-006, WP16j) -- one
+    boolean per 12-Factor App criterion, assessed separately rather than a single
+    holistic deployment judgment (see backend/tools/deployment_architecture.py's own
+    docstring)."""
+
+    has_externalized_config: bool = False  # 12-Factor III: Config
+    has_pinned_dependencies: bool = False  # 12-Factor II: Dependencies
+    is_stateless: bool = False  # 12-Factor VI: Processes
+    has_separate_build_release_run: bool = False  # 12-Factor V
+    logs_to_stdout: bool = False  # 12-Factor XI: Logs
+
+
+class DeploymentReadinessResult(BaseModel):
+    verdict: str  # Not Ready | Partially Ready | Substantially Ready | Fully Ready
+    rationale: str  # computed, never AI-authored
+    factors_satisfied: List[str] = Field(default_factory=list)
+    factors_unmet: List[str] = Field(default_factory=list)
+    signals: DeploymentReadinessSignals
+    explanation: Optional[str] = None  # populated only when explain=true is requested
+
+
 Project.model_rebuild()

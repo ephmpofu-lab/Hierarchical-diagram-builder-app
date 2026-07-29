@@ -11,6 +11,7 @@ from .tools import (
     ai_suitability,
     api_design,
     database_design,
+    deployment_architecture,
     governance_assessment,
     requirement_analysis,
     risk_assessment,
@@ -51,6 +52,8 @@ from .models import (
     DatabaseDesignSignals,
     DecomposeRequest,
     DecompositionResult,
+    DeploymentReadinessResult,
+    DeploymentReadinessSignals,
     GovernanceActionRequest,
     GovernanceAssessmentResult,
     GovernanceAssessmentSignals,
@@ -282,6 +285,19 @@ def api_recommend_test_design(signals: TestDesignSignals, explain: bool = Query(
     result = test_design.assess(signals)
     if explain:
         result = result.model_copy(update={"explanation": test_design.explain(result)})
+    return result
+
+
+@router.post("/tools/deployment-architecture", response_model=DeploymentReadinessResult)
+def api_assess_deployment_readiness(
+    signals: DeploymentReadinessSignals, explain: bool = Query(False)
+):
+    """Deployment Architecture Tool (ADR-006, WP16j) -- a deterministic 12-Factor App
+    checklist, never an LLM call. `explain=true` additionally asks the AI Service to
+    phrase the already-computed verdict in prose; it never changes it."""
+    result = deployment_architecture.assess(signals)
+    if explain:
+        result = result.model_copy(update={"explanation": deployment_architecture.explain(result)})
     return result
 
 

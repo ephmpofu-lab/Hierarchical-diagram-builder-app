@@ -190,8 +190,10 @@ DEPLOYMENT_ARCHITECTURE_TOOL = Tool(
     operating_model_activity="Deployment Strategy",
     needs_tool="Yes",
     evidence_base="DevOps, CI/CD, Platform Engineering",
-    status="not_built",
-    implementation="",
+    status="built",
+    implementation="backend.tools.deployment_architecture (deterministic 12-Factor App "
+    "checklist -- Config/Dependencies/Processes/Build-release-run/Logs; explain() "
+    "optionally phrases the result via the AI Service but never decides it) -- WP16j",
 )
 
 ALL_TOOLS = [
