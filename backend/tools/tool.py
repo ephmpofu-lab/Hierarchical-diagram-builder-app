@@ -179,8 +179,11 @@ TEST_DESIGN_TOOL = Tool(
     operating_model_activity="Testing Strategy",
     needs_tool="Yes",
     evidence_base="ISTQB, Test Pyramid",
-    status="not_built",
-    implementation="",
+    status="built",
+    implementation="backend.tools.test_design (deterministic mapping onto ISTQB's 4 "
+    "test levels -- Component/Integration/System/Acceptance -- no fabricated numeric "
+    "ratio; explain() optionally phrases the result via the AI Service but never "
+    "decides it) -- WP16i",
 )
 DEPLOYMENT_ARCHITECTURE_TOOL = Tool(
     name="Deployment Architecture Tool",

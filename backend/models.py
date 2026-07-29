@@ -796,4 +796,26 @@ class APIDesignResult(BaseModel):
     explanation: Optional[str] = None  # populated only when explain=true is requested
 
 
+class TestDesignSignals(BaseModel):
+    """Structured inputs to the Test Design Tool (ADR-006, WP16i) -- one boolean per
+    ISTQB test level's defining characteristic, not a fabricated test-count ratio (see
+    backend/tools/test_design.py's own docstring)."""
+
+    __test__ = False  # not a pytest test class -- suppresses the Test*-prefix collection warning
+
+    is_standalone_component: bool = False  # Component (Unit) Testing
+    has_external_dependencies: bool = False  # Integration Testing
+    represents_end_to_end_behavior: bool = False  # System Testing
+    has_business_acceptance_criteria: bool = False  # Acceptance Testing
+
+
+class TestDesignResult(BaseModel):
+    __test__ = False  # not a pytest test class -- suppresses the Test*-prefix collection warning
+
+    recommended_levels: List[str] = Field(default_factory=list)  # computed, never AI-authored
+    rationale: str
+    signals: TestDesignSignals
+    explanation: Optional[str] = None  # populated only when explain=true is requested
+
+
 Project.model_rebuild()

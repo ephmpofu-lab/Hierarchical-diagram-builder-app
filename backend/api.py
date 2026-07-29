@@ -15,6 +15,7 @@ from .tools import (
     requirement_analysis,
     risk_assessment,
     security_assessment,
+    test_design,
     workflow_verification,
 )
 from .tools.tool import ALL_TOOLS
@@ -93,6 +94,8 @@ from .models import (
     TemplateCreate,
     TemplateNode,
     TemplateSummary,
+    TestDesignResult,
+    TestDesignSignals,
     ValidationReport,
     WorkflowVerificationResult,
     WorkflowVerificationSignals,
@@ -268,6 +271,17 @@ def api_assess_api_design(signals: APIDesignSignals, explain: bool = Query(False
     result = api_design.assess(signals)
     if explain:
         result = result.model_copy(update={"explanation": api_design.explain(result)})
+    return result
+
+
+@router.post("/tools/test-design", response_model=TestDesignResult)
+def api_recommend_test_design(signals: TestDesignSignals, explain: bool = Query(False)):
+    """Test Design Tool (ADR-006, WP16i) -- deterministic ISTQB test-level mapping,
+    never an LLM call. `explain=true` additionally asks the AI Service to phrase the
+    already-computed recommendation in prose; it never adds or removes a level."""
+    result = test_design.assess(signals)
+    if explain:
+        result = result.model_copy(update={"explanation": test_design.explain(result)})
     return result
 
 
