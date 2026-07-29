@@ -1096,6 +1096,323 @@ html[data-inspector-collapsed="true"] .health-footer {
   padding: 20px;
 }
 
+/* AI Reasoning workspace -- first screen for the reasoning/governance backend.
+   Three states, never blended: Intake / Running / Reviewing. */
+.reasoning-pane {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg);
+  padding: 20px;
+}
+
+.reasoning-pane[hidden] {
+  display: none;
+}
+
+.reasoning-board {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+/* Intake: one calm, centered focus -- nothing competing with the objective field. */
+.reasoning-intake {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 64px 20px;
+  text-align: center;
+}
+
+.reasoning-intake-hint {
+  color: var(--text-muted);
+  font-size: 13px;
+  max-width: 46ch;
+}
+
+.reasoning-intake-context {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 4px 12px;
+}
+
+.reasoning-objective-input {
+  width: 100%;
+  max-width: 560px;
+  min-height: 96px;
+  resize: vertical;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 14px 16px;
+}
+
+/* Running: a horizontal pipeline stepper, not a spinner or a text log. */
+.reasoning-pipeline {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  margin: 40px 0 24px;
+  padding: 0 8px;
+}
+
+.reasoning-pipeline::before {
+  content: "";
+  position: absolute;
+  top: 15px;
+  left: 24px;
+  right: 24px;
+  height: 2px;
+  background: var(--border);
+  z-index: 0;
+}
+
+.reasoning-stage {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.reasoning-stage-dot {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.reasoning-stage.completed .reasoning-stage-dot {
+  background: var(--success-bg);
+  border-color: var(--success);
+  color: var(--success-text);
+}
+
+.reasoning-stage.active .reasoning-stage-dot {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.reasoning-stage-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: center;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reasoning-stage-agent {
+  font-size: 9px;
+  color: var(--accent-text);
+  text-align: center;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Reviewing: proposal preview + governance verdict. Details (risks, findings) are
+   collapsed by default -- disclosure elements, not always-open panels. */
+.reasoning-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.reasoning-confidence-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 100px;
+}
+
+.reasoning-confidence-badge.high {
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+.reasoning-confidence-badge.medium {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.reasoning-confidence-badge.low {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.reasoning-domain-pill {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 2px 10px;
+}
+
+.reasoning-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin: 20px 0 8px;
+}
+
+.reasoning-node-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reasoning-node-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.reasoning-node-card:hover {
+  border-color: var(--accent);
+}
+
+.reasoning-node-card-type {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.reasoning-relationship-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+
+.reasoning-relationship-row .rel-label {
+  flex-shrink: 0;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+.reasoning-disclosure summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 10px 0;
+}
+
+.reasoning-risk-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.reasoning-risk-severity {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 100px;
+  flex-shrink: 0;
+}
+
+.reasoning-risk-severity.critical, .reasoning-risk-severity.high {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.reasoning-risk-severity.medium {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.reasoning-risk-severity.low {
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+.reasoning-verdict-banner {
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin: 20px 0;
+  border: 1px solid var(--border);
+}
+
+.reasoning-verdict-banner.approved {
+  background: var(--success-bg);
+  border-color: var(--success);
+}
+
+.reasoning-verdict-banner.rejected {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+}
+
+.reasoning-verdict-banner.held {
+  background: var(--warning-bg);
+  border-color: var(--warning);
+}
+
+.reasoning-verdict-title {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.reasoning-finding-line {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+
+.reasoning-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.reasoning-empty-state {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 20px;
+}
+
 .kanban-board {
   display: flex;
   gap: 16px;

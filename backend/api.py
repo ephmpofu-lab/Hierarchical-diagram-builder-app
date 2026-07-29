@@ -27,6 +27,7 @@ from .change.impact import analyze_impact
 from .cycles.service import run_decomposition_cycle, run_reasoning_cycle
 from .db import postgres_cycle_repository as cycle_repo
 from .decomposition.commit import commit_children
+from .intelligence.commit import commit_reasoning_proposal
 from .observability.metrics import summarize
 from .intelligence.stages import ReasoningStageError
 from .knowledge import lifecycle
@@ -330,6 +331,30 @@ def api_reason_async(
     cycle = cycle_repo.create_cycle(kind="reasoning", objective=body.objective.strip())
     background_tasks.add_task(run_reasoning_cycle, cycle.id, body.objective.strip())
     return cycle
+
+
+@router.post("/projects/{project_id}/nodes/{parent_id}/commit-reasoning")
+def api_commit_reasoning(
+    project_id: str, parent_id: str, body: ReasoningResult, user: AuthenticatedUser = Depends(require_auth)
+):
+    """Commits an approved Reasoning Pipeline proposal into real project data (first UI
+    phase for the reasoning/governance backend) -- the reasoning pipeline and governance
+    review above only ever produce a proposal; nothing commits it without this step. Mirrors
+    decomposition's own commit_children (WP8) for node creation, extended to also commit
+    proposed_relationships as real References and proposed_risks as real Risks, since a
+    reasoning proposal carries all three, not just nodes. No response_model, matching the
+    plain-dict precedent GET /api/agents and GET /api/tools already established."""
+    project = storage.load_project(project_id)
+    _ensure_owner(project, user)
+    tree.get_node_or_404(project, parent_id)
+    committed_node_ids, committed_risk_ids = commit_reasoning_proposal(
+        project, parent_id, body, user.email or user.id
+    )
+    tree.log_activity(
+        project, f"Committed reasoning proposal for '{body.objective}' ({len(committed_node_ids)} node(s))"
+    )
+    storage.save_project(project)
+    return {"committed_node_ids": committed_node_ids, "committed_risk_ids": committed_risk_ids}
 
 
 @router.get("/cycles/{cycle_id}", response_model=Cycle)

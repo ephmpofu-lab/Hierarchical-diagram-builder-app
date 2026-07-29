@@ -26,6 +26,9 @@ const WORKSPACE_REGISTRY = [
   { id: "documentation", label: "Documentation", family: "Supporting", available: true },
   { id: "dependencies", label: "Dependencies", family: "Supporting", available: true },
   { id: "health", label: "Architecture Health", family: "Supporting", available: true },
+  // First screen for the reasoning/governance backend (WP1-WP16) -- previously only
+  // reachable by calling the API directly. New "Intelligence" family, same registry shape.
+  { id: "reasoning", label: "AI Reasoning", family: "Intelligence", available: true },
 ];
 
 // Domain-scoping toggle within the Canvas family (section 2's Canvas family diagram) --

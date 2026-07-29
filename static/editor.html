@@ -24,7 +24,7 @@
     </div>
     <div class="topbar-actions">
       <div class="dropdown-wrap">
-        <button id="workspaceSwitcherBtn" class="btn btn-small" title="Switch workspace — Hierarchy is the only one built so far; the rest are planned future work packages">🗂 Hierarchy ▾</button>
+        <button id="workspaceSwitcherBtn" class="btn btn-small" title="Switch workspace">🗂 Hierarchy ▾</button>
         <div id="workspaceSwitcherMenu" class="dropdown-menu" hidden>
           <div class="dropdown-section-label">Canvas</div>
           <button id="workspaceOptionCanvas" data-workspace="canvas">Hierarchy</button>
@@ -37,6 +37,9 @@
           <button id="workspaceOptionDocumentation" data-workspace="documentation">Documentation</button>
           <button id="workspaceOptionDependencies" data-workspace="dependencies">Dependencies</button>
           <button id="workspaceOptionHealth" data-workspace="health">Architecture Health</button>
+          <div class="dropdown-divider"></div>
+          <div class="dropdown-section-label">Intelligence</div>
+          <button id="workspaceOptionReasoning" data-workspace="reasoning">AI Reasoning</button>
         </div>
       </div>
       <div class="view-mode-toggle">
@@ -292,6 +295,10 @@
         <div id="activityList" class="activity-list"></div>
       </div>
     </div>
+  </div>
+
+  <div class="pane reasoning-pane" id="reasoningPane" hidden>
+    <div id="reasoningBoard" class="reasoning-board"></div>
   </div>
 
   <div id="shortcutsModal" class="modal-backdrop" hidden>

@@ -200,6 +200,8 @@ const healthFooterGaugeEl = document.getElementById("healthFooterGauge");
 const healthFooterSummaryEl = document.getElementById("healthFooterSummary");
 const healthFooterRecentEl = document.getElementById("healthFooterRecent");
 const healthPane = document.getElementById("healthPane");
+const reasoningPane = document.getElementById("reasoningPane");
+const reasoningBoard = document.getElementById("reasoningBoard");
 const shortcutsBtn = document.getElementById("shortcutsBtn");
 const shortcutsModal = document.getElementById("shortcutsModal");
 const shortcutsCloseBtn = document.getElementById("shortcutsCloseBtn");
@@ -4229,11 +4231,447 @@ function switchToWorkspace(workspaceId) {
   documentationPane.hidden = workspaceId !== "documentation";
   dependenciesPane.hidden = workspaceId !== "dependencies";
   healthPane.hidden = workspaceId !== "health";
+  reasoningPane.hidden = workspaceId !== "reasoning";
   if (workspaceId === "kanban") renderKanbanBoard();
   if (workspaceId === "timeline") renderTimelineBoard();
   if (workspaceId === "documentation") renderDocumentationBoard();
   if (workspaceId === "dependencies") renderDependenciesBoard();
   if (workspaceId === "health" && !lastValidationReport) refreshHealthPanel();
+  if (workspaceId === "reasoning") renderReasoningBoard();
+  else stopReasoningPolling(); // leaving the workspace mid-run shouldn't keep polling in the background
+}
+
+// ---------- AI Reasoning workspace (first screen for the reasoning/governance backend --
+// previously only reachable by calling the API directly). Three states, never blended:
+// intake (describe an objective) -> running (a pipeline stepper, polling the Cycle the
+// backend already tracks) -> reviewing (the proposal + governance verdict + one action).
+// Async only (POST /api/intelligence/reason-async) -- the pipeline is up to 9 sequential
+// AI calls; a blocking sync fetch would freeze the UI for up to a minute with no feedback. ----------
+
+const REASONING_STAGES = [
+  { key: "domain_selection", label: "Domains" },
+  { key: "business_analysis", label: "Business" },
+  { key: "capability_analysis", label: "Capability" },
+  { key: "architecture_thinking", label: "Architecture" },
+  { key: "dependency_reasoning", label: "Dependencies" },
+  { key: "risk_reasoning", label: "Risk" },
+  { key: "governance_reasoning", label: "Governance" },
+  { key: "technology_reasoning", label: "Technology" },
+  { key: "implementation_reasoning", label: "Implementation" },
+];
+
+const REASONING_VERDICT_LABELS = {
+  approved: "Approved",
+  rejected: "Rejected",
+  held_pending_human_review: "Held for human review",
+  held_pending_risk_acceptance: "Held for risk acceptance",
+};
+
+let reasoningScreenState = "intake"; // intake | running | reviewing
+let reasoningCycleId = null;
+let reasoningPollTimer = null;
+let reasoningResult = null; // the ReasoningResult once available
+let reasoningReview = null; // the GovernanceReview once available
+let reasoningStageAgents = new Map(); // stage key -> agent name, for completed stages
+let reasoningCommittedNodeIds = null; // set after a successful commit, switches to the success view
+let reasoningCommittedRiskIds = null;
+
+function reasoningRootNodeId() {
+  return Object.values(project.nodes).find((n) => !n.parent_id).id;
+}
+
+function reasoningResetToIntake() {
+  reasoningScreenState = "intake";
+  reasoningResult = null;
+  reasoningReview = null;
+  reasoningStageAgents = new Map();
+  reasoningCommittedNodeIds = null;
+  reasoningCommittedRiskIds = null;
+}
+
+function stopReasoningPolling() {
+  if (reasoningPollTimer) {
+    clearTimeout(reasoningPollTimer);
+    reasoningPollTimer = null;
+  }
+}
+
+function renderReasoningBoard() {
+  if (!reasoningBoard) return;
+  if (!project) {
+    reasoningBoard.innerHTML = "";
+    return;
+  }
+  if (reasoningScreenState === "intake") renderReasoningIntake();
+  else if (reasoningScreenState === "running") renderReasoningRunning();
+  else renderReasoningReviewing();
+}
+
+function renderReasoningIntake() {
+  reasoningBoard.innerHTML = "";
+  const wrap = document.createElement("div");
+  wrap.className = "reasoning-intake";
+
+  const hint = document.createElement("div");
+  hint.className = "reasoning-intake-hint";
+  hint.textContent =
+    "Describe a business objective. Architeq reasons across Business, Data, Application, and Technology, then governance decides what happens next.";
+  wrap.appendChild(hint);
+
+  if (focusedNodeId && project.nodes[focusedNodeId]) {
+    const context = document.createElement("div");
+    context.className = "reasoning-intake-context";
+    context.textContent = `Attaching under: ${project.nodes[focusedNodeId].label}`;
+    wrap.appendChild(context);
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.className = "reasoning-objective-input";
+  textarea.placeholder = "e.g. Enable single sign-on for enterprise customers";
+  wrap.appendChild(textarea);
+
+  const button = document.createElement("button");
+  button.className = "btn btn-primary";
+  button.textContent = "Reason";
+  button.addEventListener("click", () => {
+    const objective = textarea.value.trim();
+    if (!objective) return;
+    startReasoningRun(objective);
+  });
+  wrap.appendChild(button);
+
+  reasoningBoard.appendChild(wrap);
+}
+
+async function startReasoningRun(objective) {
+  reasoningResetToIntake();
+  reasoningScreenState = "running";
+  renderReasoningBoard();
+  const response = await fetch("/api/intelligence/reason-async", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ objective }),
+  });
+  if (!response.ok) {
+    reasoningResetToIntake();
+    renderReasoningBoard();
+    return;
+  }
+  const cycle = await response.json();
+  reasoningCycleId = cycle.id;
+  pollReasoningCycle();
+}
+
+function parseStageEventDetail(detail) {
+  const match = /^([a-z_]+) \(([^)]*)\)/.exec(detail || "");
+  return match ? { stage: match[1], agent: match[2] } : { stage: null, agent: null };
+}
+
+async function pollReasoningCycle() {
+  if (!reasoningCycleId) return;
+  const response = await fetch(`/api/cycles/${reasoningCycleId}`);
+  if (!response.ok) return;
+  const cycle = await response.json();
+  for (const event of cycle.events) {
+    if (event.event_type === "StageCompleted") {
+      const parsed = parseStageEventDetail(event.detail);
+      if (parsed.stage) reasoningStageAgents.set(parsed.stage, parsed.agent);
+    }
+  }
+  if (cycle.status === "Completed") {
+    reasoningResult = cycle.result && cycle.result.reasoning;
+    reasoningReview = cycle.result && cycle.result.review;
+    reasoningScreenState = "reviewing";
+    renderReasoningBoard();
+    return;
+  }
+  if (cycle.status === "Failed") {
+    reasoningResetToIntake();
+    renderReasoningBoard();
+    return;
+  }
+  if (reasoningScreenState === "running") renderReasoningRunning();
+  reasoningPollTimer = setTimeout(pollReasoningCycle, 1500);
+}
+
+function renderReasoningRunning() {
+  reasoningBoard.innerHTML = "";
+  const heading = document.createElement("div");
+  heading.className = "reasoning-section-label";
+  heading.textContent = "Reasoning in progress";
+  reasoningBoard.appendChild(heading);
+
+  const pipeline = document.createElement("div");
+  pipeline.className = "reasoning-pipeline";
+  let activeAssigned = false;
+  for (const stage of REASONING_STAGES) {
+    const completed = reasoningStageAgents.has(stage.key);
+    const stageEl = document.createElement("div");
+    stageEl.className = "reasoning-stage" + (completed ? " completed" : !activeAssigned ? " active" : "");
+    if (!completed) activeAssigned = true;
+
+    const dot = document.createElement("div");
+    dot.className = "reasoning-stage-dot";
+    dot.textContent = completed ? "✓" : "";
+    stageEl.appendChild(dot);
+
+    const label = document.createElement("div");
+    label.className = "reasoning-stage-label";
+    label.textContent = stage.label;
+    stageEl.appendChild(label);
+
+    if (completed) {
+      const agent = document.createElement("div");
+      agent.className = "reasoning-stage-agent";
+      agent.textContent = reasoningStageAgents.get(stage.key) || "";
+      stageEl.appendChild(agent);
+    }
+    pipeline.appendChild(stageEl);
+  }
+  reasoningBoard.appendChild(pipeline);
+}
+
+function reasoningVerdictBucket(confidenceTier) {
+  return confidenceTier === "High" ? "high" : confidenceTier === "Medium" ? "medium" : "low";
+}
+
+function renderReasoningReviewing() {
+  reasoningBoard.innerHTML = "";
+  if (!reasoningResult) {
+    const empty = document.createElement("div");
+    empty.className = "reasoning-empty-state";
+    empty.textContent = "Something went wrong reading the result.";
+    reasoningBoard.appendChild(empty);
+    const retryBtn = document.createElement("button");
+    retryBtn.className = "btn btn-small";
+    retryBtn.textContent = "Start over";
+    retryBtn.addEventListener("click", () => {
+      reasoningResetToIntake();
+      renderReasoningBoard();
+    });
+    reasoningBoard.appendChild(retryBtn);
+    return;
+  }
+
+  if (reasoningCommittedNodeIds) {
+    renderReasoningCommittedSuccess();
+    return;
+  }
+
+  const summaryRow = document.createElement("div");
+  summaryRow.className = "reasoning-summary-row";
+  const confidenceBadge = document.createElement("span");
+  confidenceBadge.className = `reasoning-confidence-badge ${reasoningVerdictBucket(reasoningResult.confidence_tier)}`;
+  confidenceBadge.textContent = `${reasoningResult.confidence_tier} confidence`;
+  summaryRow.appendChild(confidenceBadge);
+  for (const domain of reasoningResult.domains || []) {
+    const pill = document.createElement("span");
+    pill.className = "reasoning-domain-pill";
+    pill.textContent = domain;
+    summaryRow.appendChild(pill);
+  }
+  reasoningBoard.appendChild(summaryRow);
+
+  const nodesLabel = document.createElement("div");
+  nodesLabel.className = "reasoning-section-label";
+  nodesLabel.textContent = `Proposed components (${reasoningResult.proposed_nodes.length})`;
+  reasoningBoard.appendChild(nodesLabel);
+  const nodeRow = document.createElement("div");
+  nodeRow.className = "reasoning-node-row";
+  for (const node of reasoningResult.proposed_nodes) {
+    const card = document.createElement("div");
+    card.className = "reasoning-node-card";
+    const label = document.createElement("div");
+    label.textContent = node.label;
+    card.appendChild(label);
+    if (node.node_type) {
+      const type = document.createElement("div");
+      type.className = "reasoning-node-card-type";
+      type.textContent = node.node_type;
+      card.appendChild(type);
+    }
+    nodeRow.appendChild(card);
+  }
+  reasoningBoard.appendChild(nodeRow);
+
+  if (reasoningResult.proposed_relationships && reasoningResult.proposed_relationships.length) {
+    const relLabel = document.createElement("div");
+    relLabel.className = "reasoning-section-label";
+    relLabel.textContent = `Proposed relationships (${reasoningResult.proposed_relationships.length})`;
+    reasoningBoard.appendChild(relLabel);
+    for (const rel of reasoningResult.proposed_relationships) {
+      const row = document.createElement("div");
+      row.className = "reasoning-relationship-row";
+      const from = document.createElement("span");
+      from.textContent = rel.from_label;
+      row.appendChild(from);
+      const arrow = document.createElement("span");
+      arrow.textContent = "→";
+      row.appendChild(arrow);
+      const to = document.createElement("span");
+      to.textContent = rel.to_label;
+      row.appendChild(to);
+      if (rel.label) {
+        const relLabelTag = document.createElement("span");
+        relLabelTag.className = "rel-label";
+        relLabelTag.textContent = rel.label;
+        row.appendChild(relLabelTag);
+      }
+      reasoningBoard.appendChild(row);
+    }
+  }
+
+  if (reasoningResult.proposed_risks && reasoningResult.proposed_risks.length) {
+    const details = document.createElement("details");
+    details.className = "reasoning-disclosure";
+    const summary = document.createElement("summary");
+    summary.textContent = `${reasoningResult.proposed_risks.length} risk(s) identified`;
+    details.appendChild(summary);
+    for (const risk of reasoningResult.proposed_risks) {
+      const card = document.createElement("div");
+      card.className = "reasoning-risk-card";
+      const desc = document.createElement("div");
+      desc.textContent = risk.description;
+      card.appendChild(desc);
+      const severity = document.createElement("span");
+      severity.className = `reasoning-risk-severity ${(risk.initial_level || "low").toLowerCase()}`;
+      severity.textContent = risk.initial_level || "Unknown";
+      card.appendChild(severity);
+      details.appendChild(card);
+    }
+    reasoningBoard.appendChild(details);
+  }
+
+  const outcome = reasoningReview ? reasoningReview.outcome : "unknown";
+  const banner = document.createElement("div");
+  const bannerClass = outcome === "approved" ? "approved" : outcome === "rejected" ? "rejected" : "held";
+  banner.className = `reasoning-verdict-banner ${bannerClass}`;
+  const title = document.createElement("div");
+  title.className = "reasoning-verdict-title";
+  title.textContent = REASONING_VERDICT_LABELS[outcome] || outcome;
+  banner.appendChild(title);
+  if (reasoningReview) {
+    for (const finding of reasoningReview.findings || []) {
+      const line = document.createElement("div");
+      line.className = "reasoning-finding-line";
+      line.textContent = `${finding.severity}: ${finding.message}`;
+      banner.appendChild(line);
+    }
+  }
+  reasoningBoard.appendChild(banner);
+
+  const actions = document.createElement("div");
+  actions.className = "reasoning-actions";
+  if (outcome !== "rejected") {
+    const approveBtn = document.createElement("button");
+    approveBtn.className = "btn btn-primary";
+    approveBtn.textContent = "Approve";
+    approveBtn.addEventListener("click", () => approveReasoningProposal());
+    actions.appendChild(approveBtn);
+  }
+  const rejectBtn = document.createElement("button");
+  rejectBtn.className = "btn btn-small";
+  rejectBtn.textContent = "Reject";
+  rejectBtn.addEventListener("click", () => rejectReasoningProposal());
+  actions.appendChild(rejectBtn);
+  reasoningBoard.appendChild(actions);
+}
+
+async function approveReasoningProposal() {
+  const parentId = focusedNodeId && project.nodes[focusedNodeId] ? focusedNodeId : reasoningRootNodeId();
+  const response = await fetch(`/api/projects/${projectId}/nodes/${parentId}/commit-reasoning`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(reasoningResult),
+  });
+  if (!response.ok) return;
+  const payload = await response.json();
+  reasoningCommittedNodeIds = payload.committed_node_ids;
+  reasoningCommittedRiskIds = payload.committed_risk_ids;
+  await loadProject();
+  renderReasoningBoard();
+}
+
+async function rejectReasoningProposal() {
+  await fetch(`/api/projects/${projectId}/governance-decisions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      actor: "",
+      decision_type: "Reject",
+      target_node_id: null,
+      rationale: `Rejected reasoning proposal for objective '${reasoningResult.objective}'`,
+    }),
+  });
+  reasoningResetToIntake();
+  renderReasoningBoard();
+}
+
+function renderReasoningCommittedSuccess() {
+  const heading = document.createElement("div");
+  heading.className = "reasoning-verdict-banner approved";
+  const title = document.createElement("div");
+  title.className = "reasoning-verdict-title";
+  title.textContent = `Committed ${reasoningCommittedNodeIds.length} component(s)`;
+  heading.appendChild(title);
+  reasoningBoard.appendChild(heading);
+
+  const nodesLabel = document.createElement("div");
+  nodesLabel.className = "reasoning-section-label";
+  nodesLabel.textContent = "New components";
+  reasoningBoard.appendChild(nodesLabel);
+  const nodeRow = document.createElement("div");
+  nodeRow.className = "reasoning-node-row";
+  for (const nodeId of reasoningCommittedNodeIds) {
+    const node = project.nodes[nodeId];
+    if (!node) continue;
+    const card = document.createElement("div");
+    card.className = "reasoning-node-card";
+    card.title = "Jump to this component in Hierarchy";
+    card.textContent = node.label;
+    card.addEventListener("click", async () => {
+      switchToWorkspace("canvas");
+      await focusNode(node.id);
+    });
+    nodeRow.appendChild(card);
+  }
+  reasoningBoard.appendChild(nodeRow);
+
+  const pendingRisks = (reasoningCommittedRiskIds || [])
+    .map((riskId) => project.risks.find((r) => r.id === riskId))
+    .filter((risk) => risk && risk.status !== "Accepted");
+  if (pendingRisks.length) {
+    const riskLabel = document.createElement("div");
+    riskLabel.className = "reasoning-section-label";
+    riskLabel.textContent = "Risks needing acceptance";
+    reasoningBoard.appendChild(riskLabel);
+    for (const risk of pendingRisks) {
+      const card = document.createElement("div");
+      card.className = "reasoning-risk-card";
+      const desc = document.createElement("div");
+      desc.textContent = risk.description;
+      card.appendChild(desc);
+      const acceptBtn = document.createElement("button");
+      acceptBtn.className = "btn btn-small";
+      acceptBtn.textContent = "Accept";
+      acceptBtn.addEventListener("click", async () => {
+        await fetch(`/api/projects/${projectId}/risks/${risk.id}/accept`, { method: "POST" });
+        await loadProject();
+        renderReasoningBoard();
+      });
+      card.appendChild(acceptBtn);
+      reasoningBoard.appendChild(card);
+    }
+  }
+
+  const startOverBtn = document.createElement("button");
+  startOverBtn.className = "btn btn-small";
+  startOverBtn.textContent = "Reason about something else";
+  startOverBtn.addEventListener("click", () => {
+    reasoningResetToIntake();
+    renderReasoningBoard();
+  });
+  reasoningBoard.appendChild(startOverBtn);
 }
 
 // Breadcrumb-style path for a card, reusing the same parent_id chain compute_level already
