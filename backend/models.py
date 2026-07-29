@@ -669,4 +669,26 @@ class RiskAssessmentResult(BaseModel):
     explanation: Optional[str] = None  # populated only when explain=true is requested
 
 
+class GovernanceAssessmentSignals(BaseModel):
+    """Structured inputs to the Governance Assessment Tool (ADR-006, WP16c) -- one
+    boolean per ISO 38500 principle, assessed separately rather than a single holistic
+    governance judgment (see backend/tools/governance_assessment.py's own docstring)."""
+
+    has_assigned_owner: bool = False  # ISO 38500 Responsibility
+    aligns_with_documented_strategy: bool = False  # ISO 38500 Strategy
+    acquisition_is_justified: bool = False  # ISO 38500 Acquisition
+    has_performance_monitoring: bool = False  # ISO 38500 Performance
+    has_no_unresolved_critical_findings: bool = True  # ISO 38500 Conformance -- hard gate
+    considers_human_impact: bool = False  # ISO 38500 Human Behaviour
+
+
+class GovernanceAssessmentResult(BaseModel):
+    verdict: str  # Non-Conformant | Partially Conformant | Substantially Conformant | Fully Conformant
+    rationale: str  # computed, never AI-authored
+    principles_satisfied: List[str] = Field(default_factory=list)
+    principles_unmet: List[str] = Field(default_factory=list)
+    signals: GovernanceAssessmentSignals
+    explanation: Optional[str] = None  # populated only when explain=true is requested
+
+
 Project.model_rebuild()

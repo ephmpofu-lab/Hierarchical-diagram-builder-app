@@ -153,9 +153,12 @@ GOVERNANCE_ASSESSMENT_TOOL = Tool(
     operating_model_activity="Governance",
     needs_tool="Yes",
     evidence_base="COBIT, TOGAF Governance, ISO 38500",
-    status="partial",
-    implementation="backend.governance.validation -- real, deterministic rule checks, "
-    "not yet explicitly cited to COBIT/ISO 38500",
+    status="built",
+    implementation="backend.tools.governance_assessment (deterministic ISO 38500 "
+    "six-principle assessment, Conformance as a hard gate; explain() optionally phrases "
+    "the result via the AI Service but never decides it) -- WP16c, alongside "
+    "backend.governance.validation's existing structural/policy checks (untouched, not "
+    "duplicated)",
 )
 TEST_DESIGN_TOOL = Tool(
     name="Test Design Tool",

@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from . import concept, storage, tree
 from .agents.agent import ALL_AGENTS
 from .agents.orchestrator import Orchestrator
-from .tools import ai_suitability, risk_assessment
+from .tools import ai_suitability, governance_assessment, risk_assessment
 from .tools.tool import ALL_TOOLS
 from .ai import service as ai_service
 from .ai.provider import AIProviderError
@@ -38,6 +38,8 @@ from .models import (
     DecomposeRequest,
     DecompositionResult,
     GovernanceActionRequest,
+    GovernanceAssessmentResult,
+    GovernanceAssessmentSignals,
     GovernanceDecision,
     GovernanceDecisionCreate,
     GovernancePrinciple,
@@ -178,6 +180,17 @@ def api_assess_risk(signals: RiskAssessmentSignals, explain: bool = Query(False)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if explain:
         result = result.model_copy(update={"explanation": risk_assessment.explain(result)})
+    return result
+
+
+@router.post("/tools/governance-assessment", response_model=GovernanceAssessmentResult)
+def api_assess_governance(signals: GovernanceAssessmentSignals, explain: bool = Query(False)):
+    """Governance Assessment Tool (ADR-006, WP16c) -- a deterministic ISO 38500
+    six-principle assessment, never an LLM call. `explain=true` additionally asks the AI
+    Service to phrase the already-computed verdict in prose; it never changes it."""
+    result = governance_assessment.assess(signals)
+    if explain:
+        result = result.model_copy(update={"explanation": governance_assessment.explain(result)})
     return result
 
 
