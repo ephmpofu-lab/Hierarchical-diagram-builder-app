@@ -15,6 +15,12 @@ backup file. A backup file can contain many projects; restoring all of them in o
 would be exactly the kind of destructive, hard-to-reverse action this project's own
 standing discipline treats with extra care.
 
+Targets (the decision the original Phase 11 spec deferred, now set): RPO 24 hours (daily
+backup cadence -- matches Supabase's default backup tier), RTO same business day (a few
+hours, achievable via Supabase's own restore plus this script's restore_project() for
+narrower incidents, without needing on-call/failover infrastructure this project doesn't
+otherwise need yet).
+
 Usage:
     .venv\\Scripts\\python.exe scripts\\backup_export.py                       # export all projects
     .venv\\Scripts\\python.exe scripts\\backup_export.py --list <backup.json>  # inspect a backup file
