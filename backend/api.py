@@ -645,6 +645,30 @@ def api_decompose_node_async(
     return cycle
 
 
+@router.post("/projects/{project_id}/nodes/{node_id}/commit-decomposition")
+def api_commit_decomposition(
+    project_id: str, node_id: str, body: DecompositionResult, user: AuthenticatedUser = Depends(require_auth)
+):
+    """Journey 2's human-override commit point: a decompose result held at
+    held_pending_human_review (the common case -- most nodes have no matching Knowledge
+    Base coverage) is never auto-committed by api_decompose_node above. This lets a human
+    override that hold and commit anyway, exactly mirroring how WP17's Approve button
+    overrides a held reasoning proposal. Accepts the whole DecompositionResult the
+    original decompose call returned (only .proposed_nodes and .strategy are used) rather
+    than a narrower purpose-built shape, same precedent as commit-reasoning accepting the
+    whole ReasoningResult back. Reuses commit_children directly -- no new commit logic,
+    since a decomposition proposal has no relationships or risks to handle, unlike
+    reasoning's. No response_model, matching the plain-dict precedent GET /api/agents,
+    GET /api/tools, and commit-reasoning already established."""
+    project = storage.load_project(project_id)
+    _ensure_owner(project, user)
+    node = tree.get_node_or_404(project, node_id)
+    committed_node_ids = commit_children(project, node, body.proposed_nodes, body.strategy, user.email or user.id)
+    tree.log_activity(project, f"Committed decomposition of '{node.label}' ({len(committed_node_ids)} child(ren))")
+    storage.save_project(project)
+    return {"committed_node_ids": committed_node_ids}
+
+
 @router.put("/projects/{project_id}/nodes/{node_id}", response_model=NodeWithLevel)
 def api_update_node(project_id: str, node_id: str, body: NodeUpdate):
     project = storage.load_project(project_id)

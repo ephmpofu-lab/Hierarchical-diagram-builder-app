@@ -3636,6 +3636,17 @@ function openContextMenu(nodeId, clientX, clientY) {
   // scannable. Nothing here is removed, just reorganized: every item below still exists.
   menu.appendChild(contextMenuItem("+ Add Child", () => addChild(nodeId), { disabled: locked }));
   menu.appendChild(
+    contextMenuItem(
+      "⛓ Decompose",
+      () => {
+        focusedNodeId = nodeId;
+        inspectorActiveTab = "decompose";
+        render();
+      },
+      { disabled: locked }
+    )
+  );
+  menu.appendChild(
     contextMenuItem("+ Add Parallel", () => addSiblingBelow(nodeId), { disabled: isRoot || locked })
   );
   menu.appendChild(
@@ -4589,6 +4600,10 @@ async function approveReasoningProposal() {
   reasoningCommittedNodeIds = payload.committed_node_ids;
   reasoningCommittedRiskIds = payload.committed_risk_ids;
   await loadProject();
+  // Same reasoning as Import Outline's own auto-arrange call: proposed nodes land at
+  // per-parent grid-math defaults, not a tidy layout, so a commit looks jumbled in Focus
+  // Mode until Auto Arrange runs. Never let a fresh commit start messy.
+  await autoArrangeLayout();
   renderReasoningBoard();
 }
 
@@ -4672,6 +4687,269 @@ function renderReasoningCommittedSuccess() {
     renderReasoningBoard();
   });
   reasoningBoard.appendChild(startOverBtn);
+}
+
+// ---------- Decompose tab (Journey 2: Architecture -> Recursive Decomposition) ----------
+// Lives in the Inspector, not a separate workspace -- unlike objective-first Reasoning,
+// this is an action on an already-selected node. State is keyed per node (not a single
+// global like reasoning's) since the Inspector can point at a different node anytime
+// while a prior node's held proposal is still unresolved. Reuses the .reasoning-* CSS
+// classes and card/banner idioms verbatim -- confirmed unscoped to the reasoning pane. ----------
+
+const DECOMPOSE_STRATEGIES = ["Business", "Data", "Application", "Technology", "Governance"];
+
+const decomposeStateByNode = new Map(); // nodeId -> { status, result, strategyOverride, primaryDiscarded, parallelDiscarded }
+
+function getDecomposeState(nodeId) {
+  if (!decomposeStateByNode.has(nodeId)) {
+    decomposeStateByNode.set(nodeId, {
+      status: "idle", // idle | running | result
+      result: null,
+      strategyOverride: "",
+      primaryDiscarded: false,
+      parallelDiscarded: false,
+    });
+  }
+  return decomposeStateByNode.get(nodeId);
+}
+
+function nodeHasActiveRisk(nodeId) {
+  return project.risks.some(
+    (r) => r.target_node_id === nodeId && r.status !== "Accepted" && r.status !== "Mitigated"
+  );
+}
+
+async function runDecompose(node) {
+  const state = getDecomposeState(node.id);
+  state.status = "running";
+  state.primaryDiscarded = false;
+  state.parallelDiscarded = false;
+  renderInspector();
+  const body = state.strategyOverride ? { strategy_override: state.strategyOverride } : {};
+  const response = await fetch(`/api/projects/${projectId}/nodes/${node.id}/decompose`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    state.status = "idle";
+    renderInspector();
+    return;
+  }
+  const result = await response.json();
+  state.status = "result";
+  state.result = result;
+  const committedTotal = (result.committed_node_ids || []).length + (result.parallel_committed_node_ids || []).length;
+  if (committedTotal > 0) {
+    await loadProject();
+    await autoArrangeLayout(); // same reasoning as reasoning's own commit -- grid-math
+    // defaults don't respect subtree ownership, don't let a fresh commit start jumbled
+  }
+  renderInspector();
+}
+
+async function approveDecomposeProposal(node, isParallel) {
+  const state = getDecomposeState(node.id);
+  const result = state.result;
+  const proposedNodes = isParallel ? result.parallel_proposed_nodes : result.proposed_nodes;
+  const strategy = isParallel ? result.parallel_strategy : result.strategy;
+  const response = await fetch(`/api/projects/${projectId}/nodes/${node.id}/commit-decomposition`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ strategy, terminal: false, proposed_nodes: proposedNodes }),
+  });
+  if (!response.ok) return;
+  const payload = await response.json();
+  if (isParallel) {
+    result.parallel_committed_node_ids = payload.committed_node_ids;
+    result.parallel_review = { ...result.parallel_review, outcome: "approved" };
+  } else {
+    result.committed_node_ids = payload.committed_node_ids;
+    result.review = { ...result.review, outcome: "approved" };
+  }
+  await loadProject();
+  await autoArrangeLayout();
+  renderInspector();
+}
+
+async function discardDecomposeProposal(node, isParallel) {
+  const state = getDecomposeState(node.id);
+  const result = state.result;
+  const strategyLabel = isParallel ? result.parallel_strategy : result.strategy;
+  await fetch(`/api/projects/${projectId}/governance-decisions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      actor: "",
+      decision_type: "Reject",
+      target_node_id: null,
+      rationale: `Rejected ${strategyLabel} decomposition proposal for '${node.label}'`,
+    }),
+  });
+  if (isParallel) state.parallelDiscarded = true;
+  else state.primaryDiscarded = true;
+  renderInspector();
+}
+
+function renderDecomposeResultBlock(container, node, state, result, isParallel) {
+  const strategy = isParallel ? result.parallel_strategy : result.strategy;
+  const review = isParallel ? result.parallel_review : result.review;
+  const proposedNodes = isParallel ? result.parallel_proposed_nodes : result.proposed_nodes;
+  const committedIds = isParallel ? result.parallel_committed_node_ids : result.committed_node_ids;
+
+  if (!isParallel && result.terminal && (!proposedNodes || !proposedNodes.length)) {
+    const empty = document.createElement("div");
+    empty.className = "reasoning-empty-state";
+    empty.textContent = `Terminal for the ${strategy} strategy — nothing further to decompose.`;
+    container.appendChild(empty);
+    return;
+  }
+
+  if (!review) return;
+
+  const outcome = review.outcome;
+  if (outcome === "approved") {
+    const banner = document.createElement("div");
+    banner.className = "reasoning-verdict-banner approved";
+    const title = document.createElement("div");
+    title.className = "reasoning-verdict-title";
+    title.textContent = `Committed ${(committedIds || []).length} component(s)`;
+    banner.appendChild(title);
+    container.appendChild(banner);
+
+    const nodeRow = document.createElement("div");
+    nodeRow.className = "reasoning-node-row";
+    for (const nodeId of committedIds || []) {
+      const childNode = project.nodes[nodeId];
+      if (!childNode) continue;
+      const card = document.createElement("div");
+      card.className = "reasoning-node-card";
+      card.title = "Jump to this component in Hierarchy";
+      card.textContent = childNode.label;
+      card.addEventListener("click", async () => {
+        switchToWorkspace("canvas");
+        await focusNode(childNode.id);
+      });
+      nodeRow.appendChild(card);
+    }
+    container.appendChild(nodeRow);
+    return;
+  }
+
+  const bannerClass = outcome === "rejected" ? "rejected" : "held";
+  const banner = document.createElement("div");
+  banner.className = `reasoning-verdict-banner ${bannerClass}`;
+  const title = document.createElement("div");
+  title.className = "reasoning-verdict-title";
+  title.textContent = REASONING_VERDICT_LABELS[outcome] || outcome;
+  banner.appendChild(title);
+  if (review.rationale) {
+    const rationale = document.createElement("div");
+    rationale.className = "reasoning-finding-line";
+    rationale.textContent = review.rationale;
+    banner.appendChild(rationale);
+  }
+  for (const finding of review.findings || []) {
+    const line = document.createElement("div");
+    line.className = "reasoning-finding-line";
+    line.textContent = `${finding.severity}: ${finding.message}`;
+    banner.appendChild(line);
+  }
+  container.appendChild(banner);
+
+  const nodeRow = document.createElement("div");
+  nodeRow.className = "reasoning-node-row";
+  for (const proposedNode of proposedNodes || []) {
+    const card = document.createElement("div");
+    card.className = "reasoning-node-card";
+    const label = document.createElement("div");
+    label.textContent = proposedNode.label;
+    card.appendChild(label);
+    if (proposedNode.node_type) {
+      const type = document.createElement("div");
+      type.className = "reasoning-node-card-type";
+      type.textContent = proposedNode.node_type;
+      card.appendChild(type);
+    }
+    nodeRow.appendChild(card);
+  }
+  container.appendChild(nodeRow);
+
+  const actions = document.createElement("div");
+  actions.className = "reasoning-actions";
+  if (outcome === "held_pending_human_review") {
+    const approveBtn = document.createElement("button");
+    approveBtn.className = "btn btn-primary";
+    approveBtn.textContent = "Approve";
+    approveBtn.addEventListener("click", () => approveDecomposeProposal(node, isParallel));
+    actions.appendChild(approveBtn);
+  }
+  const discardBtn = document.createElement("button");
+  discardBtn.className = "btn btn-small";
+  discardBtn.textContent = "Discard";
+  discardBtn.addEventListener("click", () => discardDecomposeProposal(node, isParallel));
+  actions.appendChild(discardBtn);
+  container.appendChild(actions);
+}
+
+function renderDecomposeTab(container, node) {
+  const state = getDecomposeState(node.id);
+
+  const strategyRow = document.createElement("div");
+  strategyRow.className = "reasoning-actions";
+  const select = document.createElement("select");
+  select.className = "decompose-strategy-select";
+  select.disabled = state.status === "running";
+  const autoOption = document.createElement("option");
+  autoOption.value = "";
+  autoOption.textContent = "Auto";
+  select.appendChild(autoOption);
+  for (const strategyName of DECOMPOSE_STRATEGIES) {
+    const opt = document.createElement("option");
+    opt.value = strategyName;
+    opt.textContent = strategyName;
+    select.appendChild(opt);
+  }
+  select.value = state.strategyOverride || "";
+  select.addEventListener("change", () => {
+    state.strategyOverride = select.value;
+  });
+  strategyRow.appendChild(select);
+
+  const button = document.createElement("button");
+  button.className = "btn btn-primary";
+  button.textContent = state.status === "running" ? "Decomposing…" : "Decompose";
+  button.disabled = state.status === "running" || !!node.locked;
+  button.addEventListener("click", () => runDecompose(node));
+  strategyRow.appendChild(button);
+  container.appendChild(strategyRow);
+
+  if (nodeHasActiveRisk(node.id)) {
+    const note = document.createElement("div");
+    note.className = "reasoning-intake-hint";
+    note.textContent = "An active risk on this node will also trigger a parallel Governance pass.";
+    container.appendChild(note);
+  }
+
+  if (state.status !== "result" || !state.result) return;
+
+  const result = state.result;
+  const primaryHasReview = !state.primaryDiscarded && !!result.review;
+  const primaryHasContent = !state.primaryDiscarded && (result.terminal || result.review);
+  if (primaryHasContent) {
+    renderDecomposeResultBlock(container, node, state, result, false);
+  }
+
+  if (result.parallel_strategy && !state.parallelDiscarded) {
+    const details = document.createElement("details");
+    details.className = "reasoning-disclosure";
+    details.open = !primaryHasReview;
+    const summary = document.createElement("summary");
+    summary.textContent = "Also triggered: Governance strategy (active risk)";
+    details.appendChild(summary);
+    renderDecomposeResultBlock(details, node, state, result, true);
+    container.appendChild(details);
+  }
 }
 
 // Breadcrumb-style path for a card, reusing the same parent_id chain compute_level already
@@ -6829,6 +7107,7 @@ function renderInspector() {
   const touchingRefCount = project.references.filter((r) => r.from === node.id || r.to === node.id).length;
   const tabDefs = [
     ["overview", "Overview"],
+    ["decompose", "Decompose"],
     ["properties", "Properties"],
     ["references", `References${touchingRefCount ? ` (${touchingRefCount})` : ""}`],
     ["documentation", "Documentation"],
@@ -6854,6 +7133,7 @@ function renderInspector() {
   inspectorContent.appendChild(tabContent);
 
   if (inspectorActiveTab === "overview") renderOverviewTab(tabContent, node);
+  else if (inspectorActiveTab === "decompose") renderDecomposeTab(tabContent, node);
   else if (inspectorActiveTab === "properties") renderPropertiesTab(tabContent, node);
   else if (inspectorActiveTab === "references") renderReferencesTab(tabContent, node);
   else if (inspectorActiveTab === "documentation") renderDocumentationTab(tabContent, node);
