@@ -150,8 +150,10 @@ SECURITY_ARCHITECTURE_TOOL = Tool(
     operating_model_activity="Security Design",
     needs_tool="Yes",
     evidence_base="NIST CSF, OWASP, Zero Trust",
-    status="not_built",
-    implementation="",
+    status="built",
+    implementation="backend.tools.security_assessment (deterministic NIST CSF "
+    "five-function checklist -- Identify/Protect/Detect/Respond/Recover; explain() "
+    "optionally phrases the result via the AI Service but never decides it) -- WP16e",
 )
 GOVERNANCE_ASSESSMENT_TOOL = Tool(
     name="Governance Assessment Tool",

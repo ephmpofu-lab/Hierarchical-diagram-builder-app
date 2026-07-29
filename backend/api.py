@@ -7,7 +7,13 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from . import concept, storage, tree
 from .agents.agent import ALL_AGENTS
 from .agents.orchestrator import Orchestrator
-from .tools import ai_suitability, governance_assessment, requirement_analysis, risk_assessment
+from .tools import (
+    ai_suitability,
+    governance_assessment,
+    requirement_analysis,
+    risk_assessment,
+    security_assessment,
+)
 from .tools.tool import ALL_TOOLS
 from .ai import service as ai_service
 from .ai.provider import AIProviderError
@@ -74,6 +80,8 @@ from .models import (
     RiskAssessment,
     RiskAssessmentResult,
     RiskAssessmentSignals,
+    SecurityAssessmentResult,
+    SecurityAssessmentSignals,
     Template,
     TemplateCreate,
     TemplateNode,
@@ -205,6 +213,17 @@ def api_analyze_requirement(signals: RequirementQualitySignals, explain: bool = 
     result = requirement_analysis.assess(signals)
     if explain:
         result = result.model_copy(update={"explanation": requirement_analysis.explain(result)})
+    return result
+
+
+@router.post("/tools/security-assessment", response_model=SecurityAssessmentResult)
+def api_assess_security(signals: SecurityAssessmentSignals, explain: bool = Query(False)):
+    """Security Architecture Tool (ADR-006, WP16e) -- a deterministic NIST CSF
+    five-function checklist, never an LLM call. `explain=true` additionally asks the AI
+    Service to phrase the already-computed verdict in prose; it never changes it."""
+    result = security_assessment.assess(signals)
+    if explain:
+        result = result.model_copy(update={"explanation": security_assessment.explain(result)})
     return result
 
 

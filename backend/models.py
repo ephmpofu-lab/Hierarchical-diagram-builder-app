@@ -708,4 +708,27 @@ class RequirementQualityResult(BaseModel):
     explanation: Optional[str] = None  # populated only when explain=true is requested
 
 
+class SecurityAssessmentSignals(BaseModel):
+    """Structured inputs to the Security Architecture Tool (ADR-006, WP16e) -- one
+    boolean per NIST CSF control area, assessed separately rather than a single holistic
+    security judgment (see backend/tools/security_assessment.py's own docstring)."""
+
+    has_asset_inventory: bool = False  # Identify
+    has_authentication_and_authorization: bool = False  # Protect (Zero Trust: verify explicitly)
+    has_encryption_at_rest_and_in_transit: bool = False  # Protect
+    has_input_validation: bool = False  # Protect (OWASP)
+    has_monitoring_and_logging: bool = False  # Detect
+    has_incident_response_plan: bool = False  # Respond
+    has_backup_and_recovery_plan: bool = False  # Recover
+
+
+class SecurityAssessmentResult(BaseModel):
+    verdict: str  # Non-Compliant | Partially Compliant | Substantially Compliant | Fully Compliant
+    rationale: str  # computed, never AI-authored
+    functions_satisfied: List[str] = Field(default_factory=list)  # NIST CSF functions covered
+    functions_unmet: List[str] = Field(default_factory=list)
+    signals: SecurityAssessmentSignals
+    explanation: Optional[str] = None  # populated only when explain=true is requested
+
+
 Project.model_rebuild()
