@@ -631,4 +631,25 @@ class Cycle(BaseModel):
     error: Optional[str] = None
 
 
+class AISuitabilitySignals(BaseModel):
+    """Structured inputs to the AI Suitability Assessment Tool (ADR-006, WP16a) --
+    deliberately explicit booleans, not raw text, so the classifier stays deterministic
+    (see backend/tools/ai_suitability.py's own module docstring for why)."""
+
+    requires_external_knowledge_retrieval: bool = False
+    requires_multi_step_autonomous_tool_use: bool = False
+    requires_pattern_prediction_from_historical_data: bool = False
+    process_is_fully_deterministic: bool = False
+    requires_natural_language_understanding_or_generation: bool = False
+
+
+class AISuitabilityAssessment(BaseModel):
+    recommended_pattern: str  # Rules Engine | Workflow Automation | Agentic AI | RAG |
+    # Predictive AI | Generic LLM
+    rationale: str  # which rule fired and why -- always deterministic, never AI-authored
+    signals: AISuitabilitySignals
+    explanation: Optional[str] = None  # populated only when explain=true is requested;
+    # phrasing only, never re-decides recommended_pattern
+
+
 Project.model_rebuild()

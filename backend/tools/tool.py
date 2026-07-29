@@ -51,8 +51,9 @@ AI_SUITABILITY_ASSESSMENT_TOOL = Tool(
     operating_model_activity="AI Suitability Assessment",
     needs_tool="Yes",
     evidence_base="AI Engineering, NIST AI RMF, ISO/IEC 42001, Decision Theory",
-    status="not_built",
-    implementation="",
+    status="built",
+    implementation="backend.tools.ai_suitability (deterministic decision tree; explain() "
+    "optionally phrases the result via the AI Service but never decides it) -- WP16a",
 )
 BUSINESS_ARCHITECTURE_TOOL = Tool(
     name="Business Architecture Tool",

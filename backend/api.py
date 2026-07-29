@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from . import concept, storage, tree
 from .agents.agent import ALL_AGENTS
 from .agents.orchestrator import Orchestrator
+from .tools import ai_suitability
 from .tools.tool import ALL_TOOLS
 from .ai import service as ai_service
 from .ai.provider import AIProviderError
@@ -23,6 +24,8 @@ from .knowledge.qa import run_qa
 from .knowledge.retrieval import retrieve as retrieve_knowledge
 from .models import (
     AddParentRequest,
+    AISuitabilityAssessment,
+    AISuitabilitySignals,
     ChangeImpactRequest,
     ChangeImpactResult,
     Comment,
@@ -149,6 +152,17 @@ def api_list_tools():
     """The Tool Registry (Tool Engineering Architecture, ADR-006 / WP16) -- inspectable
     data, honestly marked built/partial/not_built rather than assumed complete."""
     return [t.__dict__ for t in ALL_TOOLS]
+
+
+@router.post("/tools/ai-suitability", response_model=AISuitabilityAssessment)
+def api_assess_ai_suitability(signals: AISuitabilitySignals, explain: bool = Query(False)):
+    """AI Suitability Assessment Tool (ADR-006, WP16a) -- a deterministic decision-tree
+    classification, never an LLM call. `explain=true` additionally asks the AI Service to
+    phrase the already-decided result in prose; it never changes the recommendation."""
+    assessment = ai_suitability.assess(signals)
+    if explain:
+        assessment = assessment.model_copy(update={"explanation": ai_suitability.explain(assessment)})
+    return assessment
 
 
 @router.post("/intelligence/reason", response_model=ReasoningResult)
