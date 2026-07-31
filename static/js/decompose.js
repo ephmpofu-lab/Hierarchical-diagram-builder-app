@@ -179,6 +179,200 @@ async function submitRefine(instruction) {
   }
 }
 
+// ---------- Real tree diagram (AMENDMENT 5, Fix D) ----------
+// Ports editor.js's own hierarchy-canvas idiom (computeSubtreeLayout's recursive subtree-
+// width-then-position algorithm, drawTreeBranches/drawTreeEdge's trunk+bus/straight-line
+// connector -- editor.js:1341/2384/2472) rather than importing editor.js itself: that file's
+// canvas is tightly coupled to its own global Project/Node state (drag-to-reparent handles,
+// click-to-select edges, flow-particle animation), none of which applies to this read-only
+// frozen tree. Only the layout math and the box-and-connector visual language are reused.
+
+const DECOMPOSE_LEVEL_GAP = 110; // vertical gap between C4 levels
+const DECOMPOSE_SIBLING_GAP = 30; // horizontal gap between sibling subtrees
+const DECOMPOSE_LAYER_GAP = 60; // extra horizontal gap between separate top-level Layer trees
+const DECOMPOSE_BOX_SIZES = {
+  "Layer": [220, 56],
+  "Sub-task": [190, 46],
+  "Atomic step": [170, 40],
+};
+const DECOMPOSE_LEVEL_DEPTH = { "Layer": 0, "Sub-task": 1, "Atomic step": 2 };
+
+function decomposeBoxSize(level) {
+  return DECOMPOSE_BOX_SIZES[level] || DECOMPOSE_BOX_SIZES["Atomic step"];
+}
+
+function computeTreeLayout(tree) {
+  const widths = new Map();
+
+  function computeWidth(nodeId) {
+    const node = tree.nodes[nodeId];
+    const children = (node.children || []).filter((id) => tree.nodes[id]);
+    const [ownW] = decomposeBoxSize(node.level);
+    if (children.length === 0) {
+      widths.set(nodeId, ownW);
+      return ownW;
+    }
+    let total = 0;
+    for (const childId of children) total += computeWidth(childId);
+    total += Math.max(0, children.length - 1) * DECOMPOSE_SIBLING_GAP;
+    const width = Math.max(ownW, total);
+    widths.set(nodeId, width);
+    return width;
+  }
+  for (const layerId of tree.root_ids) if (tree.nodes[layerId]) computeWidth(layerId);
+
+  const positions = new Map(); // id -> { x, y } (box center)
+
+  function assignPositions(nodeId, centerX) {
+    const node = tree.nodes[nodeId];
+    const depth = DECOMPOSE_LEVEL_DEPTH[node.level] ?? 0;
+    positions.set(nodeId, { x: centerX, y: 40 + depth * DECOMPOSE_LEVEL_GAP });
+    const children = (node.children || []).filter((id) => tree.nodes[id]);
+    if (children.length === 0) return;
+    const totalWidth = children.reduce((sum, id) => sum + widths.get(id), 0)
+      + Math.max(0, children.length - 1) * DECOMPOSE_SIBLING_GAP;
+    let cursor = centerX - totalWidth / 2;
+    for (const childId of children) {
+      const w = widths.get(childId);
+      assignPositions(childId, cursor + w / 2);
+      cursor += w + DECOMPOSE_SIBLING_GAP;
+    }
+  }
+
+  let cursorX = 0;
+  for (const layerId of tree.root_ids) {
+    if (!tree.nodes[layerId]) continue;
+    const w = widths.get(layerId);
+    assignPositions(layerId, cursorX + w / 2);
+    cursorX += w + DECOMPOSE_LAYER_GAP;
+  }
+
+  // Normalize so no box's left edge falls below a small left margin.
+  let minX = Infinity;
+  let maxX = -Infinity;
+  for (const [id, pos] of positions) {
+    const [w] = decomposeBoxSize(tree.nodes[id].level);
+    minX = Math.min(minX, pos.x - w / 2);
+    maxX = Math.max(maxX, pos.x + w / 2);
+  }
+  const shift = Number.isFinite(minX) ? -minX + 20 : 0;
+  for (const pos of positions.values()) pos.x += shift;
+
+  return { positions, totalWidth: Number.isFinite(maxX) ? maxX - minX + 40 : 400 };
+}
+
+function drawTreeDiagramEdges(node, tree, positions) {
+  const group = document.createElementNS(SVG_NS, "g");
+  const children = (node.children || []).filter((id) => tree.nodes[id]);
+  if (children.length === 0) return group;
+  const parentPos = positions.get(node.id);
+  const [, parentH] = decomposeBoxSize(node.level);
+  const parentBottom = parentPos.y + parentH / 2;
+  const childPositions = children.map((id) => ({ id, pos: positions.get(id) }));
+
+  if (children.length === 1) {
+    const only = childPositions[0];
+    const [, childH] = decomposeBoxSize(tree.nodes[only.id].level);
+    const line = document.createElementNS(SVG_NS, "line");
+    line.setAttribute("x1", parentPos.x);
+    line.setAttribute("y1", parentBottom);
+    line.setAttribute("x2", only.pos.x);
+    line.setAttribute("y2", only.pos.y - childH / 2);
+    line.setAttribute("class", "decompose-tree-edge");
+    group.appendChild(line);
+    return group;
+  }
+
+  const firstChildTop = childPositions[0].pos.y - decomposeBoxSize(tree.nodes[childPositions[0].id].level)[1] / 2;
+  const busY = parentBottom + (firstChildTop - parentBottom) / 2;
+
+  const trunk = document.createElementNS(SVG_NS, "line");
+  trunk.setAttribute("x1", parentPos.x);
+  trunk.setAttribute("y1", parentBottom);
+  trunk.setAttribute("x2", parentPos.x);
+  trunk.setAttribute("y2", busY);
+  trunk.setAttribute("class", "decompose-tree-edge");
+  group.appendChild(trunk);
+
+  const xs = childPositions.map((c) => c.pos.x);
+  const bus = document.createElementNS(SVG_NS, "line");
+  bus.setAttribute("x1", Math.min(...xs, parentPos.x));
+  bus.setAttribute("y1", busY);
+  bus.setAttribute("x2", Math.max(...xs, parentPos.x));
+  bus.setAttribute("y2", busY);
+  bus.setAttribute("class", "decompose-tree-edge");
+  group.appendChild(bus);
+
+  for (const { id, pos } of childPositions) {
+    const [, childH] = decomposeBoxSize(tree.nodes[id].level);
+    const branch = document.createElementNS(SVG_NS, "line");
+    branch.setAttribute("x1", pos.x);
+    branch.setAttribute("y1", busY);
+    branch.setAttribute("x2", pos.x);
+    branch.setAttribute("y2", pos.y - childH / 2);
+    branch.setAttribute("class", "decompose-tree-edge");
+    group.appendChild(branch);
+  }
+  return group;
+}
+
+function drawTreeDiagramNode(node, pos, onAtomicClick) {
+  const [w, h] = decomposeBoxSize(node.level);
+  const levelClass = node.level.replace(/\s+/g, "-").toLowerCase(); // "layer" | "sub-task" | "atomic-step"
+  const g = document.createElementNS(SVG_NS, "g");
+  g.setAttribute("class", `decompose-tree-node level-${levelClass}`);
+
+  const rect = document.createElementNS(SVG_NS, "rect");
+  rect.setAttribute("x", pos.x - w / 2);
+  rect.setAttribute("y", pos.y - h / 2);
+  rect.setAttribute("width", w);
+  rect.setAttribute("height", h);
+  rect.setAttribute("rx", 8);
+  g.appendChild(rect);
+
+  const text = document.createElementNS(SVG_NS, "text");
+  text.setAttribute("x", pos.x);
+  text.setAttribute("y", pos.y + 4);
+  text.setAttribute("text-anchor", "middle");
+  text.textContent = node.label.length > 26 ? `${node.label.slice(0, 24)}…` : node.label;
+  g.appendChild(text);
+
+  if (node.level === "Atomic step") {
+    g.addEventListener("click", () => onAtomicClick(node.id));
+  }
+  return g;
+}
+
+function renderTreeDiagram(tree, onAtomicClick) {
+  const { positions, totalWidth } = computeTreeLayout(tree);
+  const maxDepth = Math.max(...Object.values(DECOMPOSE_LEVEL_DEPTH));
+  const height = 40 + maxDepth * DECOMPOSE_LEVEL_GAP + decomposeBoxSize("Atomic step")[1] / 2 + 40;
+  const width = Math.max(totalWidth, 400);
+
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("width", width);
+  svg.setAttribute("height", height);
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.classList.add("decompose-tree-svg");
+
+  const edgesGroup = document.createElementNS(SVG_NS, "g");
+  const nodesGroup = document.createElementNS(SVG_NS, "g");
+  for (const node of Object.values(tree.nodes)) {
+    edgesGroup.appendChild(drawTreeDiagramEdges(node, tree, positions));
+  }
+  for (const node of Object.values(tree.nodes)) {
+    const pos = positions.get(node.id);
+    if (pos) nodesGroup.appendChild(drawTreeDiagramNode(node, pos, onAtomicClick));
+  }
+  svg.appendChild(edgesGroup);
+  svg.appendChild(nodesGroup);
+
+  const wrap = document.createElement("div");
+  wrap.className = "decompose-tree-diagram-wrap";
+  wrap.appendChild(svg);
+  return wrap;
+}
+
 function renderCanvasView() {
   const topRow = document.createElement("div");
   topRow.className = "decompose-canvas-topbar";
@@ -217,46 +411,10 @@ function renderCanvasView() {
   }
 
   const tree = state.tree;
-  const layersWrap = document.createElement("div");
-  layersWrap.className = "decompose-layers";
-  for (const layerId of tree.root_ids) {
-    const layer = tree.nodes[layerId];
-    if (!layer) continue;
-    const layerSection = document.createElement("div");
-    layerSection.className = "decompose-layer-section";
-
-    const layerHeading = document.createElement("div");
-    layerHeading.className = "decompose-layer-heading";
-    layerHeading.textContent = layer.label;
-    layerSection.appendChild(layerHeading);
-
-    for (const subId of layer.children) {
-      const sub = tree.nodes[subId];
-      if (!sub) continue;
-      const subHeading = document.createElement("div");
-      subHeading.className = "decompose-subtask-heading";
-      subHeading.textContent = sub.label;
-      layerSection.appendChild(subHeading);
-
-      const row = document.createElement("div");
-      row.className = "reasoning-node-row";
-      for (const atomicId of sub.children) {
-        const atomic = tree.nodes[atomicId];
-        if (!atomic) continue;
-        const card = document.createElement("div");
-        card.className = "reasoning-node-card";
-        card.textContent = atomic.label;
-        card.addEventListener("click", () => {
-          state = { ...state, selectedNodeId: atomic.id };
-          renderBoard();
-        });
-        row.appendChild(card);
-      }
-      layerSection.appendChild(row);
-    }
-    layersWrap.appendChild(layerSection);
-  }
-  decomposeBoard.appendChild(layersWrap);
+  decomposeBoard.appendChild(renderTreeDiagram(tree, (nodeId) => {
+    state = { ...state, selectedNodeId: nodeId };
+    renderBoard();
+  }));
 
   const modeToggle = document.createElement("div");
   modeToggle.className = "decompose-mode-toggle";

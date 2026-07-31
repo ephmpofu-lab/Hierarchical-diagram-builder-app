@@ -1747,31 +1747,65 @@ html[data-inspector-collapsed="true"] .health-footer {
   margin: 0;
 }
 
-.decompose-layers {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
+/* Real tree diagram (AMENDMENT 5, Fix D) -- replaces the old flat-card layer/sub-task
+   layout entirely. Same overflow-x:auto scroll-container pattern as the n8n SVG diagram
+   (.decompose-n8n-diagram-wrap) -- a wide tree scrolls, it never gets squashed illegible. */
+.decompose-tree-diagram-wrap {
+  overflow-x: auto;
+  padding: 8px 0 20px;
 }
 
-.decompose-layer-section {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px;
-  background: var(--surface-2);
+.decompose-tree-svg {
+  display: block;
 }
 
-.decompose-layer-heading {
-  font-size: 15px;
+.decompose-tree-edge {
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.decompose-tree-node rect {
+  stroke-width: 1.5;
+  cursor: default;
+}
+
+.decompose-tree-node text {
+  font-size: 11px;
+  fill: var(--text);
+  pointer-events: none;
+}
+
+/* Distinct size (already handled in JS via DECOMPOSE_BOX_SIZES) and color per C4 level, so
+   the hierarchy reads at a glance, not just from grouping. */
+.decompose-tree-node.level-layer rect {
+  fill: var(--accent-bg);
+  stroke: var(--accent);
+}
+
+.decompose-tree-node.level-layer text {
   font-weight: 700;
-  color: var(--text);
-  margin-bottom: 10px;
+  font-size: 13px;
 }
 
-.decompose-subtask-heading {
-  font-size: 12px;
+.decompose-tree-node.level-sub-task rect {
+  fill: var(--surface-2);
+  stroke: var(--border);
+}
+
+.decompose-tree-node.level-sub-task text {
   font-weight: 600;
-  color: var(--text-muted);
-  margin: 10px 0 6px;
+  font-size: 12px;
+  fill: var(--text-muted);
+}
+
+.decompose-tree-node.level-atomic-step rect {
+  fill: var(--surface);
+  stroke: var(--border);
+  cursor: pointer;
+}
+
+.decompose-tree-node.level-atomic-step:hover rect {
+  stroke: var(--accent);
 }
 
 .decompose-mode-toggle {
