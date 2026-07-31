@@ -104,14 +104,18 @@ def _generate_atomic_steps_for_subtask(
             "exactly one action, one named input (consumes), one named output (produces), "
             "a requires list (labels of EARLIER atomic steps -- from this or a prior layer "
             "-- whose output this one needs), variables (every configurable parameter, "
-            "including ones with sensible defaults), and pillar_tags (any of "
+            "including ones with sensible defaults), pillar_tags (any of "
             f"{', '.join(WELL_ARCHITECTED_PILLARS)} this step genuinely addresses, or "
-            "an empty list -- never force a tag that doesn't fit). Name steps by function, "
-            "never by implementation/vendor. Propose at most 3 atomic steps. "
+            "an empty list -- never force a tag that doesn't fit), and rules (the real "
+            "validation or business constraints governing this step, e.g. \"accepted "
+            "formats: pdf, docx, txt\" or \"max file size: 50MB\" -- only where a genuine "
+            "constraint exists; an empty list is correct for a step with none, never "
+            "invent one). Name steps by function, never by implementation/vendor. Propose "
+            "at most 3 atomic steps. "
             'Respond with strict JSON only: {"atomic_steps": [{"label": str, "consumes": '
             'str, "produces": str, "requires": [str], "terminal_output": bool, '
             '"variables": [{"name": str, "default": str or null, "description": str}], '
-            '"pillar_tags": [str], "notes": str}]}'
+            '"pillar_tags": [str], "rules": [str], "notes": str}]}'
         ),
         prompt=(
             f"Layer: {entry.layer}\nSub-task: {sub_task_label}\n"
@@ -141,12 +145,12 @@ def _split_step(candidate: dict, violation_messages: List[str], reasoning_contex
             "FIRST piece keeps the original's consumes and any external requires; the "
             "LAST piece keeps the original's exact produces value and terminal_output "
             "flag, so anything downstream that already depends on that output still "
-            "resolves. Distribute the original's variables and pillar_tags across the "
-            "pieces sensibly. "
+            "resolves. Distribute the original's variables, pillar_tags, and rules across "
+            "the pieces sensibly -- whichever piece a constraint actually governs. "
             'Respond with strict JSON only: {"atomic_steps": [{"label": str, "consumes": '
             'str, "produces": str, "requires": [str], "terminal_output": bool, '
             '"variables": [{"name": str, "default": str or null, "description": str}], '
-            '"pillar_tags": [str], "notes": str}]}'
+            '"pillar_tags": [str], "rules": [str], "notes": str}]}'
         ),
         prompt=(
             f"Original candidate step:\n{json.dumps(candidate)}\n\n"
@@ -225,6 +229,7 @@ def _run_stages_2_and_3(tree: DomainTaskTree, checklist: DomainChecklist, reason
                     terminal_output=bool(spec.get("terminal_output", False)),
                     requires=spec.get("requires", []) or [],  # still raw labels -- resolved below
                     variables=variables, pillar_tags=spec.get("pillar_tags", []) or [],
+                    rules=spec.get("rules", []) or [],
                     notes=spec.get("notes", ""),
                 )
                 if spec.get("produces"):
@@ -297,22 +302,24 @@ def refine_tree(tree: DomainTaskTree, instruction: str) -> DomainTaskTree:
             "You are the Decomposition Engine's refinement step. You are given a complete, "
             "already-frozen task tree as JSON (root_ids, and nodes: a flat id-keyed map of "
             "TaskTreeNode -- id/label/level/parent_id/children/requires/consumes/produces/"
-            "terminal_output/variables/pillar_tags/notes) and a natural-language instruction "
-            "describing ONE change to make. Apply only that change -- add, modify, or remove "
-            "the minimal set of nodes needed; never relabel, restructure, or remove anything "
-            "the instruction didn't ask about. CRITICAL: every existing node you don't "
-            "change must be returned byte-for-byte identical, same id -- anything "
-            "downstream referencing it by id depends on this. For any new node, invent a "
-            "new, unique id string not already used. Update parent_id/children/requires "
-            "consistently for whatever you add or remove. Every atomic step still needs "
-            "consumes and produces; any new output must be consumed downstream or marked "
-            "terminal_output. "
+            "terminal_output/variables/pillar_tags/rules/notes) and a natural-language "
+            "instruction describing ONE change to make. Apply only that change -- add, "
+            "modify, or remove the minimal set of nodes needed; never relabel, restructure, "
+            "or remove anything the instruction didn't ask about. CRITICAL: every existing "
+            "node you don't change must be returned byte-for-byte identical, same id -- "
+            "anything downstream referencing it by id depends on this. For any new node, "
+            "invent a new, unique id string not already used. Update parent_id/children/"
+            "requires consistently for whatever you add or remove. Every atomic step still "
+            "needs consumes and produces; any new output must be consumed downstream or "
+            "marked terminal_output; declare rules (real constraints, e.g. \"max file "
+            "size: 50MB\") only where they genuinely exist -- an empty list is fine. "
             'Respond with strict JSON only, the exact same shape as the tree you were '
             'given: {"domain": str, "version": int, "root_ids": [str], "nodes": '
             '{"<id>": {"id": str, "label": str, "level": str, "parent_id": str or null, '
             '"children": [str], "requires": [str], "consumes": str or null, "produces": '
             'str or null, "terminal_output": bool, "variables": [{"name": str, "default": '
-            'str or null, "description": str}], "pillar_tags": [str], "notes": str}}}'
+            'str or null, "description": str}], "pillar_tags": [str], "rules": [str], '
+            '"notes": str}}}'
         ),
         prompt=f"Current tree:\n{json.dumps(tree.model_dump())}\n\nInstruction: {instruction}",
         max_tokens=16000,

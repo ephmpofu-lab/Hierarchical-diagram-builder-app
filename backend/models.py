@@ -800,6 +800,12 @@ class TaskTreeNode(BaseModel):
     pillar_tags: List[str] = Field(default_factory=list)  # P8 -- which Well-Architected
     # pillar tag ids (rules/reference_architectures/well_architected.json) this Atomic step
     # addresses, if any; Atomic step level only
+    rules: List[str] = Field(default_factory=list)  # P4 (Dependency & Rules Rule, spec
+    # Section 3 addendum) -- real validation/business constraints governing this Atomic
+    # step, e.g. "accepted formats: pdf, docx, txt". Structurally always present (like
+    # `requires`) but an empty list is never itself a violation -- forcing a fabricated
+    # rule onto a genuinely rule-free step would be inventing content; only checked at the
+    # prompt level (Stage 3 asks for real constraints where they genuinely exist)
     notes: str = ""
 
 

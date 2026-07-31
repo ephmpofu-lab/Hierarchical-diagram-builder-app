@@ -509,6 +509,21 @@ function renderNodeDetailPanel() {
     drawer.appendChild(varsList);
   }
 
+  if (node.rules && node.rules.length > 0) {
+    const rulesLabel = document.createElement("div");
+    rulesLabel.className = "reasoning-section-label";
+    rulesLabel.textContent = "Rules";
+    drawer.appendChild(rulesLabel);
+    const rulesList = document.createElement("ul");
+    rulesList.className = "decompose-drawer-rules";
+    for (const rule of node.rules) {
+      const item = document.createElement("li");
+      item.textContent = rule;
+      rulesList.appendChild(item);
+    }
+    drawer.appendChild(rulesList);
+  }
+
   if (node.notes) {
     const notesLabel = document.createElement("div");
     notesLabel.className = "reasoning-section-label";

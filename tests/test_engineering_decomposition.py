@@ -60,11 +60,11 @@ def authed_client():
 
 
 def _atomic(id_, label, *, consumes=None, requires=None, produces=None, terminal_output=False,
-            variables=None, pillar_tags=None, notes="", parent_id=None):
+            variables=None, pillar_tags=None, rules=None, notes="", parent_id=None):
     return TaskTreeNode(
         id=id_, label=label, level="Atomic step", parent_id=parent_id, consumes=consumes,
         requires=requires or [], produces=produces, terminal_output=terminal_output,
-        variables=variables or [], pillar_tags=pillar_tags or [], notes=notes,
+        variables=variables or [], pillar_tags=pillar_tags or [], rules=rules or [], notes=notes,
     )
 
 
@@ -397,6 +397,28 @@ def test_generate_and_test_atomic_steps_splits_a_failing_candidate(monkeypatch):
     assert [c["label"] for c in result] == ["Fetch the document", "Chunk the document"]
 
 
+def test_split_step_response_preserves_rules_per_piece(monkeypatch):
+    entry = LayerChecklistEntry(layer="Ingestion", tdsp_stage="data_acquisition_ingestion",
+                                 input_contract=["source_config"], output_contract=["chunks"])
+    bad_candidate = {"label": "Fetch and chunk the document", "consumes": "source_config",
+                      "produces": "chunks", "requires": [], "terminal_output": True,
+                      "variables": [], "pillar_tags": [], "rules": ["max file size: 50MB"], "notes": ""}
+    split_pieces = [
+        {"label": "Fetch the document", "consumes": "source_config", "produces": "raw_document",
+         "requires": [], "terminal_output": False, "variables": [], "pillar_tags": [],
+         "rules": ["max file size: 50MB"], "notes": ""},
+        {"label": "Chunk the document", "consumes": "raw_document", "produces": "chunks",
+         "requires": ["Fetch the document"], "terminal_output": True, "variables": [],
+         "pillar_tags": [], "rules": [], "notes": ""},
+    ]
+    mock = _stage_router(stage3={"atomic_steps": [bad_candidate]}, split={"atomic_steps": split_pieces})
+    monkeypatch.setattr(decompose_engine, "_ask_json", mock)
+
+    result = decompose_engine._generate_and_test_atomic_steps(entry, "Load", [], "context")
+    assert result[0]["rules"] == ["max file size: 50MB"]
+    assert result[1]["rules"] == []
+
+
 def test_generate_and_test_atomic_steps_accepts_clean_candidate_without_splitting(monkeypatch):
     entry = LayerChecklistEntry(layer="Ingestion", tdsp_stage="data_acquisition_ingestion")
     clean_candidate = {"label": "Fetch the document", "consumes": "source_config",
@@ -420,11 +442,12 @@ def test_propose_tree_runs_all_stages_and_produces_a_valid_tree(monkeypatch):
     stage2 = {"sub_tasks": [{"label": "Load and chunk"}]}
     stage3 = {"atomic_steps": [
         {"label": "Read source file", "consumes": "source_config", "produces": "raw_text",
-         "requires": [], "terminal_output": False, "variables": [], "pillar_tags": _PILLARS_A, "notes": ""},
+         "requires": [], "terminal_output": False, "variables": [], "pillar_tags": _PILLARS_A,
+         "rules": ["accepted formats: pdf, docx, txt"], "notes": ""},
         {"label": "Split text into chunks", "consumes": "raw_text", "requires": ["Read source file"],
          "produces": "chunks", "terminal_output": True,
          "variables": [{"name": "chunk_size", "default": "500", "description": ""}],
-         "pillar_tags": _PILLARS_B, "notes": ""},
+         "pillar_tags": _PILLARS_B, "rules": [], "notes": ""},
     ]}
     monkeypatch.setattr(decompose_engine, "_ask_json", _stage_router(stage2=stage2, stage3=stage3))
     checklist = _checklist("Ingestion")
@@ -436,6 +459,10 @@ def test_propose_tree_runs_all_stages_and_produces_a_valid_tree(monkeypatch):
     chunker = next(n for n in atomic_steps if n.label == "Split text into chunks")
     reader = next(n for n in atomic_steps if n.label == "Read source file")
     assert chunker.requires == [reader.id]
+    # rules[] round-trips from Stage 3's response into the frozen tree (Fix B); an empty
+    # list on another step is not itself flagged (never forced non-empty).
+    assert reader.rules == ["accepted formats: pdf, docx, txt"]
+    assert chunker.rules == []
     # Stage 4 grounded variables in the real n8n schema too, not just Stage 3's own list.
     assert any(v.name == "chunk_size" for v in reader.variables) or any(v.name == "chunk_size" for v in chunker.variables)
     result = validate_tree(tree, checklist)
