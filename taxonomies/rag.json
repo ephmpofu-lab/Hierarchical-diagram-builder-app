@@ -1,0 +1,1497 @@
+{
+  "domain": "rag",
+  "version": 1,
+  "root_ids": [
+    "7312d69e-b185-417e-9ea9-b1b1c43fdf82",
+    "6e92eb1d-00e8-4b92-a141-32774a301418",
+    "6aeba14c-ccb5-4bf4-86ca-3d611ff7144e",
+    "abf8cbff-56c3-4c31-9bce-3654f1e675aa",
+    "c615502d-42c4-4f22-934a-cd30b2c25541",
+    "ef82b34b-a3db-4194-a9ba-9f0aaf765ab1",
+    "fed2db55-17b4-4d8c-8d7d-a8c5178d6a3e",
+    "5affb3c1-b355-4b2d-9f1e-690583ce4eab"
+  ],
+  "nodes": {
+    "da8039a6-8f99-4fb7-ac99-d37811527628": {
+      "id": "da8039a6-8f99-4fb7-ac99-d37811527628",
+      "label": "define_source_scope",
+      "level": "Atomic step",
+      "parent_id": "5fac3edf-a152-4462-a24b-b666cec78782",
+      "children": [],
+      "requires": [],
+      "produces": "source_scope",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "source_locations",
+          "default": null,
+          "description": "Locations or identifiers of document sources to ingest."
+        },
+        {
+          "name": "source_types",
+          "default": "documents,web_pages,records",
+          "description": "Allowed source categories for ingestion."
+        },
+        {
+          "name": "inclusion_rules",
+          "default": "all_accessible_relevant_sources",
+          "description": "Rules determining which sources are included."
+        },
+        {
+          "name": "exclusion_rules",
+          "default": "exclude_unlicensed_or_sensitive_sources",
+          "description": "Rules determining which sources are excluded."
+        }
+      ],
+      "notes": "Establishes the allowed corpus boundaries before collection."
+    },
+    "a8b2dc48-7ddc-4697-8908-169c791e4b23": {
+      "id": "a8b2dc48-7ddc-4697-8908-169c791e4b23",
+      "label": "collect_raw_documents",
+      "level": "Atomic step",
+      "parent_id": "5fac3edf-a152-4462-a24b-b666cec78782",
+      "children": [],
+      "requires": [
+        "da8039a6-8f99-4fb7-ac99-d37811527628"
+      ],
+      "produces": "raw_documents",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "collection_batch_size",
+          "default": "100",
+          "description": "Number of source items collected per batch."
+        },
+        {
+          "name": "access_credentials",
+          "default": null,
+          "description": "Credentials or permissions needed to access sources."
+        },
+        {
+          "name": "collection_timeout_seconds",
+          "default": "300",
+          "description": "Maximum time allowed for a collection operation."
+        },
+        {
+          "name": "retry_count",
+          "default": "3",
+          "description": "Number of retry attempts for transient collection failures."
+        }
+      ],
+      "notes": "Collects source content as raw documents."
+    },
+    "5fac3edf-a152-4462-a24b-b666cec78782": {
+      "id": "5fac3edf-a152-4462-a24b-b666cec78782",
+      "label": "Source acquisition",
+      "level": "Sub-task",
+      "parent_id": "7312d69e-b185-417e-9ea9-b1b1c43fdf82",
+      "children": [
+        "da8039a6-8f99-4fb7-ac99-d37811527628",
+        "a8b2dc48-7ddc-4697-8908-169c791e4b23"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "bb18c728-3d53-4ec1-86d7-76e3075d8079": {
+      "id": "bb18c728-3d53-4ec1-86d7-76e3075d8079",
+      "label": "extract_document_metadata",
+      "level": "Atomic step",
+      "parent_id": "b4135916-3512-4ce7-8d99-a50ca8bd26a6",
+      "children": [],
+      "requires": [
+        "a8b2dc48-7ddc-4697-8908-169c791e4b23"
+      ],
+      "produces": "document_metadata",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "metadata_fields",
+          "default": "source_id,title,author,timestamp,uri,license",
+          "description": "Metadata fields extracted from each document."
+        },
+        {
+          "name": "timestamp_format",
+          "default": "ISO-8601",
+          "description": "Canonical timestamp format for extracted dates."
+        },
+        {
+          "name": "missing_value_policy",
+          "default": "set_null",
+          "description": "How missing metadata fields are represented."
+        },
+        {
+          "name": "source_id_strategy",
+          "default": "stable_hash_of_source_uri",
+          "description": "Method for assigning stable source identifiers."
+        }
+      ],
+      "notes": "Produces descriptive and provenance metadata for downstream filtering and citation."
+    },
+    "9720ae3e-23d6-452e-a35e-c22e6960259a": {
+      "id": "9720ae3e-23d6-452e-a35e-c22e6960259a",
+      "label": "validate_ingested_documents",
+      "level": "Atomic step",
+      "parent_id": "b4135916-3512-4ce7-8d99-a50ca8bd26a6",
+      "children": [],
+      "requires": [
+        "a8b2dc48-7ddc-4697-8908-169c791e4b23",
+        "bb18c728-3d53-4ec1-86d7-76e3075d8079"
+      ],
+      "produces": "validated_documents",
+      "terminal_output": true,
+      "variables": [
+        {
+          "name": "minimum_content_length",
+          "default": "50",
+          "description": "Minimum number of characters required for a document to be retained."
+        },
+        {
+          "name": "allowed_mime_types",
+          "default": "text/plain,text/html,application/pdf",
+          "description": "Content types accepted for processing."
+        },
+        {
+          "name": "deduplicate_sources",
+          "default": "true",
+          "description": "Whether duplicate source documents are removed."
+        },
+        {
+          "name": "invalid_document_policy",
+          "default": "quarantine",
+          "description": "How invalid documents are handled."
+        }
+      ],
+      "notes": "Filters unusable or duplicate documents before preprocessing."
+    },
+    "b4135916-3512-4ce7-8d99-a50ca8bd26a6": {
+      "id": "b4135916-3512-4ce7-8d99-a50ca8bd26a6",
+      "label": "Ingestion validation",
+      "level": "Sub-task",
+      "parent_id": "7312d69e-b185-417e-9ea9-b1b1c43fdf82",
+      "children": [
+        "bb18c728-3d53-4ec1-86d7-76e3075d8079",
+        "9720ae3e-23d6-452e-a35e-c22e6960259a"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "7312d69e-b185-417e-9ea9-b1b1c43fdf82": {
+      "id": "7312d69e-b185-417e-9ea9-b1b1c43fdf82",
+      "label": "Ingestion",
+      "level": "Layer",
+      "parent_id": null,
+      "children": [
+        "5fac3edf-a152-4462-a24b-b666cec78782",
+        "b4135916-3512-4ce7-8d99-a50ca8bd26a6"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "f1e1f0a8-dc01-4d14-ba7a-36cf97566e17": {
+      "id": "f1e1f0a8-dc01-4d14-ba7a-36cf97566e17",
+      "label": "parse_document_text",
+      "level": "Atomic step",
+      "parent_id": "348bf2c6-13f2-4099-854e-332df7527a8f",
+      "children": [],
+      "requires": [],
+      "produces": "parsed_text_documents",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "ocr_enabled",
+          "default": "true",
+          "description": "Whether optical character recognition is applied to scanned content."
+        },
+        {
+          "name": "preserve_tables",
+          "default": "true",
+          "description": "Whether table structures are preserved when possible."
+        },
+        {
+          "name": "preserve_headings",
+          "default": "true",
+          "description": "Whether heading hierarchy is retained."
+        },
+        {
+          "name": "parser_error_policy",
+          "default": "skip_failed_document",
+          "description": "How parsing failures are handled."
+        }
+      ],
+      "notes": "Converts validated documents into textual representations."
+    },
+    "b3f36085-8212-48ff-aee2-e76f437e7841": {
+      "id": "b3f36085-8212-48ff-aee2-e76f437e7841",
+      "label": "normalize_document_text",
+      "level": "Atomic step",
+      "parent_id": "348bf2c6-13f2-4099-854e-332df7527a8f",
+      "children": [],
+      "requires": [
+        "f1e1f0a8-dc01-4d14-ba7a-36cf97566e17"
+      ],
+      "produces": "normalized_text_documents",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "unicode_normalization",
+          "default": "NFC",
+          "description": "Unicode normalization form applied to text."
+        },
+        {
+          "name": "whitespace_policy",
+          "default": "collapse_repeated_whitespace",
+          "description": "Whitespace cleanup behavior."
+        },
+        {
+          "name": "case_policy",
+          "default": "preserve_case",
+          "description": "Whether text case is preserved or transformed."
+        },
+        {
+          "name": "boilerplate_removal",
+          "default": "true",
+          "description": "Whether navigation, headers, footers, and boilerplate are removed."
+        }
+      ],
+      "notes": "Cleans parsed text while preserving semantic content."
+    },
+    "348bf2c6-13f2-4099-854e-332df7527a8f": {
+      "id": "348bf2c6-13f2-4099-854e-332df7527a8f",
+      "label": "Content normalization",
+      "level": "Sub-task",
+      "parent_id": "6e92eb1d-00e8-4b92-a141-32774a301418",
+      "children": [
+        "f1e1f0a8-dc01-4d14-ba7a-36cf97566e17",
+        "b3f36085-8212-48ff-aee2-e76f437e7841"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "30f6d6cf-bd5f-4e7d-a744-3b893192c1c4": {
+      "id": "30f6d6cf-bd5f-4e7d-a744-3b893192c1c4",
+      "label": "split_text_into_chunks",
+      "level": "Atomic step",
+      "parent_id": "a998fc00-1dce-4dba-891d-b42972e0c551",
+      "children": [],
+      "requires": [
+        "b3f36085-8212-48ff-aee2-e76f437e7841"
+      ],
+      "produces": "text_chunks",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "chunk_size_tokens",
+          "default": "500",
+          "description": "Target maximum token length of each chunk."
+        },
+        {
+          "name": "chunk_overlap_tokens",
+          "default": "75",
+          "description": "Token overlap retained between adjacent chunks."
+        },
+        {
+          "name": "split_strategy",
+          "default": "semantic_then_token_boundary",
+          "description": "Chunk boundary strategy."
+        },
+        {
+          "name": "minimum_chunk_tokens",
+          "default": "50",
+          "description": "Minimum token length for retaining a chunk."
+        }
+      ],
+      "notes": "Segments normalized documents into retrievable units."
+    },
+    "a2eab769-afcd-4042-b8a5-41779df5c3bf": {
+      "id": "a2eab769-afcd-4042-b8a5-41779df5c3bf",
+      "label": "attach_chunk_metadata",
+      "level": "Atomic step",
+      "parent_id": "a998fc00-1dce-4dba-891d-b42972e0c551",
+      "children": [],
+      "requires": [
+        "30f6d6cf-bd5f-4e7d-a744-3b893192c1c4",
+        "bb18c728-3d53-4ec1-86d7-76e3075d8079"
+      ],
+      "produces": "metadata_enriched_chunks",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "chunk_id_strategy",
+          "default": "stable_hash_of_source_id_and_position",
+          "description": "Method for assigning stable chunk identifiers."
+        },
+        {
+          "name": "include_source_metadata",
+          "default": "true",
+          "description": "Whether source-level metadata is copied to chunks."
+        },
+        {
+          "name": "include_chunk_position",
+          "default": "true",
+          "description": "Whether chunk ordering and offsets are stored."
+        },
+        {
+          "name": "citation_fields",
+          "default": "source_id,title,uri,page,section",
+          "description": "Fields retained for citation generation."
+        }
+      ],
+      "notes": "Associates each chunk with provenance and retrieval metadata."
+    },
+    "a998fc00-1dce-4dba-891d-b42972e0c551": {
+      "id": "a998fc00-1dce-4dba-891d-b42972e0c551",
+      "label": "Chunk preparation",
+      "level": "Sub-task",
+      "parent_id": "6e92eb1d-00e8-4b92-a141-32774a301418",
+      "children": [
+        "30f6d6cf-bd5f-4e7d-a744-3b893192c1c4",
+        "a2eab769-afcd-4042-b8a5-41779df5c3bf"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "6e92eb1d-00e8-4b92-a141-32774a301418": {
+      "id": "6e92eb1d-00e8-4b92-a141-32774a301418",
+      "label": "Preprocessing",
+      "level": "Layer",
+      "parent_id": null,
+      "children": [
+        "348bf2c6-13f2-4099-854e-332df7527a8f",
+        "a998fc00-1dce-4dba-891d-b42972e0c551"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "9ac6b1f8-90b4-40ec-9779-b5cb665e9fb5": {
+      "id": "9ac6b1f8-90b4-40ec-9779-b5cb665e9fb5",
+      "label": "prepare_chunk_embedding_text",
+      "level": "Atomic step",
+      "parent_id": "e01b2c62-689f-4111-a45c-c06909848bf5",
+      "children": [],
+      "requires": [
+        "a2eab769-afcd-4042-b8a5-41779df5c3bf"
+      ],
+      "produces": "chunk_embedding_inputs",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "include_title_in_embedding_text",
+          "default": "true",
+          "description": "Whether document title is prepended to chunk text before embedding."
+        },
+        {
+          "name": "include_section_in_embedding_text",
+          "default": "true",
+          "description": "Whether section heading is included in embedding input."
+        },
+        {
+          "name": "max_embedding_input_tokens",
+          "default": "512",
+          "description": "Maximum token length supplied to the embedding step."
+        },
+        {
+          "name": "truncation_policy",
+          "default": "truncate_tail",
+          "description": "How overlength embedding inputs are shortened."
+        }
+      ],
+      "notes": "Formats chunk text into embedding-ready strings."
+    },
+    "2b399497-8ff5-4abe-a2e0-bb12814b7386": {
+      "id": "2b399497-8ff5-4abe-a2e0-bb12814b7386",
+      "label": "prepare_query_embedding_text",
+      "level": "Atomic step",
+      "parent_id": "e01b2c62-689f-4111-a45c-c06909848bf5",
+      "children": [],
+      "requires": [
+        "926f756c-bf1c-4fe2-a49d-30097c6e820b"
+      ],
+      "produces": "query_embedding_input",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "query_normalization_policy",
+          "default": "trim_and_collapse_whitespace",
+          "description": "Normalization applied to the query before embedding."
+        },
+        {
+          "name": "include_conversation_context",
+          "default": "false",
+          "description": "Whether prior user turns are included in query embedding input."
+        },
+        {
+          "name": "max_query_embedding_tokens",
+          "default": "128",
+          "description": "Maximum token length of query embedding input."
+        },
+        {
+          "name": "empty_query_policy",
+          "default": "reject",
+          "description": "How empty queries are handled."
+        }
+      ],
+      "notes": "Formats a user query into embedding-ready text."
+    },
+    "e01b2c62-689f-4111-a45c-c06909848bf5": {
+      "id": "e01b2c62-689f-4111-a45c-c06909848bf5",
+      "label": "Embedding input preparation",
+      "level": "Sub-task",
+      "parent_id": "6aeba14c-ccb5-4bf4-86ca-3d611ff7144e",
+      "children": [
+        "9ac6b1f8-90b4-40ec-9779-b5cb665e9fb5",
+        "2b399497-8ff5-4abe-a2e0-bb12814b7386"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "a8b77bb7-d529-432c-a5d3-32c7ffc8b56c": {
+      "id": "a8b77bb7-d529-432c-a5d3-32c7ffc8b56c",
+      "label": "embed_chunks",
+      "level": "Atomic step",
+      "parent_id": "4615c55f-ebae-433e-b77c-0aa697de3876",
+      "children": [],
+      "requires": [
+        "9ac6b1f8-90b4-40ec-9779-b5cb665e9fb5"
+      ],
+      "produces": "chunk_vectors",
+      "terminal_output": true,
+      "variables": [
+        {
+          "name": "embedding_dimension",
+          "default": "768",
+          "description": "Dimensionality of chunk embedding vectors."
+        },
+        {
+          "name": "embedding_batch_size",
+          "default": "64",
+          "description": "Number of chunks embedded per batch."
+        },
+        {
+          "name": "embedding_precision",
+          "default": "float32",
+          "description": "Numeric precision of generated embeddings."
+        },
+        {
+          "name": "embedding_version",
+          "default": "current",
+          "description": "Version identifier for the embedding configuration."
+        }
+      ],
+      "notes": "Creates vector representations for document chunks."
+    },
+    "f0ca9ae4-6b1a-43eb-ad01-a63647048cdd": {
+      "id": "f0ca9ae4-6b1a-43eb-ad01-a63647048cdd",
+      "label": "embed_query",
+      "level": "Atomic step",
+      "parent_id": "4615c55f-ebae-433e-b77c-0aa697de3876",
+      "children": [],
+      "requires": [
+        "2b399497-8ff5-4abe-a2e0-bb12814b7386"
+      ],
+      "produces": "query_vector",
+      "terminal_output": true,
+      "variables": [
+        {
+          "name": "query_embedding_dimension",
+          "default": "768",
+          "description": "Dimensionality of query embedding vector."
+        },
+        {
+          "name": "query_embedding_precision",
+          "default": "float32",
+          "description": "Numeric precision of the query vector."
+        },
+        {
+          "name": "query_embedding_version",
+          "default": "current",
+          "description": "Version identifier for query embedding configuration."
+        },
+        {
+          "name": "query_embedding_timeout_seconds",
+          "default": "30",
+          "description": "Maximum time allowed to create a query embedding."
+        }
+      ],
+      "notes": "Creates a vector representation for the retrieval query."
+    },
+    "4615c55f-ebae-433e-b77c-0aa697de3876": {
+      "id": "4615c55f-ebae-433e-b77c-0aa697de3876",
+      "label": "Vector creation",
+      "level": "Sub-task",
+      "parent_id": "6aeba14c-ccb5-4bf4-86ca-3d611ff7144e",
+      "children": [
+        "a8b77bb7-d529-432c-a5d3-32c7ffc8b56c",
+        "f0ca9ae4-6b1a-43eb-ad01-a63647048cdd"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "6aeba14c-ccb5-4bf4-86ca-3d611ff7144e": {
+      "id": "6aeba14c-ccb5-4bf4-86ca-3d611ff7144e",
+      "label": "Embedding",
+      "level": "Layer",
+      "parent_id": null,
+      "children": [
+        "e01b2c62-689f-4111-a45c-c06909848bf5",
+        "4615c55f-ebae-433e-b77c-0aa697de3876"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "610c7605-8285-4e56-b8e1-b3982a0a8e8d": {
+      "id": "610c7605-8285-4e56-b8e1-b3982a0a8e8d",
+      "label": "create_vector_index_schema",
+      "level": "Atomic step",
+      "parent_id": "4d61fedf-d2c5-44e2-81d8-e1b510096a60",
+      "children": [],
+      "requires": [
+        "a2eab769-afcd-4042-b8a5-41779df5c3bf"
+      ],
+      "produces": "vector_index_schema",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "similarity_metric",
+          "default": "cosine",
+          "description": "Distance or similarity metric used by the vector index."
+        },
+        {
+          "name": "metadata_filter_fields",
+          "default": "source_id,title,timestamp,license,section",
+          "description": "Metadata fields indexed for filtering."
+        },
+        {
+          "name": "id_field",
+          "default": "chunk_id",
+          "description": "Unique identifier field for indexed chunks."
+        },
+        {
+          "name": "schema_version",
+          "default": "1",
+          "description": "Version number of the index schema."
+        }
+      ],
+      "notes": "Defines how embeddings and metadata are represented in storage."
+    },
+    "f516480a-fd84-4173-b71e-7c63d0722536": {
+      "id": "f516480a-fd84-4173-b71e-7c63d0722536",
+      "label": "write_chunks_to_vector_index",
+      "level": "Atomic step",
+      "parent_id": "4d61fedf-d2c5-44e2-81d8-e1b510096a60",
+      "children": [],
+      "requires": [
+        "610c7605-8285-4e56-b8e1-b3982a0a8e8d",
+        "a2eab769-afcd-4042-b8a5-41779df5c3bf"
+      ],
+      "produces": "stored_vector_index",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "upsert_policy",
+          "default": "replace_same_chunk_id",
+          "description": "How existing records with matching chunk identifiers are handled."
+        },
+        {
+          "name": "write_batch_size",
+          "default": "100",
+          "description": "Number of chunk records written per batch."
+        },
+        {
+          "name": "consistency_policy",
+          "default": "wait_for_commit",
+          "description": "Durability requirement after writing records."
+        },
+        {
+          "name": "write_failure_policy",
+          "default": "retry_then_quarantine",
+          "description": "How failed writes are handled."
+        }
+      ],
+      "notes": "Stores vectors, chunk text, and metadata for retrieval."
+    },
+    "4d61fedf-d2c5-44e2-81d8-e1b510096a60": {
+      "id": "4d61fedf-d2c5-44e2-81d8-e1b510096a60",
+      "label": "Index construction",
+      "level": "Sub-task",
+      "parent_id": "abf8cbff-56c3-4c31-9bce-3654f1e675aa",
+      "children": [
+        "610c7605-8285-4e56-b8e1-b3982a0a8e8d",
+        "f516480a-fd84-4173-b71e-7c63d0722536"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "0d4c6e71-9bbd-4afe-9d8a-59ec30443886": {
+      "id": "0d4c6e71-9bbd-4afe-9d8a-59ec30443886",
+      "label": "verify_index_integrity",
+      "level": "Atomic step",
+      "parent_id": "ace3444c-da50-4d03-b64f-d6a1d64938ad",
+      "children": [],
+      "requires": [
+        "f516480a-fd84-4173-b71e-7c63d0722536"
+      ],
+      "produces": "index_integrity_report",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "sample_rate",
+          "default": "0.01",
+          "description": "Fraction of indexed records sampled for verification."
+        },
+        {
+          "name": "require_vector_presence",
+          "default": "true",
+          "description": "Whether every indexed record must contain a vector."
+        },
+        {
+          "name": "require_metadata_presence",
+          "default": "true",
+          "description": "Whether every indexed record must contain required metadata."
+        },
+        {
+          "name": "integrity_failure_policy",
+          "default": "block_retrieval",
+          "description": "Action taken if index verification fails."
+        }
+      ],
+      "notes": "Checks that stored records are retrievable and complete."
+    },
+    "26cfe5f7-eba8-40dd-a004-bf492e635301": {
+      "id": "26cfe5f7-eba8-40dd-a004-bf492e635301",
+      "label": "publish_retrieval_index",
+      "level": "Atomic step",
+      "parent_id": "ace3444c-da50-4d03-b64f-d6a1d64938ad",
+      "children": [],
+      "requires": [
+        "0d4c6e71-9bbd-4afe-9d8a-59ec30443886"
+      ],
+      "produces": "retrieval_ready_index",
+      "terminal_output": true,
+      "variables": [
+        {
+          "name": "publish_mode",
+          "default": "atomic_swap",
+          "description": "How the verified index becomes active."
+        },
+        {
+          "name": "index_alias",
+          "default": "active_rag_index",
+          "description": "Logical name used by retrieval steps."
+        },
+        {
+          "name": "rollback_enabled",
+          "default": "true",
+          "description": "Whether previous index can be restored."
+        },
+        {
+          "name": "publish_timestamp_format",
+          "default": "ISO-8601",
+          "description": "Timestamp format for index publication metadata."
+        }
+      ],
+      "notes": "Makes the verified index available for query-time retrieval."
+    },
+    "ace3444c-da50-4d03-b64f-d6a1d64938ad": {
+      "id": "ace3444c-da50-4d03-b64f-d6a1d64938ad",
+      "label": "Storage verification",
+      "level": "Sub-task",
+      "parent_id": "abf8cbff-56c3-4c31-9bce-3654f1e675aa",
+      "children": [
+        "0d4c6e71-9bbd-4afe-9d8a-59ec30443886",
+        "26cfe5f7-eba8-40dd-a004-bf492e635301"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "abf8cbff-56c3-4c31-9bce-3654f1e675aa": {
+      "id": "abf8cbff-56c3-4c31-9bce-3654f1e675aa",
+      "label": "Storage",
+      "level": "Layer",
+      "parent_id": null,
+      "children": [
+        "4d61fedf-d2c5-44e2-81d8-e1b510096a60",
+        "ace3444c-da50-4d03-b64f-d6a1d64938ad"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "926f756c-bf1c-4fe2-a49d-30097c6e820b": {
+      "id": "926f756c-bf1c-4fe2-a49d-30097c6e820b",
+      "label": "receive_user_query",
+      "level": "Atomic step",
+      "parent_id": "22db9486-d43f-457f-afad-794b7886d7c5",
+      "children": [],
+      "requires": [],
+      "produces": "user_query",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "query_text",
+          "default": null,
+          "description": "Natural-language user question or instruction."
+        },
+        {
+          "name": "user_id",
+          "default": null,
+          "description": "Optional requester identifier for personalization or auditing."
+        },
+        {
+          "name": "session_id",
+          "default": null,
+          "description": "Optional conversation session identifier."
+        },
+        {
+          "name": "query_timestamp_format",
+          "default": "ISO-8601",
+          "description": "Timestamp format for the received query."
+        }
+      ],
+      "notes": "Accepts the user query that drives retrieval and generation."
+    },
+    "ac20fbb2-beef-4e44-b96c-4ed1473e06dd": {
+      "id": "ac20fbb2-beef-4e44-b96c-4ed1473e06dd",
+      "label": "derive_retrieval_filters",
+      "level": "Atomic step",
+      "parent_id": "22db9486-d43f-457f-afad-794b7886d7c5",
+      "children": [],
+      "requires": [
+        "926f756c-bf1c-4fe2-a49d-30097c6e820b"
+      ],
+      "produces": "retrieval_filters",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "allowed_sources",
+          "default": "all_published_sources",
+          "description": "Source IDs or collections eligible for retrieval."
+        },
+        {
+          "name": "time_window",
+          "default": null,
+          "description": "Optional timestamp range filter."
+        },
+        {
+          "name": "license_filter",
+          "default": "usable_for_answering",
+          "description": "License or policy constraint applied to retrieved chunks."
+        },
+        {
+          "name": "metadata_filter_policy",
+          "default": "strict",
+          "description": "How metadata filters are applied."
+        }
+      ],
+      "notes": "Creates metadata constraints for the retrieval search."
+    },
+    "22db9486-d43f-457f-afad-794b7886d7c5": {
+      "id": "22db9486-d43f-457f-afad-794b7886d7c5",
+      "label": "Query intake",
+      "level": "Sub-task",
+      "parent_id": "c615502d-42c4-4f22-934a-cd30b2c25541",
+      "children": [
+        "926f756c-bf1c-4fe2-a49d-30097c6e820b",
+        "ac20fbb2-beef-4e44-b96c-4ed1473e06dd"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "bd6cb4b2-fed6-4fa9-8701-39c699a2592d": {
+      "id": "bd6cb4b2-fed6-4fa9-8701-39c699a2592d",
+      "label": "search_relevant_chunks",
+      "level": "Atomic step",
+      "parent_id": "b74fcffe-61be-41f3-acc4-e745be3450e3",
+      "children": [],
+      "requires": [
+        "ac20fbb2-beef-4e44-b96c-4ed1473e06dd"
+      ],
+      "produces": "candidate_chunks",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "top_k",
+          "default": "20",
+          "description": "Number of candidate chunks initially retrieved."
+        },
+        {
+          "name": "similarity_threshold",
+          "default": "0.2",
+          "description": "Minimum similarity score for retrieved candidates."
+        },
+        {
+          "name": "filter_mode",
+          "default": "pre_filter",
+          "description": "Whether metadata filtering happens before or after vector search."
+        },
+        {
+          "name": "search_timeout_seconds",
+          "default": "10",
+          "description": "Maximum time allowed for retrieval search."
+        }
+      ],
+      "notes": "Finds candidate chunks relevant to the embedded query."
+    },
+    "7cc0e5c1-9c67-4479-9d1f-6099c67ee8e6": {
+      "id": "7cc0e5c1-9c67-4479-9d1f-6099c67ee8e6",
+      "label": "rank_retrieved_chunks",
+      "level": "Atomic step",
+      "parent_id": "b74fcffe-61be-41f3-acc4-e745be3450e3",
+      "children": [],
+      "requires": [
+        "bd6cb4b2-fed6-4fa9-8701-39c699a2592d",
+        "926f756c-bf1c-4fe2-a49d-30097c6e820b"
+      ],
+      "produces": "ranked_chunks",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "rerank_top_n",
+          "default": "10",
+          "description": "Number of candidates retained after ranking."
+        },
+        {
+          "name": "ranking_features",
+          "default": "semantic_similarity,metadata_match,recency",
+          "description": "Signals used to rank candidate chunks."
+        },
+        {
+          "name": "diversity_penalty",
+          "default": "0.1",
+          "description": "Penalty applied to redundant chunks."
+        },
+        {
+          "name": "minimum_rank_score",
+          "default": "0.0",
+          "description": "Minimum score required for a ranked chunk to be retained."
+        }
+      ],
+      "notes": "Orders candidate chunks by usefulness for answer generation."
+    },
+    "b74fcffe-61be-41f3-acc4-e745be3450e3": {
+      "id": "b74fcffe-61be-41f3-acc4-e745be3450e3",
+      "label": "Context search",
+      "level": "Sub-task",
+      "parent_id": "c615502d-42c4-4f22-934a-cd30b2c25541",
+      "children": [
+        "bd6cb4b2-fed6-4fa9-8701-39c699a2592d",
+        "7cc0e5c1-9c67-4479-9d1f-6099c67ee8e6"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "c615502d-42c4-4f22-934a-cd30b2c25541": {
+      "id": "c615502d-42c4-4f22-934a-cd30b2c25541",
+      "label": "Retrieval",
+      "level": "Layer",
+      "parent_id": null,
+      "children": [
+        "22db9486-d43f-457f-afad-794b7886d7c5",
+        "b74fcffe-61be-41f3-acc4-e745be3450e3"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "d0906af3-777d-4b59-a9b8-aa85d92f4a4f": {
+      "id": "d0906af3-777d-4b59-a9b8-aa85d92f4a4f",
+      "label": "select_context_chunks",
+      "level": "Atomic step",
+      "parent_id": "ece53dba-76cd-4c5a-9a7d-284ca7d6235b",
+      "children": [],
+      "requires": [
+        "7cc0e5c1-9c67-4479-9d1f-6099c67ee8e6"
+      ],
+      "produces": "selected_context_chunks",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "max_context_chunks",
+          "default": "5",
+          "description": "Maximum number of chunks included in the prompt context."
+        },
+        {
+          "name": "max_context_tokens",
+          "default": "3000",
+          "description": "Maximum total token budget for retrieved context."
+        },
+        {
+          "name": "deduplicate_near_duplicates",
+          "default": "true",
+          "description": "Whether highly similar chunks are removed."
+        },
+        {
+          "name": "selection_policy",
+          "default": "highest_rank_with_diversity",
+          "description": "Policy used to select final context chunks."
+        }
+      ],
+      "notes": "Chooses the final retrieval context for prompt construction."
+    },
+    "77f08593-7d19-4be4-a359-3bd2a6364ff3": {
+      "id": "77f08593-7d19-4be4-a359-3bd2a6364ff3",
+      "label": "format_context_block",
+      "level": "Atomic step",
+      "parent_id": "ece53dba-76cd-4c5a-9a7d-284ca7d6235b",
+      "children": [],
+      "requires": [
+        "d0906af3-777d-4b59-a9b8-aa85d92f4a4f"
+      ],
+      "produces": "formatted_context_block",
+      "terminal_output": true,
+      "variables": [
+        {
+          "name": "citation_style",
+          "default": "inline_source_ids",
+          "description": "Citation marker style used in formatted context."
+        },
+        {
+          "name": "chunk_separator",
+          "default": "\\n---\\n",
+          "description": "Separator inserted between context chunks."
+        },
+        {
+          "name": "include_metadata_in_context",
+          "default": "true",
+          "description": "Whether source metadata is shown with each chunk."
+        },
+        {
+          "name": "context_order",
+          "default": "rank_descending",
+          "description": "Ordering of chunks in the formatted context block."
+        }
+      ],
+      "notes": "Formats selected chunks into a prompt-ready context block."
+    },
+    "ece53dba-76cd-4c5a-9a7d-284ca7d6235b": {
+      "id": "ece53dba-76cd-4c5a-9a7d-284ca7d6235b",
+      "label": "Context assembly",
+      "level": "Sub-task",
+      "parent_id": "ef82b34b-a3db-4194-a9ba-9f0aaf765ab1",
+      "children": [
+        "d0906af3-777d-4b59-a9b8-aa85d92f4a4f",
+        "77f08593-7d19-4be4-a359-3bd2a6364ff3"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "c180f26b-9233-448f-8b33-b6cd456c0870": {
+      "id": "c180f26b-9233-448f-8b33-b6cd456c0870",
+      "label": "compose_answer_instructions",
+      "level": "Atomic step",
+      "parent_id": "1223155a-acfd-486e-a6d6-081b66599318",
+      "children": [],
+      "requires": [
+        "926f756c-bf1c-4fe2-a49d-30097c6e820b"
+      ],
+      "produces": "answer_instructions",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "answer_style",
+          "default": "concise_grounded",
+          "description": "Requested answer style."
+        },
+        {
+          "name": "citation_required",
+          "default": "true",
+          "description": "Whether generated answers must include citations."
+        },
+        {
+          "name": "unknown_answer_policy",
+          "default": "state_insufficient_context",
+          "description": "Behavior when context does not support an answer."
+        },
+        {
+          "name": "safety_instruction_level",
+          "default": "standard",
+          "description": "Strength of safety and refusal instructions."
+        }
+      ],
+      "notes": "Creates instructions governing grounded answer behavior."
+    },
+    "e91c3003-b493-451d-8420-18c82a6c417a": {
+      "id": "e91c3003-b493-451d-8420-18c82a6c417a",
+      "label": "build_augmented_prompt",
+      "level": "Atomic step",
+      "parent_id": "1223155a-acfd-486e-a6d6-081b66599318",
+      "children": [],
+      "requires": [
+        "c180f26b-9233-448f-8b33-b6cd456c0870",
+        "926f756c-bf1c-4fe2-a49d-30097c6e820b"
+      ],
+      "produces": "augmented_prompt",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "prompt_template_version",
+          "default": "1",
+          "description": "Version of the prompt structure."
+        },
+        {
+          "name": "max_prompt_tokens",
+          "default": "4096",
+          "description": "Maximum total prompt length."
+        },
+        {
+          "name": "prompt_truncation_policy",
+          "default": "truncate_lowest_ranked_context",
+          "description": "How prompt overflow is handled."
+        },
+        {
+          "name": "include_query_verbatim",
+          "default": "true",
+          "description": "Whether the original user query appears exactly in the prompt."
+        }
+      ],
+      "notes": "Combines query, instructions, and retrieved context into a generation prompt."
+    },
+    "1223155a-acfd-486e-a6d6-081b66599318": {
+      "id": "1223155a-acfd-486e-a6d6-081b66599318",
+      "label": "Prompt construction",
+      "level": "Sub-task",
+      "parent_id": "ef82b34b-a3db-4194-a9ba-9f0aaf765ab1",
+      "children": [
+        "c180f26b-9233-448f-8b33-b6cd456c0870",
+        "e91c3003-b493-451d-8420-18c82a6c417a"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "ef82b34b-a3db-4194-a9ba-9f0aaf765ab1": {
+      "id": "ef82b34b-a3db-4194-a9ba-9f0aaf765ab1",
+      "label": "Augmentation",
+      "level": "Layer",
+      "parent_id": null,
+      "children": [
+        "ece53dba-76cd-4c5a-9a7d-284ca7d6235b",
+        "1223155a-acfd-486e-a6d6-081b66599318"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "3aa8be4b-7c69-408c-a264-1884917ac699": {
+      "id": "3aa8be4b-7c69-408c-a264-1884917ac699",
+      "label": "generate_grounded_answer",
+      "level": "Atomic step",
+      "parent_id": "4eb4bf97-157b-4438-9d48-23d720af5640",
+      "children": [],
+      "requires": [
+        "e91c3003-b493-451d-8420-18c82a6c417a"
+      ],
+      "produces": "draft_answer",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "max_answer_tokens",
+          "default": "512",
+          "description": "Maximum number of tokens in the generated answer."
+        },
+        {
+          "name": "temperature",
+          "default": "0.2",
+          "description": "Sampling randomness for answer generation."
+        },
+        {
+          "name": "stop_sequences",
+          "default": null,
+          "description": "Optional sequences that stop generation."
+        },
+        {
+          "name": "generation_timeout_seconds",
+          "default": "60",
+          "description": "Maximum time allowed for answer generation."
+        }
+      ],
+      "notes": "Produces an answer grounded in the augmented prompt."
+    },
+    "522e2410-4249-4960-815e-6945c2bbec84": {
+      "id": "522e2410-4249-4960-815e-6945c2bbec84",
+      "label": "extract_answer_citations",
+      "level": "Atomic step",
+      "parent_id": "4eb4bf97-157b-4438-9d48-23d720af5640",
+      "children": [],
+      "requires": [
+        "3aa8be4b-7c69-408c-a264-1884917ac699"
+      ],
+      "produces": "answer_with_citations",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "citation_validation",
+          "default": "require_source_match",
+          "description": "Whether citations must map to selected context chunks."
+        },
+        {
+          "name": "minimum_citations",
+          "default": "1",
+          "description": "Minimum number of citations expected when context is used."
+        },
+        {
+          "name": "uncited_claim_policy",
+          "default": "flag",
+          "description": "How unsupported claims are marked."
+        },
+        {
+          "name": "citation_output_format",
+          "default": "inline",
+          "description": "How citations are represented in the answer."
+        }
+      ],
+      "notes": "Attaches or validates citations against retrieved context."
+    },
+    "4eb4bf97-157b-4438-9d48-23d720af5640": {
+      "id": "4eb4bf97-157b-4438-9d48-23d720af5640",
+      "label": "Answer creation",
+      "level": "Sub-task",
+      "parent_id": "fed2db55-17b4-4d8c-8d7d-a8c5178d6a3e",
+      "children": [
+        "3aa8be4b-7c69-408c-a264-1884917ac699",
+        "522e2410-4249-4960-815e-6945c2bbec84"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "05f1af3d-46a7-4841-afa1-16c6b79b9b06": {
+      "id": "05f1af3d-46a7-4841-afa1-16c6b79b9b06",
+      "label": "apply_answer_postprocessing",
+      "level": "Atomic step",
+      "parent_id": "a0cd31fe-4944-40b7-be40-912bd8d57c9d",
+      "children": [],
+      "requires": [
+        "522e2410-4249-4960-815e-6945c2bbec84"
+      ],
+      "produces": "final_answer",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "trim_whitespace",
+          "default": "true",
+          "description": "Whether leading and trailing whitespace is removed."
+        },
+        {
+          "name": "normalize_markdown",
+          "default": "true",
+          "description": "Whether markdown formatting is normalized."
+        },
+        {
+          "name": "redact_disallowed_content",
+          "default": "true",
+          "description": "Whether policy-disallowed content is redacted."
+        },
+        {
+          "name": "final_answer_format",
+          "default": "markdown",
+          "description": "Output format for the finalized answer."
+        }
+      ],
+      "notes": "Cleans and formats the cited answer for delivery."
+    },
+    "b5452f27-9239-4316-a55e-389f1feb66cd": {
+      "id": "b5452f27-9239-4316-a55e-389f1feb66cd",
+      "label": "deliver_answer",
+      "level": "Atomic step",
+      "parent_id": "a0cd31fe-4944-40b7-be40-912bd8d57c9d",
+      "children": [],
+      "requires": [
+        "05f1af3d-46a7-4841-afa1-16c6b79b9b06"
+      ],
+      "produces": "delivered_answer",
+      "terminal_output": true,
+      "variables": [
+        {
+          "name": "delivery_channel",
+          "default": "api_response",
+          "description": "Channel through which the answer is returned."
+        },
+        {
+          "name": "include_citations",
+          "default": "true",
+          "description": "Whether citations are included in the delivered response."
+        },
+        {
+          "name": "include_confidence",
+          "default": "false",
+          "description": "Whether confidence information is included in the response."
+        },
+        {
+          "name": "response_encoding",
+          "default": "utf-8",
+          "description": "Character encoding of the delivered answer."
+        }
+      ],
+      "notes": "Returns the final answer to the requester."
+    },
+    "a0cd31fe-4944-40b7-be40-912bd8d57c9d": {
+      "id": "a0cd31fe-4944-40b7-be40-912bd8d57c9d",
+      "label": "Answer finalization",
+      "level": "Sub-task",
+      "parent_id": "fed2db55-17b4-4d8c-8d7d-a8c5178d6a3e",
+      "children": [
+        "05f1af3d-46a7-4841-afa1-16c6b79b9b06",
+        "b5452f27-9239-4316-a55e-389f1feb66cd"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "fed2db55-17b4-4d8c-8d7d-a8c5178d6a3e": {
+      "id": "fed2db55-17b4-4d8c-8d7d-a8c5178d6a3e",
+      "label": "Generation",
+      "level": "Layer",
+      "parent_id": null,
+      "children": [
+        "4eb4bf97-157b-4438-9d48-23d720af5640",
+        "a0cd31fe-4944-40b7-be40-912bd8d57c9d"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "1f3b881f-7f89-48a1-af52-c1be58abd52c": {
+      "id": "1f3b881f-7f89-48a1-af52-c1be58abd52c",
+      "label": "evaluate_retrieval_quality",
+      "level": "Atomic step",
+      "parent_id": "983cca30-c78c-40f9-899a-05b0b9844d40",
+      "children": [],
+      "requires": [
+        "7cc0e5c1-9c67-4479-9d1f-6099c67ee8e6",
+        "926f756c-bf1c-4fe2-a49d-30097c6e820b"
+      ],
+      "produces": "retrieval_quality_metrics",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "retrieval_metrics",
+          "default": "precision_at_k,context_relevance,coverage",
+          "description": "Metrics used to assess retrieval performance."
+        },
+        {
+          "name": "k_values",
+          "default": "1,3,5",
+          "description": "Cutoffs used for retrieval metric calculations."
+        },
+        {
+          "name": "relevance_judgment_source",
+          "default": "automatic_with_optional_human_review",
+          "description": "Source of relevance labels or judgments."
+        },
+        {
+          "name": "minimum_context_relevance",
+          "default": "0.7",
+          "description": "Target relevance threshold for selected context."
+        }
+      ],
+      "notes": "Measures whether retrieval found useful supporting context."
+    },
+    "1feb5b2f-9c45-4ac5-aab7-7f0ad9f8dca0": {
+      "id": "1feb5b2f-9c45-4ac5-aab7-7f0ad9f8dca0",
+      "label": "evaluate_answer_quality",
+      "level": "Atomic step",
+      "parent_id": "983cca30-c78c-40f9-899a-05b0b9844d40",
+      "children": [],
+      "requires": [
+        "926f756c-bf1c-4fe2-a49d-30097c6e820b"
+      ],
+      "produces": "answer_quality_metrics",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "answer_metrics",
+          "default": "faithfulness,correctness,completeness,citation_accuracy",
+          "description": "Metrics used to assess answer quality."
+        },
+        {
+          "name": "faithfulness_threshold",
+          "default": "0.8",
+          "description": "Minimum acceptable groundedness score."
+        },
+        {
+          "name": "citation_accuracy_threshold",
+          "default": "0.9",
+          "description": "Minimum acceptable citation correctness score."
+        },
+        {
+          "name": "evaluation_mode",
+          "default": "automatic",
+          "description": "Whether evaluation is automatic, human, or hybrid."
+        }
+      ],
+      "notes": "Measures answer usefulness and groundedness."
+    },
+    "983cca30-c78c-40f9-899a-05b0b9844d40": {
+      "id": "983cca30-c78c-40f9-899a-05b0b9844d40",
+      "label": "Quality measurement",
+      "level": "Sub-task",
+      "parent_id": "5affb3c1-b355-4b2d-9f1e-690583ce4eab",
+      "children": [
+        "1f3b881f-7f89-48a1-af52-c1be58abd52c",
+        "1feb5b2f-9c45-4ac5-aab7-7f0ad9f8dca0"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "a1ddd793-6fd9-4d64-856a-0e3bea3300c0": {
+      "id": "a1ddd793-6fd9-4d64-856a-0e3bea3300c0",
+      "label": "aggregate_evaluation_results",
+      "level": "Atomic step",
+      "parent_id": "3a025da9-6aa9-493e-af99-96036b6e73a2",
+      "children": [],
+      "requires": [
+        "1f3b881f-7f89-48a1-af52-c1be58abd52c",
+        "1feb5b2f-9c45-4ac5-aab7-7f0ad9f8dca0"
+      ],
+      "produces": "evaluation_summary",
+      "terminal_output": false,
+      "variables": [
+        {
+          "name": "aggregation_window",
+          "default": "per_query",
+          "description": "Scope over which metrics are aggregated."
+        },
+        {
+          "name": "include_failure_cases",
+          "default": "true",
+          "description": "Whether problematic examples are included in the summary."
+        },
+        {
+          "name": "score_weighting",
+          "default": "equal_weight",
+          "description": "How retrieval and answer metrics are combined."
+        },
+        {
+          "name": "pass_fail_policy",
+          "default": "threshold_based",
+          "description": "Rule for determining evaluation pass or fail."
+        }
+      ],
+      "notes": "Combines retrieval and generation metrics into a summary."
+    },
+    "3560524a-f46c-4be2-8cc3-cb84a2d142f2": {
+      "id": "3560524a-f46c-4be2-8cc3-cb84a2d142f2",
+      "label": "emit_evaluation_report",
+      "level": "Atomic step",
+      "parent_id": "3a025da9-6aa9-493e-af99-96036b6e73a2",
+      "children": [],
+      "requires": [
+        "a1ddd793-6fd9-4d64-856a-0e3bea3300c0"
+      ],
+      "produces": "evaluation_report",
+      "terminal_output": true,
+      "variables": [
+        {
+          "name": "report_format",
+          "default": "json",
+          "description": "Format of the emitted evaluation report."
+        },
+        {
+          "name": "include_index_integrity",
+          "default": "true",
+          "description": "Whether storage integrity results are included."
+        },
+        {
+          "name": "include_metric_details",
+          "default": "true",
+          "description": "Whether detailed metric values are included."
+        },
+        {
+          "name": "report_destination",
+          "default": "monitoring_log",
+          "description": "Where the evaluation report is sent."
+        }
+      ],
+      "notes": "Publishes evaluation outputs for monitoring and improvement."
+    },
+    "3a025da9-6aa9-493e-af99-96036b6e73a2": {
+      "id": "3a025da9-6aa9-493e-af99-96036b6e73a2",
+      "label": "Evaluation reporting",
+      "level": "Sub-task",
+      "parent_id": "5affb3c1-b355-4b2d-9f1e-690583ce4eab",
+      "children": [
+        "a1ddd793-6fd9-4d64-856a-0e3bea3300c0",
+        "3560524a-f46c-4be2-8cc3-cb84a2d142f2"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    },
+    "5affb3c1-b355-4b2d-9f1e-690583ce4eab": {
+      "id": "5affb3c1-b355-4b2d-9f1e-690583ce4eab",
+      "label": "Evaluation",
+      "level": "Layer",
+      "parent_id": null,
+      "children": [
+        "983cca30-c78c-40f9-899a-05b0b9844d40",
+        "3a025da9-6aa9-493e-af99-96036b6e73a2"
+      ],
+      "requires": [],
+      "produces": null,
+      "terminal_output": false,
+      "variables": [],
+      "notes": ""
+    }
+  }
+}

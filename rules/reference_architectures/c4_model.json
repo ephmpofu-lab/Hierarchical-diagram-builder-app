@@ -1,0 +1,9 @@
+{
+  "_note": "C4 Model, used for structural nesting rules across ALL domains, not domain-specific (ARCHITEQ Decomposition Engine spec, section 2.2). Fixes the nesting depth for every domain to exactly these 4 levels, always in this order -- the Decomposition Engine must not introduce intermediate levels beyond this structure. Variable is Level 4's own parameters, not a 5th level.",
+  "levels": [
+    { "level": 1, "name": "Context", "maps_to": "The domain itself (e.g. \"RAG system\") -- single node, no internals shown" },
+    { "level": 2, "name": "Container", "maps_to": "Layer (Ingestion, Embedding, Storage, ...) -- deployable/runnable units" },
+    { "level": 3, "name": "Component", "maps_to": "Sub-task within a layer -- logical groupings of atomic steps" },
+    { "level": 4, "name": "Code", "maps_to": "Atomic step -- one-to-one with a function or n8n node" }
+  ]
+}

@@ -29,6 +29,12 @@ const WORKSPACE_REGISTRY = [
   // First screen for the reasoning/governance backend (WP1-WP16) -- previously only
   // reachable by calling the API directly. New "Intelligence" family, same registry shape.
   { id: "reasoning", label: "AI Reasoning", family: "Intelligence", available: true },
+  // Journey 5, WP21: the live, progressively-growing TOGAF architecture (Business/Data/
+  // Application/Technology) -- the one workspace a Discovery Session lands in after
+  // "Begin Engineering". Not reached via the switcher menu under normal use (Discovery
+  // navigates here directly via a URL param), but registered here anyway so
+  // switchToWorkspace's hide/show logic and the menu checkmark behave consistently.
+  { id: "engineering", label: "Engineering", family: "Intelligence", available: true },
 ];
 
 // Domain-scoping toggle within the Canvas family (section 2's Canvas family diagram) --

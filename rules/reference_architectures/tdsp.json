@@ -1,0 +1,12 @@
+{
+  "_note": "Microsoft Team Data Science Process, adapted to layer form (ARCHITEQ Decomposition Engine spec, section 2.1). Used to ground domain checklists for ML/AI pipeline domains (RAG, CV, fine-tuning, forecasting, etc.) -- every layer in such a checklist must map to exactly one of these 7 stages, or be explicitly marked cross_cutting (see well_architected.json).",
+  "stages": [
+    { "id": "business_understanding", "order": 1, "name": "Business Understanding", "maps_to": "Intent/Requirements layer" },
+    { "id": "data_acquisition_ingestion", "order": 2, "name": "Data Acquisition & Ingestion", "maps_to": "Ingestion layer" },
+    { "id": "data_preprocessing", "order": 3, "name": "Data Preprocessing", "maps_to": "Preprocessing layer" },
+    { "id": "feature_engineering", "order": 4, "name": "Feature Engineering", "maps_to": "Embedding/Feature layer (domain-specific naming)" },
+    { "id": "modeling", "order": 5, "name": "Modeling", "maps_to": "Model/Retrieval/Generation layer (domain-specific naming)" },
+    { "id": "deployment", "order": 6, "name": "Deployment", "maps_to": "Storage/Serving layer" },
+    { "id": "evaluation_acceptance", "order": 7, "name": "Evaluation & Acceptance", "maps_to": "Evaluation layer" }
+  ]
+}

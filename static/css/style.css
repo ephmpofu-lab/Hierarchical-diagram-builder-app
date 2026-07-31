@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   /* Dark graphite/charcoal, deliberately neutral rather than blue-black. */
   --bg: #161616;
   --surface: #1e1e1e;
@@ -587,67 +587,311 @@ button {
   line-height: 1;
 }
 
-/* ---------- Library screen ---------- */
+/* ---------- Launchpad (Home) ---------- */
+/* Two completely separate experiences, per the app's own product philosophy: the
+   Launchpad's only job is to start engineering -- no sidebar, no navigation menu, no
+   project-management chrome. All of that belongs to the Engineering Workspace
+   (editor.html) once a project is open. Layout follows Railway's own composition (large
+   hero -> one primary input -> a wide product preview -> a simple recent list), but in
+   this app's own existing colour tokens/typography, not borrowed artwork or palette. */
 
-.library-wrap {
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 32px;
+.launchpad {
+  display: flex;
+  flex-direction: column;
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
   width: 100%;
+  overflow-y: auto;
+}
+
+.launchpad-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 32px;
+  flex-shrink: 0;
+}
+
+.launchpad-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--accent);
+}
+
+.launchpad-brand-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+.launchpad-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.icon-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.user-avatar-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--accent-bg);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.user-avatar-btn:hover {
+  border-color: var(--accent);
+}
+
+.launchpad-main {
+  flex: 1;
+  max-width: 880px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 40px 32px 80px;
+}
+
+.launchpad-hero {
+  max-width: 620px;
+  margin: 0 auto 36px;
+  text-align: center;
+}
+
+.launchpad-hero-title {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin: 0 0 12px;
+  text-wrap: balance;
+}
+
+.launchpad-hero-lede {
+  font-size: 15px;
+  color: var(--text-muted);
+  max-width: 46ch;
+  margin: 0 auto;
+}
+
+.launchpad-input-section {
+  max-width: 640px;
+  margin: 0 auto 64px;
+  width: 100%;
+}
+
+.launchpad-input-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+  margin: 0 0 14px;
+}
+
+.launchpad-input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+
+.launchpad-input-wrap:focus-within {
+  border-color: var(--accent);
+}
+
+.launchpad-input {
+  width: 100%;
+  resize: none;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  padding: 0;
+}
+
+.launchpad-input:focus {
+  outline: none;
+}
+
+.launchpad-submit {
+  align-self: flex-end;
+}
+
+.launchpad-examples {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.example-chip {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  padding: 6px 14px;
+  border-radius: 100px;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.example-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.launchpad-preview {
+  margin-bottom: 64px;
+}
+
+.launchpad-preview-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.preview-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.preview-topbar-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.preview-topbar-status {
+  font-size: 11.5px;
+  color: var(--success-text);
+  background: var(--success-bg);
+  padding: 3px 10px;
+  border-radius: 100px;
+}
+
+.launchpad-preview-domains {
+  padding: 18px;
+  margin-bottom: 0;
+}
+
+.launchpad-recent {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.launchpad-recent-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 12px;
+}
+
+.launchpad-recent-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.launchpad-recent-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.launchpad-recent-row:last-child {
+  border-bottom: none;
+}
+
+.launchpad-recent-name {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.launchpad-recent-name:hover {
+  color: var(--accent-text);
+}
+
+.launchpad-recent-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.row-actions-wrap {
+  position: relative;
+}
+
+.row-menu-btn {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.row-menu-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
 .empty-state {
   text-align: center;
   color: var(--text-muted);
-  padding: 80px 20px;
+  padding: 40px 20px;
+  font-size: 13.5px;
 }
-
-.project-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 16px;
-}
-
-.project-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  transition: box-shadow 0.1s ease, border-color 0.1s ease;
-}
-
-.project-card:hover {
-  border-color: var(--accent);
-  box-shadow: var(--shadow);
-}
-
-.project-card .name {
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  word-break: break-word;
-}
-
-.project-card .name:hover {
-  color: var(--accent-text);
-}
-
-.project-card .meta {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.project-card .actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-
 /* ---------- Editor: three-pane layout ---------- */
 
 .editor-panes {
@@ -1128,6 +1372,51 @@ html[data-inspector-collapsed="true"] .health-footer {
   margin: 0 auto;
 }
 
+/* Engineering workspace (Journey 5, WP21) -- the live, four-domain TOGAF architecture.
+   Wider than .reasoning-board (720px): four columns side by side need the room, unlike a
+   single-column conversation/proposal review. */
+.engineering-pane {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg);
+  padding: 20px;
+}
+
+.engineering-pane[hidden] {
+  display: none;
+}
+
+.engineering-board {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.engineering-domains {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.engineering-domain-column {
+  flex: 1;
+  min-width: 200px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+}
+
+.engineering-domain-column .reasoning-node-card {
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.engineering-domain-column .reasoning-node-card:last-child {
+  margin-bottom: 0;
+}
+
 /* Intake: one calm, centered focus -- nothing competing with the objective field. */
 .reasoning-intake {
   display: flex;
@@ -1424,6 +1713,115 @@ html[data-inspector-collapsed="true"] .health-footer {
   font-size: 13px;
   text-align: center;
   padding: 20px;
+}
+
+/* ---------- Discovery Session (Journey 4, WP20) ----------
+   Genuinely new UI -- no chat-thread precedent exists anywhere else in this app -- but
+   reuses the reasoning workspace's verdict-banner/section-label/node-card/list
+   conventions wherever the shape is actually the same thing (see discovery.js). */
+
+.discovery-wrap {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px;
+}
+
+.discovery-board {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.discovery-topic-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.discovery-topic-chip {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 100px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--surface-2);
+}
+
+.discovery-topic-chip.partial {
+  border-color: var(--warning);
+  color: var(--warning-text);
+  background: var(--warning-bg);
+}
+
+.discovery-topic-chip.covered {
+  border-color: var(--success);
+  color: var(--success-text);
+  background: var(--success-bg);
+}
+
+.discovery-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.discovery-turn {
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.discovery-turn.architect {
+  align-self: flex-start;
+  background: var(--accent-bg);
+  border: 1px solid var(--accent);
+}
+
+.discovery-turn.user {
+  align-self: flex-end;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.discovery-turn-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.discovery-turn-message {
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.discovery-input-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  margin-bottom: 16px;
+}
+
+.discovery-message-input {
+  flex: 1;
+  resize: vertical;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 10px 14px;
+}
+
+.discovery-message-input:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .kanban-board {

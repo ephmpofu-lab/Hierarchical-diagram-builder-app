@@ -59,6 +59,11 @@ def _verify_token(token: str) -> AuthenticatedUser:
             algorithms=["ES256"],
             audience="authenticated",
             issuer=f"{SUPABASE_URL}/auth/v1",
+            # Tolerates ordinary clock skew between this machine and Supabase's auth
+            # server (a dev machine's clock is never perfectly NTP-synced) -- without
+            # this, a token's `iat`/`exp` can appear invalid by a few tens of seconds
+            # even though the token itself is genuinely fresh.
+            leeway=120,
         )
     except jwt.PyJWTError as exc:
         raise HTTPException(status_code=401, detail=f"Invalid or expired session: {exc}") from exc

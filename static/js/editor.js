@@ -67,6 +67,21 @@ const CLASSIFICATION_ICONS = {
   Strategy: "🎯",
 };
 
+// This 18-item taxonomy lives in node.tags, not node.classification -- classification is
+// the real TOGAF domain (Business/Data/Application/Technology/Governance), consumed by the
+// decomposition selector and the Domain filter (nodeMatchesDomainFilter below). Overwriting
+// it with a taxonomy value here would silently break both. A node may carry at most one of
+// these as a tag at a time (single-select UX, same as the old classification dropdown),
+// found via this lookup rather than a dedicated field.
+function nodeClassificationTag(node) {
+  return node.tags.find((t) => CLASSIFICATIONS.includes(t));
+}
+
+function withClassificationTag(node, opt) {
+  const withoutTag = node.tags.filter((t) => !CLASSIFICATIONS.includes(t));
+  return opt ? [...withoutTag, opt] : withoutTag;
+}
+
 // Planning status is distinct from the freeform `status` field (Planned/In Development/
 // Done/Blocked/Deprecated) — this is the fixed 5-state progress tracker that turns the
 // architecture tree itself into a planning board (see PLANNING_ENHANCEMENTS notes).
@@ -202,6 +217,8 @@ const healthFooterRecentEl = document.getElementById("healthFooterRecent");
 const healthPane = document.getElementById("healthPane");
 const reasoningPane = document.getElementById("reasoningPane");
 const reasoningBoard = document.getElementById("reasoningBoard");
+const engineeringPane = document.getElementById("engineeringPane");
+const engineeringBoard = document.getElementById("engineeringBoard");
 const shortcutsBtn = document.getElementById("shortcutsBtn");
 const shortcutsModal = document.getElementById("shortcutsModal");
 const shortcutsCloseBtn = document.getElementById("shortcutsCloseBtn");
@@ -463,6 +480,7 @@ function render() {
   if (!timelinePane.hidden) renderTimelineBoard();
   if (!documentationPane.hidden) renderDocumentationBoard();
   if (!dependenciesPane.hidden) renderDependenciesBoard();
+  if (!engineeringPane.hidden && !engineeringCycleId) renderEngineeringBoard();
 }
 
 // Shown only on a genuinely empty project (just the root, nothing placed yet) — the
@@ -583,7 +601,8 @@ function renderNode(nodeId) {
 
   const label = document.createElement("span");
   label.className = "label";
-  const typeIcon = !node.is_group && node.classification ? `${CLASSIFICATION_ICONS[node.classification]} ` : "";
+  const classificationTag = !node.is_group ? nodeClassificationTag(node) : null;
+  const typeIcon = classificationTag ? `${CLASSIFICATION_ICONS[classificationTag]} ` : "";
   label.textContent = node.is_group ? `▤ ${node.label}` : `${typeIcon}${node.label}`;
   label.addEventListener("dblclick", (e) => {
     e.stopPropagation();
@@ -3071,7 +3090,8 @@ function drawNode(node, pos, faded = false) {
   box.setAttribute("height", NODE_H);
   box.setAttribute("rx", node.is_group ? 6 : 10);
 
-  const accentColor = node.custom_color || CLASSIFICATION_COLORS[node.classification];
+  const nodeClassTag = nodeClassificationTag(node);
+  const accentColor = node.custom_color || CLASSIFICATION_COLORS[nodeClassTag];
   if (!node.is_group && accentColor) {
     box.style.stroke = accentColor;
     box.style.strokeWidth = "2";
@@ -3104,8 +3124,8 @@ function drawNode(node, pos, faded = false) {
     group.appendChild(levelBadge);
   }
 
-  if (!node.is_group && node.classification) {
-    const badgeText = CLASSIFICATION_BADGES[node.classification] || node.classification.slice(0, 3).toUpperCase();
+  if (!node.is_group && nodeClassTag) {
+    const badgeText = CLASSIFICATION_BADGES[nodeClassTag] || nodeClassTag.slice(0, 3).toUpperCase();
     const badgeW = 10 + badgeText.length * 6;
     const badge = document.createElementNS(SVG_NS, "g");
     const badgeRect = document.createElementNS(SVG_NS, "rect");
@@ -3346,8 +3366,9 @@ function showNodeHoverTooltip(node, clientX, clientY) {
   const fields = document.createElement("div");
   fields.className = "hover-fields";
   if (node.node_type) fields.appendChild(hoverField("Type", node.node_type));
-  if (node.classification) {
-    fields.appendChild(hoverField("Classification", `${CLASSIFICATION_ICONS[node.classification] || ""} ${node.classification}`));
+  const hoverClassTag = nodeClassificationTag(node);
+  if (hoverClassTag) {
+    fields.appendChild(hoverField("Classification", `${CLASSIFICATION_ICONS[hoverClassTag] || ""} ${hoverClassTag}`));
   }
   if (node.status) fields.appendChild(hoverField("Lifecycle Stage", node.status));
   if (node.planning_status) {
@@ -3750,12 +3771,12 @@ function openContextMenu(nodeId, clientX, clientY) {
       }
     }, { disabled: locked }),
     contextMenuSubmenu("◆ Set Classification", [CLEAR, ...CLASSIFICATIONS], (opt) => {
-      patchNodeById(nodeId, { classification: opt === CLEAR ? "" : opt });
+      patchNodeById(nodeId, { tags: withClassificationTag(node, opt === CLEAR ? null : opt) });
     }),
     contextMenuItem("🎨 Change Color", () => {
       const colorInput = document.createElement("input");
       colorInput.type = "color";
-      colorInput.value = node.custom_color || CLASSIFICATION_COLORS[node.classification] || "#64748b";
+      colorInput.value = node.custom_color || CLASSIFICATION_COLORS[nodeClassificationTag(node)] || "#64748b";
       colorInput.style.position = "fixed";
       colorInput.style.left = "-9999px";
       document.body.appendChild(colorInput);
@@ -4254,6 +4275,7 @@ function switchToWorkspace(workspaceId) {
   dependenciesPane.hidden = workspaceId !== "dependencies";
   healthPane.hidden = workspaceId !== "health";
   reasoningPane.hidden = workspaceId !== "reasoning";
+  engineeringPane.hidden = workspaceId !== "engineering";
   if (workspaceId === "kanban") renderKanbanBoard();
   if (workspaceId === "timeline") renderTimelineBoard();
   if (workspaceId === "documentation") renderDocumentationBoard();
@@ -4261,6 +4283,10 @@ function switchToWorkspace(workspaceId) {
   if (workspaceId === "health" && !lastValidationReport) refreshHealthPanel();
   if (workspaceId === "reasoning") renderReasoningBoard();
   else stopReasoningPolling(); // leaving the workspace mid-run shouldn't keep polling in the background
+  if (workspaceId === "engineering") {
+    if (engineeringCycleId) pollEngineeringCycle();
+    else renderEngineeringBoard();
+  } else stopEngineeringPolling();
 }
 
 // ---------- AI Reasoning workspace (first screen for the reasoning/governance backend --
@@ -4698,6 +4724,141 @@ function renderReasoningCommittedSuccess() {
     renderReasoningBoard();
   });
   reasoningBoard.appendChild(startOverBtn);
+}
+
+// ---------- Engineering workspace (Journey 5, WP21) ----------
+// The definitive landing point after a Discovery Session's "Begin Engineering": the ONLY
+// architecture Architeq ever shows, the four TOGAF domains (Business/Data/Application/
+// Technology), populated deterministically (backend/architecture/service.py -- a pure
+// grouping of real nodes by their own classification, zero AI) and filled in live while
+// the background Engineering Cycle (backend/engineering/service.py) runs, hidden from the
+// user -- no internal stage names are ever shown here, only the architecture itself
+// growing. Same 1.5s poll-and-repaint convention as the Reasoning workspace
+// (pollReasoningCycle) -- no push/websocket infrastructure exists in this stack. ----------
+
+const TOGAF_DOMAIN_COLUMNS = [
+  { key: "business", label: "Business Architecture" },
+  { key: "data", label: "Data Architecture" },
+  { key: "application", label: "Application Architecture" },
+  { key: "technology", label: "Technology Architecture" },
+];
+
+let engineeringCycleId = null;
+let engineeringPollTimer = null;
+let engineeringView = null; // the last-fetched ArchitectureView
+let engineeringCycleStatus = null; // Running | Completed | Failed | null (no cycle known)
+
+function stopEngineeringPolling() {
+  if (engineeringPollTimer) {
+    clearTimeout(engineeringPollTimer);
+    engineeringPollTimer = null;
+  }
+}
+
+async function refreshEngineeringView() {
+  const response = await fetch(`/api/projects/${projectId}/architecture`);
+  if (response.ok) engineeringView = await response.json();
+}
+
+async function pollEngineeringCycle() {
+  await refreshEngineeringView();
+  if (engineeringCycleId) {
+    const cycleRes = await fetch(`/api/cycles/${engineeringCycleId}`);
+    if (cycleRes.ok) {
+      const cycle = await cycleRes.json();
+      engineeringCycleStatus = cycle.status;
+    }
+  }
+  renderEngineeringBoard();
+  if (engineeringCycleStatus === "Running") {
+    engineeringPollTimer = setTimeout(pollEngineeringCycle, 1500);
+  }
+}
+
+async function startEngineeringCycle() {
+  const rootId = reasoningRootNodeId();
+  const response = await fetch(`/api/projects/${projectId}/nodes/${rootId}/engineer-architecture`, { method: "POST" });
+  if (!response.ok) return;
+  const cycle = await response.json();
+  engineeringCycleId = cycle.id;
+  engineeringCycleStatus = cycle.status;
+  pollEngineeringCycle();
+}
+
+function engineeringDomainCard(nodeId) {
+  const node = project.nodes[nodeId];
+  if (!node) return null;
+  const card = document.createElement("div");
+  card.className = "reasoning-node-card";
+  card.textContent = node.label;
+  card.addEventListener("click", () => {
+    switchToWorkspace("canvas");
+    focusNode(nodeId);
+  });
+  return card;
+}
+
+async function renderEngineeringBoard() {
+  if (!engineeringBoard) return;
+  if (!project) {
+    engineeringBoard.innerHTML = "";
+    return;
+  }
+  if (!engineeringView) {
+    await refreshEngineeringView();
+  }
+  engineeringBoard.innerHTML = "";
+
+  const wrap = document.createElement("div");
+  wrap.className = "engineering-domains";
+  for (const domain of TOGAF_DOMAIN_COLUMNS) {
+    const column = document.createElement("div");
+    column.className = "engineering-domain-column";
+    const heading = document.createElement("div");
+    heading.className = "reasoning-section-label";
+    heading.textContent = domain.label;
+    column.appendChild(heading);
+    const ids = (engineeringView && engineeringView[domain.key]) || [];
+    if (ids.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "reasoning-empty-state";
+      empty.textContent = engineeringCycleStatus === "Running" ? "Engineering…" : "Nothing here yet";
+      column.appendChild(empty);
+    } else {
+      for (const nodeId of ids) {
+        const card = engineeringDomainCard(nodeId);
+        if (card) column.appendChild(card);
+      }
+    }
+    wrap.appendChild(column);
+  }
+  engineeringBoard.appendChild(wrap);
+
+  const governanceIds = (engineeringView && engineeringView.governance_node_ids) || [];
+  if (governanceIds.length > 0) {
+    const govLabel = document.createElement("div");
+    govLabel.className = "reasoning-section-label";
+    govLabel.textContent = "Governance & Compliance Notes";
+    engineeringBoard.appendChild(govLabel);
+    const govRow = document.createElement("div");
+    govRow.className = "reasoning-node-row";
+    for (const nodeId of governanceIds) {
+      const card = engineeringDomainCard(nodeId);
+      if (card) govRow.appendChild(card);
+    }
+    engineeringBoard.appendChild(govRow);
+  }
+
+  if (!engineeringCycleId && engineeringCycleStatus !== "Running") {
+    const actions = document.createElement("div");
+    actions.className = "reasoning-actions";
+    const startBtn = document.createElement("button");
+    startBtn.className = "btn btn-primary";
+    startBtn.textContent = "Engineer this architecture";
+    startBtn.addEventListener("click", startEngineeringCycle);
+    actions.appendChild(startBtn);
+    engineeringBoard.appendChild(actions);
+  }
 }
 
 // ---------- Decompose tab (Journey 2: Architecture -> Recursive Decomposition) ----------
@@ -6323,8 +6484,19 @@ const editorPanesEl = document.querySelector(".editor-panes");
 
 // Restores whichever workspace was last active (WP11 Framework), now that editorPanesEl
 // exists -- switchToWorkspace/renderKanbanBoard are function declarations (hoisted), but
-// editorPanesEl itself is a const that must actually execute first.
-switchToWorkspace(getCurrentWorkspaceId());
+// editorPanesEl itself is a const that must actually execute first. A Discovery Session's
+// "Begin Engineering" hand-off overrides this once, landing directly in the Engineering
+// workspace (with its just-started Cycle id) rather than wherever the browser was last --
+// same override precedent this file's own `params`/`projectId` already establishes for
+// per-visit URL-driven state.
+const initialWorkspace = params.get("workspace");
+if (initialWorkspace === "engineering") {
+  engineeringCycleId = params.get("cycle") || null;
+  engineeringCycleStatus = engineeringCycleId ? "Running" : null;
+  switchToWorkspace("engineering");
+} else {
+  switchToWorkspace(getCurrentWorkspaceId());
+}
 
 const OUTLINE_COLLAPSED_KEY = "diagram-builder-outline-collapsed";
 const INSPECTOR_COLLAPSED_KEY = "diagram-builder-inspector-collapsed";
@@ -7537,12 +7709,13 @@ function renderOverviewTab(container, node) {
 function infoClassificationValue(node) {
   const wrap = document.createElement("div");
   wrap.className = "info-value-with-dot";
-  const activeColor = node.custom_color || CLASSIFICATION_COLORS[node.classification];
+  const activeTag = nodeClassificationTag(node);
+  const activeColor = node.custom_color || CLASSIFICATION_COLORS[activeTag];
   const swatch = document.createElement("span");
   swatch.className = "classification-swatch";
   swatch.style.background = activeColor || "transparent";
   swatch.style.borderColor = activeColor || "var(--border)";
-  swatch.textContent = CLASSIFICATION_ICONS[node.classification] || "";
+  swatch.textContent = CLASSIFICATION_ICONS[activeTag] || "";
   const select = document.createElement("select");
   select.className = "info-select";
   const noneOpt = document.createElement("option");
@@ -7553,10 +7726,10 @@ function infoClassificationValue(node) {
     const o = document.createElement("option");
     o.value = opt;
     o.textContent = `${CLASSIFICATION_ICONS[opt]} ${opt}`;
-    if (node.classification === opt) o.selected = true;
+    if (activeTag === opt) o.selected = true;
     select.appendChild(o);
   }
-  select.addEventListener("change", () => patchNode({ classification: select.value }));
+  select.addEventListener("change", () => patchNode({ tags: withClassificationTag(node, select.value || null) }));
   wrap.appendChild(swatch);
   wrap.appendChild(select);
   return wrap;
@@ -7568,7 +7741,7 @@ function infoColorOverrideValue(node) {
   const colorInput = document.createElement("input");
   colorInput.type = "color";
   colorInput.className = "color-swatch-input";
-  colorInput.value = node.custom_color || CLASSIFICATION_COLORS[node.classification] || "#64748b";
+  colorInput.value = node.custom_color || CLASSIFICATION_COLORS[nodeClassificationTag(node)] || "#64748b";
   colorInput.title = "Override the classification color for this node";
   colorInput.addEventListener("change", () => patchNode({ custom_color: colorInput.value }));
   wrap.appendChild(colorInput);

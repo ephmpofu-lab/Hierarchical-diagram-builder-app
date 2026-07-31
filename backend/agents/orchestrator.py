@@ -13,6 +13,7 @@ from ..decomposition import selector as decomposition_selector
 from ..decomposition import stopping as decomposition_stopping
 from ..decomposition.service import generate_children
 from ..decomposition.strategies import STRATEGIES
+from ..discovery import service as discovery_service
 from ..governance.workflow import run_decision_workflow
 from ..intelligence.context import assemble_reasoning_context
 from ..intelligence.pipeline import _score_confidence
@@ -21,9 +22,12 @@ from ..intelligence.stages import ReasoningStageError
 from ..models import (
     BlueprintResult,
     DecompositionResult,
+    DiscoveryAgentTurn,
+    DiscoverySession,
     GovernanceFinding,
     GovernanceReview,
     Node,
+    ProjectInitiationReport,
     ProposedNode,
     Project,
     ReasoningResult,
@@ -34,6 +38,7 @@ from ..observability.metrics import record_agent_invocation
 from ..tools import workflow_verification
 from .agent import (
     APPLICATION_ARCHITECTURE_AGENT,
+    ARCHITECT_AGENT,
     ARCHITECTURE_THINKING_AGENT,
     BUSINESS_ARCHITECTURE_AGENT,
     DATA_ARCHITECTURE_AGENT,
@@ -76,6 +81,7 @@ _STRATEGY_TO_AGENT = {
     "Application": APPLICATION_ARCHITECTURE_AGENT.name,
     "Technology": TECHNOLOGY_ARCHITECTURE_AGENT.name,
     "Governance": GOVERNANCE_AGENT.name,
+    "Operations": EXECUTION_PLANNING_AGENT.name,
 }
 
 
@@ -211,6 +217,103 @@ class Orchestrator:
                     agent=VALIDATION_AGENT.name,
                 )
             )
+
+        result.review = review
+        return result
+
+    def generate_task_architecture(self, project: Project, node: Node) -> DecompositionResult:
+        """Per-Task TOGAF Architecture Generation (Journey 5, WP21 Amendment 2): once a
+        node's Operations decomposition reaches a real, atomic Task, this proposes the
+        minimal real Business/Data/Application/Technology components it needs, attributed
+        to the Execution Planning Agent -- the same agent that proposed the task itself.
+        ARCHITECTURE_THINKING_AGENT is deliberately not used here: its own `cannot_do`
+        explicitly rules out authoring cross-domain content directly, which is exactly
+        what this call does. Governed exactly like `_run_strategy`'s own proposals: a
+        throwaway ReasoningResult run through the same Governance Service review, committed
+        via commit_children only when approved."""
+        # Imported here, not at module level, to avoid a circular import --
+        # backend/engineering/service.py itself imports Orchestrator from this module.
+        from ..engineering import service as engineering_service
+
+        agent_name = EXECUTION_PLANNING_AGENT.name
+        reasoning_context = assemble_reasoning_context(f"{node.label}. {node.notes}".strip())
+        try:
+            children = engineering_service.generate_task_architecture(node, reasoning_context)
+        except ReasoningStageError as exc:
+            _safe_record_agent_invocation(agent_name, False, project_id=project.id, error_type=type(exc).__name__)
+            raise
+        _safe_record_agent_invocation(agent_name, True, project_id=project.id)
+
+        confidence_tier, rationale = _score_confidence(reasoning_context, [], True, 0)
+        reasoning_result = ReasoningResult(
+            objective=node.label,
+            domains=sorted({c.classification for c in children if c.classification}) or ["Business"],
+            stages=[
+                ReasoningStageLog(
+                    stage="task_architecture",
+                    summary=f"{len(children)} candidate component(s)",
+                    agent=agent_name,
+                )
+            ],
+            proposed_nodes=children,
+            confidence_tier=confidence_tier,
+            confidence_rationale=rationale,
+            requires_human_review=confidence_tier != "High",
+        )
+        review = run_decision_workflow(reasoning_result)
+        seen_agents = set()
+        for finding in review.findings:
+            finding.agent = _FINDING_CATEGORY_TO_AGENT.get(finding.category, ORCHESTRATOR.name)
+            if finding.agent not in seen_agents:
+                seen_agents.add(finding.agent)
+                _safe_record_agent_invocation(finding.agent, True, project_id=project.id)
+
+        return DecompositionResult(strategy="Operations", terminal=True, proposed_nodes=children, review=review)
+
+    def advance_discovery(self, session: DiscoverySession, user_message: str) -> DiscoveryAgentTurn:
+        """One turn of the Discovery Session conversation (Journey 4, WP20), attributed to
+        the Architect Agent. A Discovery Session is always project-independent at this
+        point (it's what creates the project), so no project_id is recorded -- the same
+        posture the Reasoning Pipeline already takes for its own project-independent calls."""
+        agent_name = ARCHITECT_AGENT.name
+        try:
+            turn = discovery_service.advance_turn(session, user_message)
+        except ReasoningStageError as exc:
+            _safe_record_agent_invocation(agent_name, False, error_type=type(exc).__name__)
+            raise
+        _safe_record_agent_invocation(agent_name, True)
+        return turn
+
+    def generate_initiation_report(self, session: DiscoverySession) -> ProjectInitiationReport:
+        """Final Discovery Session AI call (Journey 4, WP20), then the same throwaway-
+        ReasoningResult governance review generate_blueprint already established above --
+        no parallel validation logic written for the report."""
+        agent_name = ARCHITECT_AGENT.name
+        try:
+            result = discovery_service.generate_report(session)
+        except ReasoningStageError as exc:
+            _safe_record_agent_invocation(agent_name, False, error_type=type(exc).__name__)
+            raise
+        _safe_record_agent_invocation(agent_name, True)
+
+        reasoning_context = f"{result.business_problem}. {result.engineering_scope}".strip()
+        confidence_tier, rationale = _score_confidence(reasoning_context, [], True, 0)
+        reasoning_result = ReasoningResult(
+            objective=result.business_problem,
+            domains=["Business"],
+            proposed_nodes=[ProposedNode(label=n.label) for n in result.proposed_operations_model],
+            confidence_tier=confidence_tier,
+            confidence_rationale=rationale,
+            requires_human_review=True,  # Discovery Session approval is always explicit
+            # human action (Scope decision 8) -- never inferred from the confidence tier
+        )
+        review = run_decision_workflow(reasoning_result)
+        seen_agents = set()
+        for finding in review.findings:
+            finding.agent = _FINDING_CATEGORY_TO_AGENT.get(finding.category, ORCHESTRATOR.name)
+            if finding.agent not in seen_agents:
+                seen_agents.add(finding.agent)
+                _safe_record_agent_invocation(finding.agent, True)
 
         result.review = review
         return result

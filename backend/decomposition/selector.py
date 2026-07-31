@@ -5,8 +5,10 @@ from typing import Optional, Tuple
 from ..models import Node
 from .strategies import STRATEGIES
 
-_DEFAULT_STRATEGY = "Business"  # ARC-0002: Business cascades to the other three -- the
-# same fallback WP5's domain selection uses when a node has no domain tag yet
+_DEFAULT_STRATEGY = "Operations"  # WP21 Amendment 2: a node with no classification yet
+# hasn't been through Task Classification, so it decomposes via the domain-agnostic
+# Operations ladder (what work exists) rather than being silently guessed into Business
+# architecture -- TOGAF domain assignment only starts once a real, atomic Task is reached
 
 
 def select_strategy(node: Node, has_active_risk: bool) -> Tuple[str, Optional[str]]:

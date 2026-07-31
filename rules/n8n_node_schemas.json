@@ -1,0 +1,53 @@
+{
+  "_note": "Hand-curated, vendored subset of n8n's core node catalog -- not mechanically generated. n8n's full node catalog only exists as TypeScript source (packages/nodes-base/**/*.node.ts) with no downloadable JSON, and its public REST API has no node-schema endpoint (both confirmed live against n8n's own docs/community forum). Each entry's `type`/`type_version`/parameter shape was checked against n8n's published docs at https://docs.n8n.io/integrations/builtin/core-nodes/ -- spot-check against a real running instance before first production import, since n8n does version these independently over time.",
+  "nodes": [
+    {
+      "type": "n8n-nodes-base.httpRequest",
+      "type_version": 4.2,
+      "display_name": "HTTP Request",
+      "match_keywords": ["api", "request", "call", "fetch", "http", "endpoint", "invoke"],
+      "default_parameters": {"method": "GET", "url": ""}
+    },
+    {
+      "type": "n8n-nodes-base.set",
+      "type_version": 3.4,
+      "display_name": "Edit Fields (Set)",
+      "match_keywords": ["set", "assign", "format", "normalize", "map field", "transform", "construct"],
+      "default_parameters": {"mode": "manual", "assignments": {"assignments": []}}
+    },
+    {
+      "type": "n8n-nodes-base.if",
+      "type_version": 2.2,
+      "display_name": "If",
+      "match_keywords": ["validate", "check", "condition", "filter", "route", "verify"],
+      "default_parameters": {"conditions": {"options": {}, "conditions": []}}
+    },
+    {
+      "type": "n8n-nodes-base.merge",
+      "type_version": 3.2,
+      "display_name": "Merge",
+      "match_keywords": ["merge", "combine", "join", "aggregate", "concatenate", "rank"],
+      "default_parameters": {"mode": "combine"}
+    },
+    {
+      "type": "n8n-nodes-base.webhook",
+      "type_version": 2.1,
+      "display_name": "Webhook",
+      "match_keywords": ["receive", "webhook", "trigger", "listen", "incoming", "intake"],
+      "default_parameters": {"httpMethod": "POST", "path": ""}
+    },
+    {
+      "type": "n8n-nodes-base.postgres",
+      "type_version": 2.6,
+      "display_name": "Postgres",
+      "match_keywords": ["store", "save", "insert", "database", "sql", "postgres", "persist", "retrieve", "load", "query", "index"],
+      "default_parameters": {"operation": "executeQuery", "query": ""}
+    }
+  ],
+  "fallback": {
+    "type": "n8n-nodes-base.code",
+    "type_version": 2,
+    "display_name": "Code",
+    "default_parameters": {"language": "javaScript", "jsCode": ""}
+  }
+}

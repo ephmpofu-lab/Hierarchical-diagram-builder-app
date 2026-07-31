@@ -34,7 +34,7 @@ class PostgresProjectRepository:
             if owner_id is None:
                 rows = conn.execute(
                     """
-                    select p.id, p.name, p.updated_at, count(n.id) as node_count
+                    select p.id, p.name, p.updated_at, count(n.id) as node_count, p.owner_id
                     from projects p
                     left join nodes n on n.project_id = p.id
                     group by p.id
@@ -44,7 +44,7 @@ class PostgresProjectRepository:
             else:
                 rows = conn.execute(
                     """
-                    select p.id, p.name, p.updated_at, count(n.id) as node_count
+                    select p.id, p.name, p.updated_at, count(n.id) as node_count, p.owner_id
                     from projects p
                     left join nodes n on n.project_id = p.id
                     where p.owner_id = %s or p.owner_id is null
@@ -54,7 +54,13 @@ class PostgresProjectRepository:
                     (owner_id,),
                 ).fetchall()
         return [
-            ProjectSummary(id=str(r[0]), name=r[1], updated_at=r[2].isoformat(), node_count=r[3])
+            ProjectSummary(
+                id=str(r[0]),
+                name=r[1],
+                updated_at=r[2].isoformat(),
+                node_count=r[3],
+                owner_id=str(r[4]) if r[4] else None,
+            )
             for r in rows
         ]
 

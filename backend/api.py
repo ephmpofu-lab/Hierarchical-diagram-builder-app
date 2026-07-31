@@ -23,24 +23,35 @@ from .tools.tool import ALL_TOOLS
 from .ai import service as ai_service
 from .ai.provider import AIProviderError
 from .auth import AuthenticatedUser, require_auth
+from .architecture.service import build_architecture_view
 from .change.impact import analyze_impact
 from .cycles.service import run_decomposition_cycle, run_reasoning_cycle
 from .db import postgres_cycle_repository as cycle_repo
+from .db import postgres_discovery_repository as discovery_repo
 from .blueprint.commit import commit_blueprint
 from .decomposition.commit import commit_children
+from .decompose.engine import propose_checklist, propose_tree
+from .discovery.commit import commit_initiation_report
+from .engineering.service import run_engineering_pipeline
 from .intelligence.commit import commit_reasoning_proposal
+from .intent.service import parse_intent
 from .observability.metrics import summarize
 from .intelligence.stages import ReasoningStageError
 from .knowledge import lifecycle
 from .knowledge.ingestion import parse_markdown
 from .knowledge.qa import run_qa
 from .knowledge.retrieval import retrieve as retrieve_knowledge
+from .render.n8n_exporter import export_workflow
+from .render.python_renderer import render_python
+from .taxonomy import repository as taxonomy_repo
+from .validator.service import validate_tree
 from .models import (
     AddParentRequest,
     AISuitabilityAssessment,
     AISuitabilitySignals,
     APIDesignResult,
     APIDesignSignals,
+    ArchitectureView,
     BlueprintResult,
     ChangeImpactRequest,
     ChangeImpactResult,
@@ -57,6 +68,15 @@ from .models import (
     DecompositionResult,
     DeploymentReadinessResult,
     DeploymentReadinessSignals,
+    DiscoverySession,
+    DiscoveryTurn,
+    DiscoveryTurnRequest,
+    DomainApproveRequest,
+    DomainChecklist,
+    DomainDraftRequest,
+    DomainDraftResult,
+    DomainRenderRequest,
+    DomainTaskTree,
     GovernanceActionRequest,
     GovernanceAssessmentResult,
     GovernanceAssessmentSignals,
@@ -65,20 +85,25 @@ from .models import (
     GovernancePrinciple,
     GovernancePrincipleCreate,
     GovernanceReview,
+    IntentRequest,
+    IntentResult,
     KnowledgeConcept,
     KnowledgeIngestRequest,
     KnowledgeIngestResult,
     KnowledgeRelationship,
     KnowledgeRelationshipCreate,
     MoveSiblingRequest,
+    N8nWorkflow,
     NodeCreate,
     NodePosition,
     NodeUpdate,
     NodeWithLevel,
     OutlineImport,
     PasteSubtreeRequest,
+    PrincipleViolation,
     Project,
     ProjectCreate,
+    ProjectInitiationReport,
     ProjectRename,
     ProjectSummary,
     QAReport,
@@ -87,6 +112,7 @@ from .models import (
     Reference,
     ReferenceCreate,
     ReferenceUpdate,
+    RenderedCodeBlock,
     ReparentRequest,
     RequirementQualityResult,
     RequirementQualitySignals,
@@ -96,6 +122,7 @@ from .models import (
     RiskAssessmentSignals,
     SecurityAssessmentResult,
     SecurityAssessmentSignals,
+    TaskTreeNode,
     Template,
     TemplateCreate,
     TemplateNode,
@@ -103,6 +130,8 @@ from .models import (
     TestDesignResult,
     TestDesignSignals,
     ValidationReport,
+    ValidationResult,
+    Variable,
     WorkflowVerificationResult,
     WorkflowVerificationSignals,
 )
@@ -129,6 +158,14 @@ def _ensure_owner(project: Project, user: AuthenticatedUser) -> None:
     # any authenticated user until explicitly claimed, rather than locking them out.
     if project.owner_id is not None and project.owner_id != user.id:
         raise HTTPException(status_code=403, detail="You do not have access to this project")
+
+
+def _ensure_session_owner(session: DiscoverySession, user: AuthenticatedUser) -> None:
+    # Same posture as _ensure_owner above -- owner_id is nullable purely for testability
+    # against the live auth.users FK (see DiscoverySession.owner_id's own docstring); a
+    # null-owner session is accessible to any authenticated user, same as a legacy project.
+    if session.owner_id is not None and session.owner_id != user.id:
+        raise HTTPException(status_code=403, detail="You do not have access to this discovery session")
 
 
 @router.get("/session")
@@ -721,6 +758,169 @@ def api_commit_blueprint(
     return {"committed_work_package_node_ids": committed_wp_ids, "committed_dependency_ids": committed_dep_ids}
 
 
+# ---------- Discovery Session (Journey 4, WP20) ----------
+# Replaces "pick a template" with "describe the business problem": an adaptive, multi-turn
+# interview conducted by the Architect Agent, concluding in a Project Initiation Report the
+# human must explicitly approve before anything is created -- see backend/discovery/ for
+# the underlying service/commit logic and Orchestrator.advance_discovery/
+# generate_initiation_report for the agent-attributed calls into it.
+
+
+@router.post("/discovery-sessions", response_model=DiscoverySession, status_code=201)
+def api_start_discovery_session(user: AuthenticatedUser = Depends(require_auth)):
+    """Creates the session, then immediately runs one opening Architect Agent turn (an
+    empty transcript prompts a broad opening question) so the conversation always starts
+    with the agent speaking first, not a blank screen."""
+    session = discovery_repo.create_session(user.id)
+    try:
+        turn = Orchestrator().advance_discovery(session, "")
+    except ReasoningStageError as exc:
+        raise HTTPException(status_code=502, detail=f"Discovery Session failed to start: {exc}") from exc
+
+    architect_turn = DiscoveryTurn(
+        id=str(uuid.uuid4()),
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        role="architect",
+        message=turn.message,
+    )
+    discovery_repo.append_turn(session.id, architect_turn)
+    discovery_repo.update_coverage(
+        session.id, turn.topic_coverage, 1, "ReadyForReport" if turn.ready_for_report else "InProgress"
+    )
+    return discovery_repo.get_session(session.id)
+
+
+@router.post("/discovery-sessions/{session_id}/turns", response_model=DiscoverySession)
+def api_advance_discovery_session(
+    session_id: str, body: DiscoveryTurnRequest, user: AuthenticatedUser = Depends(require_auth)
+):
+    if not body.message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+    session = discovery_repo.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Discovery session not found")
+    _ensure_session_owner(session, user)
+
+    user_turn = DiscoveryTurn(
+        id=str(uuid.uuid4()),
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        role="user",
+        message=body.message.strip(),
+    )
+    discovery_repo.append_turn(session_id, user_turn)
+
+    try:
+        turn = Orchestrator().advance_discovery(session, body.message.strip())
+    except ReasoningStageError as exc:
+        raise HTTPException(status_code=502, detail=f"Discovery Session turn failed: {exc}") from exc
+
+    architect_turn = DiscoveryTurn(
+        id=str(uuid.uuid4()),
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        role="architect",
+        message=turn.message,
+    )
+    discovery_repo.append_turn(session_id, architect_turn)
+    discovery_repo.update_coverage(
+        session_id,
+        turn.topic_coverage,
+        session.turn_count + 1,
+        "ReadyForReport" if turn.ready_for_report else "InProgress",
+    )
+    return discovery_repo.get_session(session_id)
+
+
+@router.post("/discovery-sessions/{session_id}/generate-report", response_model=ProjectInitiationReport)
+def api_generate_discovery_report(session_id: str, user: AuthenticatedUser = Depends(require_auth)):
+    """Callable once the Architect Agent signals readiness, or as an explicit early-
+    generate override -- never blocks, same "warn, don't block" posture as Blueprint's own
+    readiness check."""
+    session = discovery_repo.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Discovery session not found")
+    _ensure_session_owner(session, user)
+
+    try:
+        report = Orchestrator().generate_initiation_report(session)
+    except ReasoningStageError as exc:
+        raise HTTPException(status_code=502, detail=f"Project Initiation Report generation failed: {exc}") from exc
+
+    discovery_repo.set_report(session_id, report.model_dump(), "ReportGenerated")
+    return report
+
+
+@router.get("/discovery-sessions/{session_id}", response_model=DiscoverySession)
+def api_get_discovery_session(session_id: str, user: AuthenticatedUser = Depends(require_auth)):
+    session = discovery_repo.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Discovery session not found")
+    _ensure_session_owner(session, user)
+    return session
+
+
+@router.post("/discovery-sessions/{session_id}/approve", response_model=Project, status_code=201)
+def api_approve_discovery_session(
+    session_id: str,
+    body: ProjectInitiationReport,
+    project_name: Optional[str] = Query(None),
+    user: AuthenticatedUser = Depends(require_auth),
+):
+    """Explicit human approval, never automatic: unlike Blueprint/Decompose, which
+    auto-commit inline the moment governance returns approved, Discovery Session's entire
+    premise is "the user reviews and approves" -- nothing commits until this call. Accepts
+    the whole ProjectInitiationReport back in the body, same "accept the result back,
+    possibly human-edited" precedent as commit-blueprint/commit-reasoning."""
+    session = discovery_repo.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Discovery session not found")
+    _ensure_session_owner(session, user)
+
+    name = project_name.strip() if project_name and project_name.strip() else body.business_problem[:80]
+    project = storage.create_project(name, user.id)
+    commit_initiation_report(project, body, user.email or user.id)
+    tree.log_activity(project, "Created from an approved Project Initiation Report (Discovery Session)")
+    storage.save_project(project)
+
+    discovery_repo.set_status(session_id, "Approved", created_project_id=project.id)
+    return project
+
+
+# ---------- TOGAF Architecture Generation (Journey 5, WP21) ----------
+# The only architecture framework Architeq generates -- a pure, deterministic grouping of
+# a project's already-real nodes into the four TOGAF domains (see
+# backend/architecture/service.py), plus the chained background pipeline that gets a
+# project's nodes to that point (see backend/engineering/service.py). No AI call in either
+# endpoint below -- generation itself is the deterministic view; engineering is the
+# existing, already-governed decompose_node loop, just chained.
+
+
+@router.get("/projects/{project_id}/architecture", response_model=ArchitectureView)
+def api_get_architecture(project_id: str, user: AuthenticatedUser = Depends(require_auth)):
+    project = storage.load_project(project_id)
+    _ensure_owner(project, user)
+    return build_architecture_view(project)
+
+
+@router.post("/projects/{project_id}/nodes/{root_id}/engineer-architecture", response_model=Cycle, status_code=202)
+def api_engineer_architecture(
+    project_id: str,
+    root_id: str,
+    background_tasks: BackgroundTasks,
+    user: AuthenticatedUser = Depends(require_auth),
+):
+    """Kicks off the chained Engineering Cycle for root_id's subtree -- the background
+    pipeline that recursively decomposes every non-terminal leaf until Business/Data/
+    Application/Technology architecture has emerged (or the safety cap is hit). Returns
+    immediately; poll GET /cycles/{cycle_id} for progress and GET .../architecture for the
+    progressively-populated result, same convention as decompose-async."""
+    project = storage.load_project(project_id)
+    _ensure_owner(project, user)
+    tree.get_node_or_404(project, root_id)
+    cycle = cycle_repo.create_cycle(kind="engineering", project_id=project_id, node_id=root_id)
+    background_tasks.add_task(run_engineering_pipeline, cycle.id, project_id, root_id, user.email or user.id)
+    return cycle
+
+
 @router.put("/projects/{project_id}/nodes/{node_id}", response_model=NodeWithLevel)
 def api_update_node(project_id: str, node_id: str, body: NodeUpdate):
     project = storage.load_project(project_id)
@@ -992,6 +1192,81 @@ def api_import_outline_under_node(project_id: str, node_id: str, body: OutlineIm
     storage.save_project(project)
     node = project.nodes[new_id]
     return NodeWithLevel(**node.model_dump(), level=tree.compute_level(project, new_id))
+
+
+# ---------- Engineering Decomposition & Solution Generation Pipeline ----------
+# The app's new core model (see plan doc): a user's engineering goal is recursively
+# decomposed into a frozen, versioned per-domain task tree (backend/taxonomy/), validated
+# against P1-P7 + a domain checklist (backend/validator/), then rendered as Python or an
+# n8n workflow (backend/render/). Stateless per request -- only the frozen taxonomy is a
+# durable artifact, matching this journey's own "no unnecessary chatter" minimalism.
+
+
+@router.post("/decompose/intent", response_model=IntentResult)
+def api_parse_intent(body: IntentRequest, user: AuthenticatedUser = Depends(require_auth)):
+    if not body.text.strip():
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+    return parse_intent(body.text.strip())
+
+
+@router.get("/decompose/domains", response_model=List[str])
+def api_list_domains(user: AuthenticatedUser = Depends(require_auth)):
+    return taxonomy_repo.list_domains()
+
+
+@router.get("/decompose/domains/{domain}/tree", response_model=DomainTaskTree)
+def api_get_domain_tree(domain: str, user: AuthenticatedUser = Depends(require_auth)):
+    domain_tree = taxonomy_repo.load_tree(domain)
+    if domain_tree is None:
+        raise HTTPException(status_code=404, detail=f"No frozen task tree for domain '{domain}' yet")
+    return domain_tree
+
+
+@router.post("/decompose/domains/{domain}/draft", response_model=DomainDraftResult)
+def api_draft_domain(domain: str, body: DomainDraftRequest, user: AuthenticatedUser = Depends(require_auth)):
+    """One-time, per-domain authoring step (doc section 4.2/4.4) -- never runs again for
+    this domain once approved. If a checklist doesn't exist yet, drafts one too (app
+    drafts, user approves); an existing checklist (e.g. RAG's, hand-authored) is reused
+    as-is. Nothing is frozen here -- /approve does that."""
+    checklist = taxonomy_repo.load_checklist(domain)
+    if checklist is None:
+        checklist = propose_checklist(domain, body.reasoning_context)
+    domain_tree = propose_tree(domain, body.reasoning_context, checklist)
+    validation = validate_tree(domain_tree, checklist)
+    return DomainDraftResult(domain=domain, checklist=checklist, tree=domain_tree, validation=validation)
+
+
+@router.post("/decompose/domains/{domain}/approve", response_model=DomainDraftResult, status_code=201)
+def api_approve_domain(domain: str, body: DomainApproveRequest, user: AuthenticatedUser = Depends(require_auth)):
+    """Explicit human approval, never automatic -- mirrors Discovery Session's own
+    generate-report/approve shape. Freezes the (possibly human-edited) checklist and tree;
+    every subsequent request in this domain loads this exact frozen pair, never
+    regenerating it."""
+    validation = validate_tree(body.tree, body.checklist)
+    if not validation.passed:
+        raise HTTPException(
+            status_code=422,
+            detail=[v.model_dump() for v in validation.violations],
+        )
+    taxonomy_repo.save_checklist(body.checklist)
+    taxonomy_repo.save_tree(body.tree)
+    return DomainDraftResult(domain=domain, checklist=body.checklist, tree=body.tree, validation=validation)
+
+
+@router.post("/decompose/render/python", response_model=List[RenderedCodeBlock])
+def api_render_python(body: DomainRenderRequest, user: AuthenticatedUser = Depends(require_auth)):
+    domain_tree = taxonomy_repo.load_tree(body.domain)
+    if domain_tree is None:
+        raise HTTPException(status_code=404, detail=f"No frozen task tree for domain '{body.domain}' yet")
+    return render_python(domain_tree)
+
+
+@router.post("/decompose/render/n8n", response_model=N8nWorkflow)
+def api_render_n8n(body: DomainRenderRequest, user: AuthenticatedUser = Depends(require_auth)):
+    domain_tree = taxonomy_repo.load_tree(body.domain)
+    if domain_tree is None:
+        raise HTTPException(status_code=404, detail=f"No frozen task tree for domain '{body.domain}' yet")
+    return export_workflow(domain_tree)
 
 
 # ---------- Concept Mode: freeform planning objects ----------

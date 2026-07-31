@@ -1,0 +1,5 @@
+{
+  "_note": "Used only to formally ground the Atomicity Test (ARCHITEQ Decomposition Engine spec, section 2.4 / section 5). SRP is the direct source of the 'exactly one implementation unit' criterion (criterion 5) and the 'single verb, single object' criterion (criterion 1). Not applied elsewhere -- SOLID is a code-level principle set, not a task-tree structuring framework, and must not be stretched to justify Layer or Sub-task design.",
+  "principle": "Single Responsibility Principle",
+  "grounds": ["Atomicity Test criterion 1 (single verb, single object)", "Atomicity Test criterion 5 (maps to exactly one implementation unit)"]
+}

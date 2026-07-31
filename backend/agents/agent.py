@@ -95,6 +95,15 @@ PROGRESS_INTELLIGENCE_AGENT = Agent(
     can_propose="Read-only progress insights (e.g. stalled-branch flags)",
     cannot_do="Mutate anything -- read-only by design",
 )
+ARCHITECT_AGENT = Agent(
+    name="Architect Agent",
+    category="cross-cutting",
+    can_propose="Discovery Session questions, a draft Project Initiation Report (objectives, "
+    "scope, stakeholders, recommended approach, initial workspaces/activities, requirements, "
+    "risks, knowledge gaps)",
+    cannot_do="Auto-create the project or commit anything without the human explicitly "
+    "approving the report first",
+)
 
 ALL_AGENTS = [
     ORCHESTRATOR,
@@ -109,4 +118,5 @@ ALL_AGENTS = [
     DOCUMENTATION_AGENT,
     EXECUTION_PLANNING_AGENT,
     PROGRESS_INTELLIGENCE_AGENT,
+    ARCHITECT_AGENT,
 ]

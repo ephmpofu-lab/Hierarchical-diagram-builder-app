@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -178,6 +178,7 @@ class ProjectSummary(BaseModel):
     name: str
     updated_at: str
     node_count: int
+    owner_id: Optional[str] = None
 
 
 class ProjectCreate(BaseModel):
@@ -514,6 +515,9 @@ class ProposedNode(BaseModel):
     parent_hint: Optional[str] = None  # label of the intended parent, if any --
     # resolved by a human or a later decomposition step (Phase 5), not this WP
     notes: str = ""
+    classification: Optional[str] = None  # WP21 Amendment 2: set explicitly by
+    # generate_task_architecture to the component's own real TOGAF domain; every
+    # pre-existing caller leaves this unset and falls back to the strategy name as before
 
 
 class ProposedRelationship(BaseModel):
@@ -671,6 +675,256 @@ class Cycle(BaseModel):
     result: Optional[dict] = None  # the completed ReasoningResult/DecompositionResult, as a
     # plain dict -- deliberately untyped here since a Cycle can wrap either shape
     error: Optional[str] = None
+
+
+# ============================================================================
+# Discovery Session (Journey 4, WP20) -- replaces "pick a template" with "describe the
+# business problem." An Architect Agent conducts an adaptive, multi-turn interview (the one
+# genuinely stateful AI surface in this app -- every other reasoning surface is single-shot,
+# see backend/ai/provider.py's own docstring), then produces a Project Initiation Report for
+# explicit human approval before anything is created. Suggested Task Classifications reuse
+# Node.classification's real TOGAF-domain values (Business/Data/Application/Technology/
+# Governance, see decomposition/selector.py) -- not the 12-class taxonomy from the
+# methodology docs, which has no code behind it yet. Recommended Knowledge Sources/Evidence
+# Collection/Known Risks/Knowledge Gaps/Next Steps stay prose (no new Evidence entity).
+# ============================================================================
+
+
+class DiscoveryTurn(BaseModel):
+    id: str
+    timestamp: str
+    role: str  # "architect" | "user"
+    message: str
+
+
+class DiscoveryAgentTurn(BaseModel):
+    """The per-turn AI-call contract for backend/discovery/service.py::advance_turn."""
+
+    message: str
+    topic_coverage: Dict[str, str] = Field(default_factory=dict)  # topic -> Unexplored |
+    # Partial | Covered
+    ready_for_report: bool = False
+
+
+class ProposedInitiationNode(BaseModel):
+    label: str
+    parent_label: Optional[str] = None  # None = a top-level Recommended Initial Workspace;
+    # else nests as an Engineering Activity under another entry in this same list
+    node_type: Optional[str] = None
+    classification: Optional[str] = None  # a real TOGAF domain, per this section's own note
+    notes: str = ""
+
+
+class ProposedInitiationRequirement(BaseModel):
+    description: str
+    parent_label: Optional[str] = None  # self-referential, resolved against other
+    # requirements' own generated ids at commit time -- mirrors Requirement.parent_id
+    origin_node_label: Optional[str] = None  # resolved against ProposedInitiationNode labels
+    # to set Requirement.origin_node_id and a real TraceabilityLink
+
+
+class ProjectInitiationReport(BaseModel):
+    business_problem: str
+    business_objectives: List[str] = Field(default_factory=list)
+    engineering_scope: str = ""
+    stakeholders: List[str] = Field(default_factory=list)
+    recommended_solution_type: str = ""
+    recommended_engineering_approach: str = ""
+    recommended_architecture_patterns: List[str] = Field(default_factory=list)
+    estimated_complexity: str = ""
+    recommended_initial_workspaces: List[str] = Field(default_factory=list)
+    proposed_operations_model: List[ProposedInitiationNode] = Field(default_factory=list)
+    recommended_engineering_activities: List[str] = Field(default_factory=list)
+    known_risks: List[str] = Field(default_factory=list)
+    knowledge_gaps: List[str] = Field(default_factory=list)
+    recommended_next_steps: List[str] = Field(default_factory=list)
+    suggested_knowledge_sources: List[str] = Field(default_factory=list)
+    suggested_evidence_collection: List[str] = Field(default_factory=list)
+    proposed_requirements: List[ProposedInitiationRequirement] = Field(default_factory=list)
+    review: Optional[GovernanceReview] = None
+
+
+class DiscoverySession(BaseModel):
+    id: str
+    owner_id: Optional[str] = None  # nullable for the same reason Project.owner_id is --
+    # a real, live FK to auth.users(id) would make this untestable without a real Supabase
+    # account otherwise (see WP2's own test_owner_id_column_is_fk_constrained_to_real_
+    # supabase_users); every route already requires login, so this is always populated with
+    # a real id in actual use
+    status: str = "InProgress"  # InProgress | ReadyForReport | ReportGenerated | Approved |
+    # Abandoned
+    created_project_id: Optional[str] = None
+    turns: List[DiscoveryTurn] = Field(default_factory=list)
+    topic_coverage: Dict[str, str] = Field(default_factory=dict)
+    turn_count: int = 0
+    report: Optional[ProjectInitiationReport] = None
+
+
+# ============================================================================
+# Engineering Decomposition & Solution Generation Pipeline -- the app's new core model,
+# superseding the TOGAF/Discovery/Engineering-Cycle models above (left in place, unused).
+# Mirrors Project/Node's own established shape (a flat id-keyed map + parent_id/children
+# lists) rather than a nested recursive tree, deliberately -- same reasoning Project.nodes
+# already uses, and it keeps this a plain, easily-diffed JSON file on disk.
+# ============================================================================
+
+
+class Variable(BaseModel):
+    """P3 -- every configurable parameter an atomic step touches, listed explicitly even
+    when it has a sensible default (e.g. chunk_overlap=50 is listed, never assumed)."""
+
+    name: str
+    default: Optional[str] = None
+    description: str = ""
+
+
+class TaskTreeNode(BaseModel):
+    id: str
+    label: str
+    level: str  # "Layer" | "Sub-task" | "Atomic step" -- P2's breadth-first ladder / C4's
+    # Container/Component/Code levels (rules/reference_architectures/c4_model.json)
+    parent_id: Optional[str] = None
+    children: List[str] = Field(default_factory=list)
+    requires: List[str] = Field(default_factory=list)  # P4 -- ids of other Atomic step
+    # nodes this one depends on (for topological sequencing); only meaningful at the Atomic
+    # step level. Distinct from `consumes` below -- a step can require several prior steps'
+    # outputs while still consuming one named, possibly-bundled input artifact.
+    consumes: Optional[str] = None  # Atomicity Test criterion 2 -- the single named input
+    # artifact this Atomic step consumes
+    produces: Optional[str] = None  # P4 / Atomicity Test criterion 3 -- the output name
+    # this Atomic step produces
+    terminal_output: bool = False  # P5 -- True if `produces` is a final output, never
+    # consumed downstream by another step's `requires` (an unconsumed, non-terminal output
+    # means a missing step, per P5)
+    variables: List[Variable] = Field(default_factory=list)  # P3, Atomic step level only
+    pillar_tags: List[str] = Field(default_factory=list)  # P8 -- which Well-Architected
+    # pillar tag ids (rules/reference_architectures/well_architected.json) this Atomic step
+    # addresses, if any; Atomic step level only
+    notes: str = ""
+
+
+class DomainTaskTree(BaseModel):
+    """The frozen, versioned taxonomy for one domain (doc section 4.2) -- authored once via
+    the Decomposition Engine + Validator correction loop, then reused identically by every
+    user request in that domain. Never regenerated per request."""
+
+    domain: str
+    version: int = 1
+    root_ids: List[str] = Field(default_factory=list)  # top-level Layer node ids, in order
+    nodes: Dict[str, TaskTreeNode] = Field(default_factory=dict)
+
+
+class LayerChecklistEntry(BaseModel):
+    """One mandatory layer's reference-architecture grounding (spec section 2/7) -- every
+    layer must map to a named TDSP stage or be explicitly marked cross_cutting; nothing is
+    a free-floating, unjustified layer."""
+
+    layer: str
+    tdsp_stage: Optional[str] = None  # one of rules/reference_architectures/tdsp.json's
+    # stage ids, or None if cross_cutting
+    cross_cutting: bool = False
+    input_contract: List[str] = Field(default_factory=list)  # artifact names this layer
+    # consumes -- anchors Stage 2's per-layer sub-task generation
+    output_contract: List[str] = Field(default_factory=list)  # artifact names this layer
+    # must produce
+
+
+class DomainChecklist(BaseModel):
+    """P7 -- the mandatory layers a domain's tree must contain, all non-empty, each traced
+    to a named reference architecture (spec section 2) rather than authored freely."""
+
+    domain: str
+    derived_from: str = ""  # e.g. "tdsp" -- the reference architecture this checklist maps to
+    mandatory_layers: List[LayerChecklistEntry] = Field(default_factory=list)
+
+
+class PrincipleViolation(BaseModel):
+    principle_id: str  # "P1".."P8", or "RefArch"/"C4" for the reference-architecture
+    # conformance category (spec section 7)
+    message: str
+    node_id: Optional[str] = None  # the offending node, if the violation is node-specific
+
+
+class ValidationResult(BaseModel):
+    passed: bool
+    violations: List[PrincipleViolation] = Field(default_factory=list)
+
+
+class IntentResult(BaseModel):
+    domain: str
+    confidence: float
+    extracted_constraints: Dict[str, str] = Field(default_factory=dict)
+    tree_available: bool = False  # whether a frozen taxonomy already exists for this domain
+
+
+class RenderedCodeBlock(BaseModel):
+    step_id: str
+    label: str
+    code: str
+
+
+class IntentRequest(BaseModel):
+    text: str
+
+
+class DomainDraftRequest(BaseModel):
+    reasoning_context: str = ""
+
+
+class DomainDraftResult(BaseModel):
+    domain: str
+    checklist: DomainChecklist
+    tree: DomainTaskTree
+    validation: ValidationResult
+
+
+class DomainApproveRequest(BaseModel):
+    checklist: DomainChecklist
+    tree: DomainTaskTree
+
+
+class DomainRenderRequest(BaseModel):
+    domain: str
+
+
+class N8nNode(BaseModel):
+    step_id: str  # the originating TaskTreeNode id, for traceability back to the tree
+    name: str  # unique display name on the n8n canvas -- also the connection-graph key
+    type: str  # n8n's own internal type identifier, e.g. "n8n-nodes-base.httpRequest"
+    type_version: float
+    position: List[float] = Field(default_factory=lambda: [0.0, 0.0])
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+
+
+class N8nWorkflow(BaseModel):
+    name: str
+    nodes: List[N8nNode] = Field(default_factory=list)
+    connections: Dict[str, Any] = Field(default_factory=dict)
+
+
+class DiscoveryTurnRequest(BaseModel):
+    message: str
+
+
+# ============================================================================
+# TOGAF Architecture Generation (Journey 5, WP21) -- the ONLY architecture framework
+# Architeq generates. A pure, deterministic grouping of a project's already-real nodes by
+# their own `classification` field into the four TOGAF domains (Business/Data/Application/
+# Technology) -- zero AI calls, zero invented content. Governance-classified nodes are not
+# a 5th peer domain (this library's own decomposition/strategies.py already states
+# Governance isn't one of TOGAF's four architecture domains) -- they're cross-cutting notes
+# instead. Every id below is a real, already-committed Node id, so every element is
+# traceable back to the engineering artifact that produced it by construction.
+# ============================================================================
+
+
+class ArchitectureView(BaseModel):
+    business: List[str] = Field(default_factory=list)
+    data: List[str] = Field(default_factory=list)
+    application: List[str] = Field(default_factory=list)
+    technology: List[str] = Field(default_factory=list)
+    governance_node_ids: List[str] = Field(default_factory=list)
+    unclassified_node_ids: List[str] = Field(default_factory=list)
 
 
 class AISuitabilitySignals(BaseModel):

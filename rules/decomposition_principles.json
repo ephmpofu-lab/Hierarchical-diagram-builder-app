@@ -1,0 +1,46 @@
+{
+  "principles": [
+    {
+      "id": "P1",
+      "name": "Atomicity Rule",
+      "description": "A step is atomic only if it has exactly one action, one input, one output. If it needs \"and\" to describe it, split it further.",
+      "severity": "Reject"
+    },
+    {
+      "id": "P2",
+      "name": "No Skip Rule",
+      "description": "Breadth-first only. Every sub-task of a layer must exist before any sub-task decomposes into atomic steps.",
+      "severity": "Reject"
+    },
+    {
+      "id": "P3",
+      "name": "Variable Exhaustion Rule",
+      "description": "Every configurable parameter an atomic step touches must be listed explicitly, even if it has a default value.",
+      "severity": "Reject"
+    },
+    {
+      "id": "P4",
+      "name": "Dependency Rule",
+      "description": "Every atomic step declares requires and produces. Both fields are mandatory -- this drives correct sequencing and node-connection inference.",
+      "severity": "Reject"
+    },
+    {
+      "id": "P5",
+      "name": "No Orphan Rule",
+      "description": "Every produces output must be consumed downstream or explicitly flagged terminal_output. An unconsumed output means a missing step.",
+      "severity": "Reject"
+    },
+    {
+      "id": "P6",
+      "name": "Tool Agnosticism Rule",
+      "description": "Steps are named by function, never by implementation. Implementation binding happens only at render time, never inside the tree.",
+      "severity": "Reject"
+    },
+    {
+      "id": "P7",
+      "name": "Coverage Checklist Rule",
+      "description": "Each domain has a mandatory list of layers that must all be present and non-empty. The tree is rejected if any mandatory layer is empty.",
+      "severity": "Reject"
+    }
+  ]
+}

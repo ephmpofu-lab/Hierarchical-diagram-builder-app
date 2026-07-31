@@ -3,43 +3,86 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Diagram Builder — Projects</title>
+  <title>Architeq — Launchpad</title>
   <script>
     document.documentElement.dataset.theme = localStorage.getItem("diagram-builder-theme") || "dark";
   </script>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <div class="topbar">
-    <h1>Diagram Builder</h1>
-    <div class="topbar-actions">
-      <button id="themeToggleBtn" class="theme-toggle" title="Toggle light/dark theme"></button>
-      <button class="btn" id="importOutlineBtn">⇩ New from outline</button>
-      <button class="btn btn-primary" id="newProjectBtn">+ New project</button>
-      <button class="btn btn-small icon-only" id="logoutBtn" title="Log out" onclick="logout()">⏻</button>
-    </div>
-  </div>
-
-  <div class="library-wrap">
-    <div id="projectGrid" class="project-grid"></div>
-    <div id="emptyState" class="empty-state" style="display:none;">
-      No projects yet. Click "New project" to start your first tree diagram.
-    </div>
-  </div>
-
-  <div id="importModal" class="modal-backdrop" hidden>
-    <div class="modal import-modal">
-      <div class="modal-header-row">
-        <strong>New project from outline</strong>
-        <button id="importXBtn" class="theme-toggle" title="Close">×</button>
+  <div class="launchpad">
+    <header class="launchpad-nav">
+      <div class="launchpad-brand">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
+          <path d="M12 3 L21 20 L3 20 Z"/>
+        </svg>
+        <span class="launchpad-brand-name">Architeq</span>
       </div>
-      <p>Paste an outline to create a new project from it. Lines can use explicit <code>(Level N)</code> tags, or plain nested <code>- bullets</code> (2 spaces per level).</p>
-      <textarea id="importText" rows="12" placeholder="Root item (Level 1)&#10;    Child item (Level 2)"></textarea>
-      <div class="modal-actions">
-        <button id="importCancelBtn" class="btn btn-small">Cancel</button>
-        <button id="importConfirmBtn" class="btn btn-small btn-primary">Create project</button>
+      <div class="launchpad-nav-actions">
+        <button id="themeToggleBtn" class="theme-toggle" title="Toggle light/dark theme"></button>
+        <div class="dropdown-wrap">
+          <button class="user-avatar-btn" id="userAvatarBtn" title="Account"><span id="userInitials">–</span></button>
+          <div id="userMenu" class="dropdown-menu" hidden style="right:0;left:auto;min-width:180px;">
+            <div class="dropdown-section-label" id="userMenuEmail" style="padding:9px 14px 4px;"></div>
+            <button id="logoutBtn" onclick="logout()">Log out</button>
+          </div>
+        </div>
       </div>
-    </div>
+    </header>
+
+    <main class="launchpad-main">
+      <section class="launchpad-hero">
+        <h1 class="launchpad-hero-title">Engineer enterprise architecture, deterministically.</h1>
+        <p class="launchpad-hero-lede">Describe the problem. Architeq engineers a governed, TOGAF-based architecture automatically.</p>
+      </section>
+
+      <section class="launchpad-input-section">
+        <h2 class="launchpad-input-label">What would you like to engineer today?</h2>
+        <div class="launchpad-input-wrap">
+          <textarea id="launchpadInput" class="launchpad-input" rows="2" placeholder="Describe what you want to build…"></textarea>
+          <button id="launchpadSubmitBtn" class="btn-hero launchpad-submit" type="button">Start Engineering →</button>
+        </div>
+        <div class="launchpad-examples" id="launchpadExamples">
+          <button class="example-chip" type="button">Insurance Claims AI</button>
+          <button class="example-chip" type="button">Enterprise Architecture for a Hospital</button>
+          <button class="example-chip" type="button">AI Trading Platform</button>
+          <button class="example-chip" type="button">Modernise our HR System</button>
+        </div>
+      </section>
+
+      <section class="launchpad-preview">
+        <div class="launchpad-preview-card">
+          <div class="preview-topbar">
+            <span class="preview-topbar-label">Engineering Workspace</span>
+            <span class="preview-topbar-status">Architecture engineered — 4 of 4 domains</span>
+          </div>
+          <div class="engineering-domains launchpad-preview-domains">
+            <div class="engineering-domain-column">
+              <div class="reasoning-section-label">Business Architecture</div>
+              <div class="reasoning-node-card">Customer Onboarding</div>
+            </div>
+            <div class="engineering-domain-column">
+              <div class="reasoning-section-label">Data Architecture</div>
+              <div class="reasoning-node-card">Customer Entity</div>
+            </div>
+            <div class="engineering-domain-column">
+              <div class="reasoning-section-label">Application Architecture</div>
+              <div class="reasoning-node-card">Onboarding Service</div>
+            </div>
+            <div class="engineering-domain-column">
+              <div class="reasoning-section-label">Technology Architecture</div>
+              <div class="reasoning-node-card">Provisioning Pipeline</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="launchpad-recent">
+        <h2 class="launchpad-recent-label">Recent projects</h2>
+        <div class="launchpad-recent-list" id="recentProjectsList"></div>
+        <div id="emptyState" class="empty-state" hidden>No projects yet — start one above to begin.</div>
+      </section>
+    </main>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>

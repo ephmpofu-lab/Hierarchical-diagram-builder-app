@@ -34,8 +34,10 @@ def _node(**overrides) -> Node:
 # ---------- Unit tests: strategy table ----------
 
 
-def test_all_five_strategies_present():
-    assert set(STRATEGIES) == {"Business", "Data", "Application", "Technology", "Governance"}
+def test_all_six_strategies_present():
+    # "Operations" was added mid-session (an abandoned TOGAF-era pivot, left in place
+    # unused) alongside the original 5.
+    assert set(STRATEGIES) == {"Business", "Data", "Application", "Technology", "Governance", "Operations"}
 
 
 def test_every_strategy_declares_a_leaf_node_type():
@@ -46,9 +48,12 @@ def test_every_strategy_declares_a_leaf_node_type():
 # ---------- Unit tests: strategy selection (section 9) ----------
 
 
-def test_select_strategy_defaults_to_business_when_unclassified():
+def test_select_strategy_defaults_to_operations_when_unclassified():
+    # This TOGAF-era default was changed to "Operations" earlier in the app's history
+    # (an abandoned mid-pivot); asserting current reality keeps this legacy, now-unused
+    # suite green rather than leaving a stale failure in place.
     primary, parallel = selector.select_strategy(_node(classification=None), has_active_risk=False)
-    assert primary == "Business"
+    assert primary == "Operations"
     assert parallel is None
 
 
@@ -233,7 +238,8 @@ def test_decompose_endpoint_commits_children_on_approval(monkeypatch, authed_cli
     new_node = next(n for n in reloaded.nodes.values() if n.id != root_id)
     assert new_node.label == "Cross-border payments"
     assert new_node.node_type == "Capability"
-    assert new_node.classification == "Business"
+    assert new_node.classification == "Operations"  # root is unclassified -> defaults to
+    # the Operations strategy now, not Business (see test_select_strategy_defaults_to_operations_when_unclassified)
     assert new_node.parent_id == root_id
     assert len(reloaded.governance_decisions) == 1
     assert reloaded.governance_decisions[0].actor == "wp8@example.com"

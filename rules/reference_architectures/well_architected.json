@@ -1,0 +1,10 @@
+{
+  "_note": "Five pillars used for the cross-cutting concerns overlay, P8 (ARCHITEQ Decomposition Engine spec, section 2.3 / section 3). A tree is valid only once every pillar's tag appears on at least one Atomic step somewhere in the whole tree -- not required per-layer.",
+  "pillars": [
+    { "id": "security", "tag": "security_relevant" },
+    { "id": "reliability_observability", "tag": "observability_relevant" },
+    { "id": "performance_cost", "tag": "performance_relevant" },
+    { "id": "operational_excellence", "tag": "ops_relevant" },
+    { "id": "governance_compliance", "tag": "governance_relevant" }
+  ]
+}

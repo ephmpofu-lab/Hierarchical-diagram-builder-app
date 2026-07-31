@@ -1,0 +1,62 @@
+{
+  "domain": "rag",
+  "derived_from": "tdsp",
+  "mandatory_layers": [
+    {
+      "layer": "Ingestion",
+      "tdsp_stage": "data_acquisition_ingestion",
+      "cross_cutting": false,
+      "input_contract": ["source_configuration"],
+      "output_contract": ["raw_documents"]
+    },
+    {
+      "layer": "Preprocessing",
+      "tdsp_stage": "data_preprocessing",
+      "cross_cutting": false,
+      "input_contract": ["raw_documents"],
+      "output_contract": ["preprocessed_chunks"]
+    },
+    {
+      "layer": "Embedding",
+      "tdsp_stage": "feature_engineering",
+      "cross_cutting": false,
+      "input_contract": ["preprocessed_chunks"],
+      "output_contract": ["chunk_embeddings"]
+    },
+    {
+      "layer": "Storage",
+      "tdsp_stage": "deployment",
+      "cross_cutting": false,
+      "input_contract": ["chunk_embeddings"],
+      "output_contract": ["indexed_vector_store"]
+    },
+    {
+      "layer": "Retrieval",
+      "tdsp_stage": "modeling",
+      "cross_cutting": false,
+      "input_contract": ["indexed_vector_store", "user_query"],
+      "output_contract": ["retrieved_context"]
+    },
+    {
+      "layer": "Augmentation",
+      "tdsp_stage": "modeling",
+      "cross_cutting": false,
+      "input_contract": ["retrieved_context", "user_query"],
+      "output_contract": ["augmented_prompt"]
+    },
+    {
+      "layer": "Generation",
+      "tdsp_stage": "modeling",
+      "cross_cutting": false,
+      "input_contract": ["augmented_prompt"],
+      "output_contract": ["generated_answer"]
+    },
+    {
+      "layer": "Evaluation",
+      "tdsp_stage": "evaluation_acceptance",
+      "cross_cutting": false,
+      "input_contract": ["generated_answer"],
+      "output_contract": ["evaluation_report"]
+    }
+  ]
+}

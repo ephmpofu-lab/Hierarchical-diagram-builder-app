@@ -16,7 +16,7 @@ def commit_children(project: Project, node: Node, children: List[ProposedNode], 
         child_id = str(uuid.uuid4())
         tree.add_node(project, node.id, child.label, child_id)
         committed = project.nodes[child_id]
-        committed.classification = strategy_name
+        committed.classification = child.classification or strategy_name
         committed.node_type = child.node_type
         committed.notes = child.notes
         committed_ids.append(child_id)

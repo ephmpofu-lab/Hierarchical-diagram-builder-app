@@ -1,99 +1,76 @@
-const grid = document.getElementById("projectGrid");
+// The Launchpad (Home): one job only -- start engineering. No sidebar, no project
+// templates grid, no filters/sort/star -- all of that either belongs to the Engineering
+// Workspace (editor.html) or has been deliberately simplified away per the product's own
+// "two completely separate experiences" philosophy. The primary input is the only way to
+// begin; typing an idea and submitting carries it into the Discovery Session as the
+// user's own first message (via sessionStorage handoff, same pattern login.html already
+// uses for its own cross-page message handoff).
+
+const LAUNCHPAD_IDEA_KEY = "architeq-launchpad-idea";
+
+const userAvatarBtn = document.getElementById("userAvatarBtn");
+const userMenu = document.getElementById("userMenu");
+const userInitials = document.getElementById("userInitials");
+const userMenuEmail = document.getElementById("userMenuEmail");
+const launchpadInput = document.getElementById("launchpadInput");
+const launchpadSubmitBtn = document.getElementById("launchpadSubmitBtn");
+const launchpadExamples = document.getElementById("launchpadExamples");
+const recentProjectsList = document.getElementById("recentProjectsList");
 const emptyState = document.getElementById("emptyState");
-const newProjectBtn = document.getElementById("newProjectBtn");
-const importOutlineBtn = document.getElementById("importOutlineBtn");
-const importModal = document.getElementById("importModal");
-const importText = document.getElementById("importText");
-const importCancelBtn = document.getElementById("importCancelBtn");
-const importConfirmBtn = document.getElementById("importConfirmBtn");
-const importXBtn = document.getElementById("importXBtn");
+
+function updateIdentity() {
+  const email = currentSession && currentSession.user ? currentSession.user.email : "";
+  userInitials.textContent = email ? email.slice(0, 2).toUpperCase() : "–";
+  userMenuEmail.textContent = email || "";
+}
+
+userAvatarBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  userMenu.hidden = !userMenu.hidden;
+});
+document.addEventListener("click", (e) => {
+  if (!userMenu.hidden && !userMenu.contains(e.target) && e.target !== userAvatarBtn) {
+    userMenu.hidden = true;
+  }
+});
+
+// currentSession (from auth.js) may not be populated yet on first paint -- poll briefly
+// until requireSession()'s own async fetch resolves, rather than racing it.
+(function waitForSession() {
+  if (currentSession) {
+    updateIdentity();
+  } else {
+    setTimeout(waitForSession, 100);
+  }
+})();
+
+// ---------- Primary input: the only way to start engineering ----------
+
+function startEngineering() {
+  const idea = launchpadInput.value.trim();
+  if (idea) sessionStorage.setItem(LAUNCHPAD_IDEA_KEY, idea);
+  window.location.href = "decompose.html";
+}
+
+launchpadSubmitBtn.addEventListener("click", startEngineering);
+launchpadInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    startEngineering();
+  }
+});
+launchpadExamples.addEventListener("click", (e) => {
+  const chip = e.target.closest(".example-chip");
+  if (!chip) return;
+  launchpadInput.value = chip.textContent;
+  launchpadInput.focus();
+});
+
+// ---------- Recent projects: a simple list, not a dashboard ----------
 
 function formatDate(iso) {
   const d = new Date(iso);
-  return d.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-async function fetchProjects() {
-  const res = await fetch("/api/projects");
-  if (!res.ok) throw new Error("Failed to load projects");
-  return res.json();
-}
-
-function renderProjects(projects) {
-  grid.innerHTML = "";
-  if (projects.length === 0) {
-    emptyState.style.display = "block";
-    return;
-  }
-  emptyState.style.display = "none";
-
-  for (const project of projects) {
-    const card = document.createElement("div");
-    card.className = "project-card";
-
-    const name = document.createElement("div");
-    name.className = "name";
-    name.textContent = project.name;
-    name.title = "Open project";
-    name.addEventListener("click", () => {
-      window.location.href = `editor.html?project=${project.id}`;
-    });
-
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    meta.textContent = `${project.node_count} node${project.node_count === 1 ? "" : "s"} · updated ${formatDate(project.updated_at)}`;
-
-    const actions = document.createElement("div");
-    actions.className = "actions";
-
-    const renameBtn = document.createElement("button");
-    renameBtn.className = "btn btn-small";
-    renameBtn.textContent = "Rename";
-    renameBtn.addEventListener("click", () => renameProject(project));
-
-    const deleteBtn = document.createElement("button");
-    deleteBtn.className = "btn btn-small btn-danger";
-    deleteBtn.textContent = "Delete";
-    deleteBtn.addEventListener("click", () => deleteProject(project));
-
-    actions.appendChild(renameBtn);
-    actions.appendChild(deleteBtn);
-
-    card.appendChild(name);
-    card.appendChild(meta);
-    card.appendChild(actions);
-    grid.appendChild(card);
-  }
-}
-
-async function loadAndRender() {
-  const projects = await fetchProjects();
-  renderProjects(projects);
-}
-
-async function createProject() {
-  const name = prompt("Name for the new project:");
-  if (name === null) return;
-  const trimmed = name.trim();
-  if (!trimmed) return;
-
-  const res = await fetch("/api/projects", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: trimmed }),
-  });
-  if (!res.ok) {
-    alert("Failed to create project.");
-    return;
-  }
-  const project = await res.json();
-  window.location.href = `editor.html?project=${project.id}`;
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 async function renameProject(project) {
@@ -101,7 +78,6 @@ async function renameProject(project) {
   if (name === null) return;
   const trimmed = name.trim();
   if (!trimmed || trimmed === project.name) return;
-
   const res = await fetch(`/api/projects/${project.id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -111,64 +87,98 @@ async function renameProject(project) {
     alert("Failed to rename project.");
     return;
   }
-  loadAndRender();
+  loadRecentProjects();
 }
 
 async function deleteProject(project) {
   const confirmed = confirm(`Delete "${project.name}"? This cannot be undone.`);
   if (!confirmed) return;
-
   const res = await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
   if (!res.ok) {
     alert("Failed to delete project.");
     return;
   }
-  loadAndRender();
+  loadRecentProjects();
 }
 
-function closeImportModal() {
-  importModal.hidden = true;
-}
+function renderRecentProjects(projects) {
+  recentProjectsList.innerHTML = "";
+  if (projects.length === 0) {
+    emptyState.hidden = false;
+    return;
+  }
+  emptyState.hidden = true;
 
-async function createProjectFromOutline() {
-  const text = importText.value.trim();
-  if (!text) return;
-  importConfirmBtn.disabled = true;
-  try {
-    const res = await fetch("/api/projects/from-outline", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+  for (const project of projects.slice(0, 8)) {
+    const row = document.createElement("div");
+    row.className = "launchpad-recent-row";
+
+    const name = document.createElement("span");
+    name.className = "launchpad-recent-name";
+    name.textContent = project.name;
+    name.addEventListener("click", () => {
+      window.location.href = `editor.html?project=${project.id}`;
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      alert(err.detail || "Import failed. Check the outline format and try again.");
-      return;
-    }
-    const project = await res.json();
-    closeImportModal();
-    window.location.href = `editor.html?project=${project.id}`;
-  } catch (err) {
-    alert("Import failed: could not reach the server.");
-  } finally {
-    importConfirmBtn.disabled = false;
+
+    const meta = document.createElement("div");
+    meta.className = "launchpad-recent-meta";
+
+    const modified = document.createElement("span");
+    modified.textContent = formatDate(project.updated_at);
+    meta.appendChild(modified);
+
+    const actionsWrap = document.createElement("div");
+    actionsWrap.className = "row-actions-wrap";
+    const menuBtn = document.createElement("button");
+    menuBtn.className = "row-menu-btn";
+    menuBtn.textContent = "⋯";
+    menuBtn.title = "Rename or delete";
+    const menu = document.createElement("div");
+    menu.className = "dropdown-menu";
+    menu.hidden = true;
+    menu.style.right = "0";
+    menu.style.left = "auto";
+    const renameBtn = document.createElement("button");
+    renameBtn.textContent = "Rename";
+    renameBtn.addEventListener("click", () => {
+      menu.hidden = true;
+      renameProject(project);
+    });
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "danger";
+    deleteBtn.textContent = "Delete";
+    deleteBtn.addEventListener("click", () => {
+      menu.hidden = true;
+      deleteProject(project);
+    });
+    menu.appendChild(renameBtn);
+    menu.appendChild(deleteBtn);
+    menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menu.hidden = !menu.hidden;
+    });
+    actionsWrap.appendChild(menuBtn);
+    actionsWrap.appendChild(menu);
+    meta.appendChild(actionsWrap);
+
+    row.appendChild(name);
+    row.appendChild(meta);
+    recentProjectsList.appendChild(row);
   }
 }
 
-newProjectBtn.addEventListener("click", createProject);
-importOutlineBtn.addEventListener("click", () => {
-  importText.value = "";
-  importModal.hidden = false;
-  importText.focus();
-});
-importCancelBtn.addEventListener("click", closeImportModal);
-importXBtn.addEventListener("click", closeImportModal);
-importModal.addEventListener("click", (e) => {
-  if (e.target === importModal) closeImportModal();
-});
-importConfirmBtn.addEventListener("click", createProjectFromOutline);
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !importModal.hidden) closeImportModal();
+document.addEventListener("click", (e) => {
+  for (const menu of recentProjectsList.querySelectorAll(".dropdown-menu")) {
+    if (!menu.hidden && !menu.contains(e.target)) menu.hidden = true;
+  }
 });
 
-loadAndRender();
+async function loadRecentProjects() {
+  const res = await fetch("/api/projects");
+  if (!res.ok) return;
+  const projects = await res.json();
+  projects.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+  renderRecentProjects(projects);
+}
+
+loadRecentProjects();
