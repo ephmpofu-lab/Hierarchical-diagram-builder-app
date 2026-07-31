@@ -887,6 +887,10 @@ class DomainRenderRequest(BaseModel):
     domain: str
 
 
+class RefineTreeRequest(BaseModel):
+    instruction: str
+
+
 class N8nNode(BaseModel):
     step_id: str  # the originating TaskTreeNode id, for traceability back to the tree
     name: str  # unique display name on the n8n canvas -- also the connection-graph key

@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 from app import app
 from backend.auth import AuthenticatedUser, require_auth
 from backend.decompose import engine as decompose_engine
+from backend.intelligence.stages import ReasoningStageError
 from backend.intent import service as intent_service
 from backend.models import (
     DomainChecklist,
@@ -689,3 +690,97 @@ def test_render_n8n_endpoint_returns_importable_shape(authed_client):
     assert len(body["nodes"]) > 0
     for node in body["nodes"]:
         assert node["type"].startswith("n8n-nodes-base.")
+
+
+# ---------- Unit + endpoint tests: refine_tree (AMENDMENT 4 item 6) ----------
+
+
+def test_refine_tree_preserves_untouched_node_ids_and_adds_new_one(monkeypatch):
+    original = _valid_tree()
+    refined_dump = original.model_dump()
+    refined_dump["nodes"]["a3"] = {
+        "id": "a3", "label": "Count chunks", "level": "Atomic step", "parent_id": "s1",
+        "children": [], "requires": ["a2"], "consumes": "chunks", "produces": "chunk_count",
+        "terminal_output": True, "variables": [], "pillar_tags": [], "notes": "",
+    }
+    refined_dump["nodes"]["s1"]["children"] = ["a1", "a2", "a3"]
+    monkeypatch.setattr(decompose_engine, "_ask_json", lambda system, prompt, max_tokens=16000: refined_dump)
+
+    refined = decompose_engine.refine_tree(original, "add a step that counts the chunks")
+
+    assert set(refined.nodes) == {"l1", "s1", "a1", "a2", "a3"}
+    assert refined.nodes["a1"] == original.nodes["a1"]  # untouched, byte-identical
+    assert refined.nodes["a3"].label == "Count chunks"
+    assert refined.nodes["s1"].children == ["a1", "a2", "a3"]
+
+
+def test_refine_tree_malformed_response_raises_reasoning_stage_error(monkeypatch):
+    monkeypatch.setattr(decompose_engine, "_ask_json", lambda system, prompt, max_tokens=16000: {"not": "a tree"})
+    with pytest.raises(ReasoningStageError):
+        decompose_engine.refine_tree(_valid_tree(), "do something")
+
+
+def test_refine_domain_endpoint_requires_auth():
+    client = TestClient(app)
+    response = client.post(f"/api/decompose/domains/{TEST_DOMAIN}/refine", json={"instruction": "x"})
+    assert response.status_code == 401
+
+
+def test_refine_domain_endpoint_404_for_unknown_domain(authed_client):
+    response = authed_client.post(
+        "/api/decompose/domains/__definitely_not_a_real_domain__/refine", json={"instruction": "x"}
+    )
+    assert response.status_code == 404
+
+
+def test_refine_domain_endpoint_400_for_empty_instruction(authed_client):
+    try:
+        taxonomy_repo.save_tree(_valid_tree())
+        taxonomy_repo.save_checklist(_checklist("Ingestion"))
+        response = authed_client.post(f"/api/decompose/domains/{TEST_DOMAIN}/refine", json={"instruction": "   "})
+        assert response.status_code == 400
+    finally:
+        taxonomy_repo._TAXONOMIES_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
+        taxonomy_repo._CHECKLISTS_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
+
+
+def test_refine_domain_endpoint_auto_freezes_on_pass(authed_client, monkeypatch):
+    tree = _valid_tree()
+    try:
+        taxonomy_repo.save_tree(tree)
+        taxonomy_repo.save_checklist(_checklist("Ingestion"))
+        monkeypatch.setattr("backend.api.refine_tree", lambda current_tree, instruction: current_tree)
+
+        response = authed_client.post(
+            f"/api/decompose/domains/{TEST_DOMAIN}/refine", json={"instruction": "no-op refine"}
+        )
+        assert response.status_code == 200
+        assert response.json()["validation"]["passed"] is True
+
+        reloaded = taxonomy_repo.load_tree(TEST_DOMAIN)
+        assert set(reloaded.nodes) == set(tree.nodes)  # re-saved (still) correctly
+    finally:
+        taxonomy_repo._TAXONOMIES_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
+        taxonomy_repo._CHECKLISTS_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
+
+
+def test_refine_domain_endpoint_does_not_save_on_validation_failure(authed_client, monkeypatch):
+    tree = _valid_tree()
+    try:
+        taxonomy_repo.save_tree(tree)
+        taxonomy_repo.save_checklist(_checklist("Ingestion"))
+        broken_tree = _valid_tree()
+        broken_tree.nodes["a2"].produces = None  # fails Atomicity criterion 3 / P4
+        monkeypatch.setattr("backend.api.refine_tree", lambda current_tree, instruction: broken_tree)
+
+        response = authed_client.post(
+            f"/api/decompose/domains/{TEST_DOMAIN}/refine", json={"instruction": "break it"}
+        )
+        assert response.status_code == 200
+        assert response.json()["validation"]["passed"] is False
+
+        reloaded = taxonomy_repo.load_tree(TEST_DOMAIN)
+        assert reloaded.nodes["a2"].produces == "chunks"  # untouched -- the broken tree was never written
+    finally:
+        taxonomy_repo._TAXONOMIES_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
+        taxonomy_repo._CHECKLISTS_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)

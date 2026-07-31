@@ -30,7 +30,7 @@ from .db import postgres_cycle_repository as cycle_repo
 from .db import postgres_discovery_repository as discovery_repo
 from .blueprint.commit import commit_blueprint
 from .decomposition.commit import commit_children
-from .decompose.engine import propose_checklist, propose_tree
+from .decompose.engine import propose_checklist, propose_tree, refine_tree
 from .discovery.commit import commit_initiation_report
 from .engineering.service import run_engineering_pipeline
 from .intelligence.commit import commit_reasoning_proposal
@@ -112,6 +112,7 @@ from .models import (
     Reference,
     ReferenceCreate,
     ReferenceUpdate,
+    RefineTreeRequest,
     RenderedCodeBlock,
     ReparentRequest,
     RequirementQualityResult,
@@ -1267,6 +1268,32 @@ def api_render_n8n(body: DomainRenderRequest, user: AuthenticatedUser = Depends(
     if domain_tree is None:
         raise HTTPException(status_code=404, detail=f"No frozen task tree for domain '{body.domain}' yet")
     return export_workflow(domain_tree)
+
+
+@router.post("/decompose/domains/{domain}/refine", response_model=DomainDraftResult)
+def api_refine_domain(domain: str, body: RefineTreeRequest, user: AuthenticatedUser = Depends(require_auth)):
+    """The persistent Command/Refine Input's backend (AMENDMENT 4 item 6) -- a targeted
+    mutation to an already-frozen tree, not a fresh draft. Auto-freezes on pass (unlike
+    /draft, which always needs an explicit /approve) since this is already an
+    authenticated user's direct, specific instruction against a domain they're actively
+    looking at -- never partially accepted; a failing refinement is returned for display
+    but never written to disk, leaving the previously-frozen tree untouched."""
+    if not body.instruction.strip():
+        raise HTTPException(status_code=400, detail="Instruction cannot be empty")
+    checklist = taxonomy_repo.load_checklist(domain)
+    current_tree = taxonomy_repo.load_tree(domain)
+    if checklist is None or current_tree is None:
+        raise HTTPException(status_code=404, detail=f"No frozen domain '{domain}' to refine")
+
+    try:
+        refined_tree = refine_tree(current_tree, body.instruction.strip())
+    except ReasoningStageError as exc:
+        raise HTTPException(status_code=502, detail=f"Refine failed: {exc}") from exc
+
+    validation = validate_tree(refined_tree, checklist)
+    if validation.passed:
+        taxonomy_repo.save_tree(refined_tree)
+    return DomainDraftResult(domain=domain, checklist=checklist, tree=refined_tree, validation=validation)
 
 
 # ---------- Concept Mode: freeform planning objects ----------

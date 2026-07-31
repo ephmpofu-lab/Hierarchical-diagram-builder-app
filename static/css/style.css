@@ -1920,6 +1920,30 @@ html[data-inspector-collapsed="true"] .health-footer {
   margin-bottom: 16px;
 }
 
+/* Persistent Command/Refine Input (item 6) -- always present on the canvas state, right
+   under the topbar so it's visible without scrolling past a long tree. */
+.decompose-refine-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.decompose-refine-input {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 12px;
+}
+
+.decompose-refine-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .discovery-topic-row {
   display: flex;
   flex-wrap: wrap;

@@ -14,7 +14,9 @@ import json
 import uuid
 from typing import Dict, List
 
-from ..intelligence.stages import _ask_json
+from pydantic import ValidationError
+
+from ..intelligence.stages import _ask_json, ReasoningStageError
 from ..models import DomainChecklist, DomainTaskTree, LayerChecklistEntry, TaskTreeNode, Variable
 from ..render.node_mapper import load_schemas, match_schema
 from ..validator.principles import TDSP_STAGES, WELL_ARCHITECTED_PILLARS, check_atomicity_for_node
@@ -279,3 +281,43 @@ def propose_tree(domain: str, reasoning_context: str, checklist: DomainChecklist
             f"them this time:\n{violation_lines}"
         )
     return tree  # last attempt, even if still failing -- caller surfaces violations for human review
+
+
+def refine_tree(tree: DomainTaskTree, instruction: str) -> DomainTaskTree:
+    """AMENDMENT 4 item 6 -- the persistent Command/Refine Input's backend. One AI call
+    proposing a TARGETED mutation to an already-frozen tree from a natural-language
+    instruction (e.g. "also add a rate-limiting step to Retrieval") -- not a regeneration
+    through Stages 1-4. The model is given the tree's own flat, id-keyed JSON directly and
+    told to echo every untouched node's id back unchanged, so nothing downstream that
+    already references those ids breaks; new nodes get a fresh id the model invents. The
+    caller (api.py) validates the result and only re-freezes (taxonomy_repo.save_tree) if
+    it passes -- refine_tree itself never writes to disk."""
+    data = _ask_json(
+        system=(
+            "You are the Decomposition Engine's refinement step. You are given a complete, "
+            "already-frozen task tree as JSON (root_ids, and nodes: a flat id-keyed map of "
+            "TaskTreeNode -- id/label/level/parent_id/children/requires/consumes/produces/"
+            "terminal_output/variables/pillar_tags/notes) and a natural-language instruction "
+            "describing ONE change to make. Apply only that change -- add, modify, or remove "
+            "the minimal set of nodes needed; never relabel, restructure, or remove anything "
+            "the instruction didn't ask about. CRITICAL: every existing node you don't "
+            "change must be returned byte-for-byte identical, same id -- anything "
+            "downstream referencing it by id depends on this. For any new node, invent a "
+            "new, unique id string not already used. Update parent_id/children/requires "
+            "consistently for whatever you add or remove. Every atomic step still needs "
+            "consumes and produces; any new output must be consumed downstream or marked "
+            "terminal_output. "
+            'Respond with strict JSON only, the exact same shape as the tree you were '
+            'given: {"domain": str, "version": int, "root_ids": [str], "nodes": '
+            '{"<id>": {"id": str, "label": str, "level": str, "parent_id": str or null, '
+            '"children": [str], "requires": [str], "consumes": str or null, "produces": '
+            'str or null, "terminal_output": bool, "variables": [{"name": str, "default": '
+            'str or null, "description": str}], "pillar_tags": [str], "notes": str}}}'
+        ),
+        prompt=f"Current tree:\n{json.dumps(tree.model_dump())}\n\nInstruction: {instruction}",
+        max_tokens=16000,
+    )
+    try:
+        return DomainTaskTree(**data)
+    except (ValidationError, TypeError) as exc:
+        raise ReasoningStageError(f"Refine step returned a malformed tree: {data!r} ({exc})") from exc

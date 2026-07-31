@@ -23,6 +23,11 @@
 // permanently-docked column, not an overlay) showing variables/requires/produces, and,
 // once a mode is picked, that node's exact snippet/mapping -- found client-side in the
 // already-fetched whole-domain render, no new per-node endpoint.
+//
+// Item 6 (persistent Command/Refine Input): a small input, always present on the canvas
+// state (Railway's embedded-Agent equivalent) for mutating an already-frozen tree in place
+// -- "also add a rate-limiting step to Retrieval" -- via POST .../refine. Placed right
+// after the topbar so it's visible without scrolling past a long tree.
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const decomposeBoard = document.getElementById("decomposeBoard");
@@ -38,6 +43,7 @@ let state = {
   pythonRender: null, // cached List[RenderedCodeBlock] for the current domain
   n8nRender: null, // cached N8nWorkflow for the current domain
   selectedNodeId: null, // drives the slide-in detail panel, canvas-state only
+  refining: false,
   submitting: false,
   error: null,
 };
@@ -117,6 +123,62 @@ function renderHomeView() {
   }
 }
 
+function renderRefineBar() {
+  const bar = document.createElement("div");
+  bar.className = "decompose-refine-bar";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "decompose-refine-input";
+  input.placeholder = 'Refine this tree… (e.g. "also add a rate-limiting step to Retrieval")';
+  input.disabled = state.refining;
+  const btn = document.createElement("button");
+  btn.className = "btn btn-small";
+  btn.textContent = state.refining ? "Refining…" : "Refine";
+  btn.disabled = state.refining;
+  btn.addEventListener("click", () => submitRefine(input.value));
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submitRefine(input.value);
+    }
+  });
+  bar.appendChild(input);
+  bar.appendChild(btn);
+  return bar;
+}
+
+async function submitRefine(instruction) {
+  const trimmed = instruction.trim();
+  if (!trimmed || state.refining) return;
+  state = { ...state, refining: true, error: null };
+  renderBoard();
+  try {
+    const res = await fetch(`/api/decompose/domains/${encodeURIComponent(state.domain)}/refine`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instruction: trimmed }),
+    });
+    if (!res.ok) {
+      state = { ...state, refining: false, error: "Failed to refine this tree. Please try again." };
+      return;
+    }
+    const result = await res.json();
+    if (!result.validation.passed) {
+      const messages = result.validation.violations.map((v) => v.message).join("; ");
+      state = { ...state, refining: false, error: `Refinement produced an invalid tree, not applied: ${messages}` };
+      return;
+    }
+    // Applied and re-frozen server-side -- sync local state to match, and drop any
+    // render caches / open detail panel since the tree itself just changed underneath them.
+    state = {
+      ...state, refining: false, tree: result.tree,
+      pythonRender: null, n8nRender: null, mode: null, selectedNodeId: null,
+    };
+  } finally {
+    renderBoard();
+  }
+}
+
 function renderCanvasView() {
   const topRow = document.createElement("div");
   topRow.className = "decompose-canvas-topbar";
@@ -134,12 +196,16 @@ function renderCanvasView() {
   topRow.appendChild(backBtn);
   decomposeBoard.appendChild(topRow);
 
+  if (state.tree) {
+    decomposeBoard.appendChild(renderRefineBar());
+  }
+
   if (state.error) {
     const errorBox = document.createElement("div");
     errorBox.className = "reasoning-empty-state";
     errorBox.textContent = state.error;
     decomposeBoard.appendChild(errorBox);
-    return;
+    if (!state.tree) return;
   }
 
   if (!state.tree) {
