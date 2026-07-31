@@ -19,6 +19,7 @@ from pydantic import ValidationError
 from ..intelligence.stages import _ask_json, ReasoningStageError
 from ..models import DomainChecklist, DomainTaskTree, LayerChecklistEntry, TaskTreeNode, Variable
 from ..render.node_mapper import load_schemas, match_schema
+from ..taxonomy import repository as taxonomy_repo
 from ..validator.principles import TDSP_STAGES, WELL_ARCHITECTED_PILLARS, check_atomicity_for_node
 from ..validator.service import validate_tree
 
@@ -105,26 +106,105 @@ def _generate_subtasks_for_layer(entry: LayerChecklistEntry, reasoning_context: 
     return branches or [{"branch_label": None, "sub_tasks": []}]
 
 
-def _generate_atomic_steps_for_subtask(
-    entry: LayerChecklistEntry, sub_task_label: str, produced_so_far: List[str], reasoning_context: str
+def run_operator_simulation(entry: LayerChecklistEntry, sub_task_label: str, reasoning_context: str) -> List[str]:
+    """Stage 2.5 (spec addendum Fix A) -- Operator trace: simulates a real person doing this
+    Sub-task by hand today, with no automation. Grounds Stage 3 in what actually happens,
+    rather than an abstract, invented description."""
+    data = _ask_json(
+        system=(
+            "You are the Decomposition Engine's Grounding Simulation -- Operator trace. "
+            "Simulate a real person performing this Sub-task by hand today, with no "
+            "automation. Output an ordered list of the actual micro-actions a human would "
+            "take, in order -- concrete and specific to this real sub-task, never generic. "
+            'Respond with strict JSON only: {"actions": [str]}'
+        ),
+        prompt=(
+            f"Layer: {entry.layer}\nSub-task: {sub_task_label}\n"
+            f"Layer Input Contract: {entry.input_contract}\nLayer Output Contract: {entry.output_contract}\n\n"
+            f"Reasoning context:\n{reasoning_context}"
+        ),
+        max_tokens=600,
+    )
+    return data.get("actions", [])
+
+
+def run_builder_simulation(entry: LayerChecklistEntry, sub_task_label: str, reasoning_context: str) -> List[str]:
+    """Stage 2.5 -- Builder trace: simulates a developer implementing this Sub-task in
+    code. This is the PRIMARY trace (merge_traces below) -- it is what actually becomes
+    code/nodes, whereas the Operator trace only fills genuine gaps."""
+    data = _ask_json(
+        system=(
+            "You are the Decomposition Engine's Grounding Simulation -- Builder trace. "
+            "Simulate a developer implementing this Sub-task in code. Output an ordered "
+            "list of the actual implementation-level operations needed to automate it -- "
+            "concrete, specific operations (e.g. receive file object, validate file type, "
+            "read file bytes, handle unsupported format), never an abstract description. "
+            'Respond with strict JSON only: {"actions": [str]}'
+        ),
+        prompt=(
+            f"Layer: {entry.layer}\nSub-task: {sub_task_label}\n"
+            f"Layer Input Contract: {entry.input_contract}\nLayer Output Contract: {entry.output_contract}\n\n"
+            f"Reasoning context:\n{reasoning_context}"
+        ),
+        max_tokens=600,
+    )
+    return data.get("actions", [])
+
+
+def merge_traces(operator_trace: List[str], builder_trace: List[str], reasoning_context: str) -> List[str]:
+    """Stage 2.5 -- merges the two traces into one ordered candidate action list. Builder
+    trace is primary; Operator trace only fills genuine gaps (e.g. a progress indicator or
+    confirmation step a real user still needs that the Builder trace omitted)."""
+    data = _ask_json(
+        system=(
+            "You are the Decomposition Engine's Grounding Simulation -- trace merge. You "
+            "are given an Operator trace (what a human does by hand) and a Builder trace "
+            "(the implementation-level operations a developer needs). Merge them into ONE "
+            "ordered action list: the Builder trace is primary -- it is what actually "
+            "becomes code/nodes. Use the Operator trace only to catch anything a real user "
+            "still needs that the Builder trace omitted (e.g. a progress indicator, a "
+            "confirmation step). Do not duplicate actions that are effectively the same. "
+            'Respond with strict JSON only: {"actions": [str]}'
+        ),
+        prompt=(
+            f"Operator trace:\n{json.dumps(operator_trace)}\n\n"
+            f"Builder trace:\n{json.dumps(builder_trace)}\n\nReasoning context:\n{reasoning_context}"
+        ),
+        max_tokens=700,
+    )
+    actions = data.get("actions", [])
+    return actions or builder_trace  # fall back to the builder trace alone if the merge call returns nothing usable
+
+
+def structure_trace_into_atomic_specs(
+    entry: LayerChecklistEntry, sub_task_label: str, merged_trace: List[str],
+    produced_so_far: List[str], reasoning_context: str,
 ) -> List[dict]:
-    """Stage 3's initial proposal, before the Atomicity Test runs."""
+    """Stage 3's initial proposal, revised (spec addendum Fix A): grounded in a real trace
+    of actual micro-actions (Stage 2.5), not an invented description. Preserves the trace's
+    own ordering/granularity as a strong prior -- merging over-granular adjacent actions is
+    prompt guidance here, not a separate mechanical detection loop (only "too broad" is
+    mechanically checkable, by the Atomicity Test that runs after this, in
+    _generate_and_test_atomic_steps)."""
     produced_lines = "\n".join(f"- {label}" for label in produced_so_far) or "(none yet)"
     data = _ask_json(
         system=(
-            "You are Stage 3 (Atomic Step Generation) of a Decomposition Engine. Given a "
-            "Sub-task within a Layer, propose candidate Atomic steps. Each step has "
+            "You are Stage 3 (Atomic Step Generation) of a Decomposition Engine, given a "
+            "grounded trace of the real micro-actions this Sub-task requires (from a "
+            "Grounding Simulation, not invented). Turn the trace into candidate Atomic "
+            "steps, preserving its ordering and granularity as a strong prior: normally one "
+            "atomic step per trace action, UNLESS two adjacent trace actions are so small "
+            "they obviously belong to one real function/node together, in which case merge "
+            "them into one step now -- never invent actions the trace didn't include, and "
+            "never merge away a genuinely distinct operation. Each resulting step has "
             "exactly one action, one named input (consumes), one named output (produces), "
             "a requires list (labels of EARLIER atomic steps -- from this or a prior layer "
             "-- whose output this one needs), variables (every configurable parameter, "
-            "including ones with sensible defaults), pillar_tags (any of "
+            "including sensible defaults), pillar_tags (any of "
             f"{', '.join(WELL_ARCHITECTED_PILLARS)} this step genuinely addresses, or "
-            "an empty list -- never force a tag that doesn't fit), and rules (the real "
-            "validation or business constraints governing this step, e.g. \"accepted "
-            "formats: pdf, docx, txt\" or \"max file size: 50MB\" -- only where a genuine "
-            "constraint exists; an empty list is correct for a step with none, never "
-            "invent one). Name steps by function, never by implementation/vendor. Propose "
-            "at most 3 atomic steps. "
+            "empty), and rules (real constraints, e.g. \"accepted formats: pdf, docx, "
+            "txt\", or empty if none genuinely apply). Name steps by function, never by "
+            "implementation/vendor. "
             'Respond with strict JSON only: {"atomic_steps": [{"label": str, "consumes": '
             'str, "produces": str, "requires": [str], "terminal_output": bool, '
             '"variables": [{"name": str, "default": str or null, "description": str}], '
@@ -133,10 +213,11 @@ def _generate_atomic_steps_for_subtask(
         prompt=(
             f"Layer: {entry.layer}\nSub-task: {sub_task_label}\n"
             f"Layer Input Contract: {entry.input_contract}\nLayer Output Contract: {entry.output_contract}\n"
+            f"Grounded trace (ordered):\n{json.dumps(merged_trace)}\n\n"
             f"Outputs already produced earlier in the tree:\n{produced_lines}\n\n"
             f"Reasoning context:\n{reasoning_context}"
         ),
-        max_tokens=1500,
+        max_tokens=1800,
     )
     return data.get("atomic_steps", [])
 
@@ -176,13 +257,24 @@ def _split_step(candidate: dict, violation_messages: List[str], reasoning_contex
 
 def _generate_and_test_atomic_steps(
     entry: LayerChecklistEntry, sub_task_label: str, produced_so_far: List[str], reasoning_context: str
-) -> List[dict]:
-    """Runs Stage 3's proposal, the Atomicity Test, and recursive splitting on failure --
+) -> "tuple[List[dict], Dict[str, List[str]]]":
+    """Runs Stage 2.5 (Grounding Simulation: Operator + Builder + merge), Stage 3's
+    trace-grounded structuring, the Atomicity Test, and recursive splitting on failure --
     bounded by MAX_ATOMICITY_SPLIT_DEPTH so a step that can't be cleanly split doesn't loop
     forever; the last attempt is kept (never silently dropped) for the Validator's own final
-    pass to surface if it's still imperfect."""
+    pass to surface if it's still imperfect. Returns (accepted atomic-step specs, the
+    grounding record) -- the caller (_run_stages_2_and_3) collects grounding records across
+    the whole tree, and propose_tree persists them (taxonomy_repo.save_grounding) only once
+    the tree they belong to actually passes validation."""
+    operator_trace = run_operator_simulation(entry, sub_task_label, reasoning_context)
+    builder_trace = run_builder_simulation(entry, sub_task_label, reasoning_context)
+    merged_trace = merge_traces(operator_trace, builder_trace, reasoning_context)
+    grounding_record = {
+        "operator_trace": operator_trace, "builder_trace": builder_trace, "merged_trace": merged_trace,
+    }
+
     n8n_schemas = load_schemas()
-    candidates = _generate_atomic_steps_for_subtask(entry, sub_task_label, produced_so_far, reasoning_context)
+    candidates = structure_trace_into_atomic_specs(entry, sub_task_label, merged_trace, produced_so_far, reasoning_context)
     accepted: List[dict] = []
     queue = [(c, 0) for c in candidates]
     while queue:
@@ -201,17 +293,20 @@ def _generate_and_test_atomic_steps(
             accepted.append(candidate)  # nothing usable came back -- keep the original
             continue
         queue.extend((piece, depth + 1) for piece in split_pieces)
-    return accepted
+    return accepted, grounding_record
 
 
-def _run_stages_2_and_3(tree: DomainTaskTree, checklist: DomainChecklist, reasoning_context: str) -> None:
+def _run_stages_2_and_3(tree: DomainTaskTree, checklist: DomainChecklist, reasoning_context: str) -> Dict[str, dict]:
     """Stage 2 (every layer's sub-tasks, now possibly multiple branches per layer -- Fix C)
     then Stage 3 (every branch's sub-tasks' atomic steps), processed in checklist order so
     each layer's generation can see every earlier layer's already-produced outputs -- the
-    checklist's own order becomes the first topological pass (spec section 6, point 3)."""
+    checklist's own order becomes the first topological pass (spec section 6, point 3).
+    Returns every sub-task's grounding record (Stage 2.5), keyed by that sub-task's own
+    node id -- propose_tree persists this only once the whole tree passes validation."""
     atomic_label_to_id: Dict[str, str] = {}
     produced_so_far: List[str] = []
     layer_id_by_label = {tree.nodes[nid].label: nid for nid in tree.root_ids}
+    grounding_by_subtask: Dict[str, dict] = {}
 
     for entry in checklist.mandatory_layers:
         original_layer_id = layer_id_by_label.get(entry.layer)
@@ -245,7 +340,10 @@ def _run_stages_2_and_3(tree: DomainTaskTree, checklist: DomainChecklist, reason
                 sub_label = sub_task_spec.get("label", "")
                 tree.nodes[sub_id] = TaskTreeNode(id=sub_id, label=sub_label, level="Sub-task", parent_id=layer_id)
 
-                atomic_specs = _generate_and_test_atomic_steps(entry, sub_label, produced_so_far, reasoning_context)
+                atomic_specs, grounding_record = _generate_and_test_atomic_steps(
+                    entry, sub_label, produced_so_far, reasoning_context
+                )
+                grounding_by_subtask[sub_id] = {"sub_task_label": sub_label, **grounding_record}
                 atomic_ids = []
                 for spec in atomic_specs:
                     step_id = str(uuid.uuid4())
@@ -276,6 +374,8 @@ def _run_stages_2_and_3(tree: DomainTaskTree, checklist: DomainChecklist, reason
         if node.level == "Atomic step":
             node.requires = [atomic_label_to_id[r] for r in node.requires if r in atomic_label_to_id]
 
+    return grounding_by_subtask
+
 
 def exhaust_variables(tree: DomainTaskTree) -> None:
     """Stage 4 -- for every Atomic step, ground its variables in the real implementation
@@ -297,21 +397,44 @@ def exhaust_variables(tree: DomainTaskTree) -> None:
                 ))
 
 
+def _save_grounding_for_tree(domain: str, grounding_by_subtask: Dict[str, dict]) -> None:
+    """Writes the grounding cache (spec addendum Section 2a) once -- ONLY for the winning,
+    validated attempt's own (now-permanently-frozen) sub-task ids. Each sub-task starts at
+    grounding_version 1; regroup_subtask's confirm step is what appends later versions."""
+    sub_tasks = {
+        sub_id: {
+            "sub_task_label": record["sub_task_label"],
+            "versions": [{
+                "grounding_version": 1,
+                "operator_trace": record["operator_trace"],
+                "builder_trace": record["builder_trace"],
+                "merged_trace": record["merged_trace"],
+            }],
+        }
+        for sub_id, record in grounding_by_subtask.items()
+    }
+    taxonomy_repo.save_grounding(domain, {"domain": domain, "sub_tasks": sub_tasks})
+
+
 def propose_tree(domain: str, reasoning_context: str, checklist: DomainChecklist) -> DomainTaskTree:
-    """Orchestrates the full build order: Stage 0/1 (deterministic) -> Stage 2/3 (per-layer,
-    per-sub-task AI calls with Atomicity testing) -> Stage 4 (variable grounding) -> the
-    Validator. On failure, retries the whole of stages 1-4 (checklist/Stage-0 output never
-    changes) with the specific violations appended to every stage's reasoning context --
-    each stage's own regenerated content naturally responds to whichever violations
-    actually name it."""
+    """Orchestrates the full build order: Stage 0/1 (deterministic) -> Stage 2/2.5/3
+    (per-layer, per-sub-task Grounding Simulation + Atomicity testing) -> Stage 4 (variable
+    grounding) -> the Validator. On failure, retries the whole of stages 1-4 (checklist/
+    Stage-0 output never changes) with the specific violations appended to every stage's
+    reasoning context -- each stage's own regenerated content naturally responds to
+    whichever violations actually name it. The grounding cache is written once, only for
+    the attempt that actually passes (decision 4, plan doc) -- ids are fresh every retry, so
+    a mid-pipeline cache hit was never possible anyway; this is an audit trail plus the
+    substrate regroup_subtask reads and appends to, not a redundant-work optimization."""
     context = reasoning_context
     tree = None
     for _ in range(MAX_DECOMPOSITION_RETRIES):
         tree = instantiate_layers(domain, checklist)
-        _run_stages_2_and_3(tree, checklist, context)
+        grounding_by_subtask = _run_stages_2_and_3(tree, checklist, context)
         exhaust_variables(tree)
         result = validate_tree(tree, checklist)
         if result.passed:
+            _save_grounding_for_tree(domain, grounding_by_subtask)
             return tree
         violation_lines = "\n".join(f"- {v.message}" for v in result.violations)
         context = (
@@ -361,3 +484,18 @@ def refine_tree(tree: DomainTaskTree, instruction: str) -> DomainTaskTree:
         return DomainTaskTree(**data)
     except (ValidationError, TypeError) as exc:
         raise ReasoningStageError(f"Refine step returned a malformed tree: {data!r} ({exc})") from exc
+
+
+def regroup_subtask(entry: LayerChecklistEntry, sub_task_label: str, reasoning_context: str) -> Dict[str, List[str]]:
+    """Manually-triggered re-grounding for ONE already-frozen sub-task (spec addendum
+    Section 2a's refinement mechanism) -- re-runs Operator+Builder+Merge using that
+    sub-task's own still-valid Layer/label context. Returns the new version UN-SAVED; the
+    caller (api.py) is responsible for explicit confirmation before appending it to that
+    sub-task's versions[] (taxonomy_repo.save_grounding) -- this function never writes.
+    Deliberately does not touch the frozen tree.json or regenerate atomic steps -- re-
+    deriving atomic steps from a corrected trace and merging them into a live tree is a
+    real, separate follow-up action, out of scope here."""
+    operator_trace = run_operator_simulation(entry, sub_task_label, reasoning_context)
+    builder_trace = run_builder_simulation(entry, sub_task_label, reasoning_context)
+    merged_trace = merge_traces(operator_trace, builder_trace, reasoning_context)
+    return {"operator_trace": operator_trace, "builder_trace": builder_trace, "merged_trace": merged_trace}

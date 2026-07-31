@@ -100,10 +100,23 @@ def _checklist(*layer_names, stage="data_acquisition_ingestion") -> DomainCheckl
     ])
 
 
-def _stage_router(stage2=None, stage3=None, split=None):
+def _stage_router(stage2=None, stage3=None, split=None, operator_trace=None, builder_trace=None, merged_trace=None):
     """Routes a mocked _ask_json call by a marker string in its `system` prompt --
-    engine.py's own stages each state which one they are (see engine.py's system prompts)."""
+    engine.py's own stages each state which one they are (see engine.py's system prompts).
+    Stage 2.5's three Grounding Simulation calls (Operator/Builder/merge) default to empty
+    traces when a test doesn't care about their content -- only the final atomic_steps
+    (stage3) matter to most tests, since _ask_json is fully mocked regardless of what the
+    real prompt would have contained."""
     def _mock(system, prompt, max_tokens=1500):
+        # Full markers, not bare substrings -- merge_traces's own prompt text mentions "an
+        # Operator trace" in its description, which would false-match a bare "Operator
+        # trace" check meant for run_operator_simulation's own system prompt.
+        if "Grounding Simulation -- Operator trace" in system:
+            return {"actions": operator_trace if operator_trace is not None else []}
+        if "Grounding Simulation -- Builder trace" in system:
+            return {"actions": builder_trace if builder_trace is not None else []}
+        if "Grounding Simulation -- trace merge" in system:
+            return {"actions": merged_trace if merged_trace is not None else []}
         if "Stage 2" in system and stage2 is not None:
             return stage2
         if "Stage 3" in system and stage3 is not None:
@@ -415,8 +428,9 @@ def test_generate_and_test_atomic_steps_splits_a_failing_candidate(monkeypatch):
     mock = _stage_router(stage3={"atomic_steps": [bad_candidate]}, split={"atomic_steps": split_pieces})
     monkeypatch.setattr(decompose_engine, "_ask_json", mock)
 
-    result = decompose_engine._generate_and_test_atomic_steps(entry, "Load", [], "context")
+    result, grounding_record = decompose_engine._generate_and_test_atomic_steps(entry, "Load", [], "context")
     assert [c["label"] for c in result] == ["Fetch the document", "Chunk the document"]
+    assert set(grounding_record) == {"operator_trace", "builder_trace", "merged_trace"}
 
 
 def test_split_step_response_preserves_rules_per_piece(monkeypatch):
@@ -436,7 +450,7 @@ def test_split_step_response_preserves_rules_per_piece(monkeypatch):
     mock = _stage_router(stage3={"atomic_steps": [bad_candidate]}, split={"atomic_steps": split_pieces})
     monkeypatch.setattr(decompose_engine, "_ask_json", mock)
 
-    result = decompose_engine._generate_and_test_atomic_steps(entry, "Load", [], "context")
+    result, _ = decompose_engine._generate_and_test_atomic_steps(entry, "Load", [], "context")
     assert result[0]["rules"] == ["max file size: 50MB"]
     assert result[1]["rules"] == []
 
@@ -453,8 +467,207 @@ def test_generate_and_test_atomic_steps_accepts_clean_candidate_without_splittin
         return {"atomic_steps": [clean_candidate]}
 
     monkeypatch.setattr(decompose_engine, "_ask_json", _mock)
-    result = decompose_engine._generate_and_test_atomic_steps(entry, "Load", [], "context")
+    result, _ = decompose_engine._generate_and_test_atomic_steps(entry, "Load", [], "context")
     assert result == [clean_candidate]
+
+
+# ---------- Unit tests: Stage 2.5 Grounding Simulation (spec addendum Fix A) ----------
+
+
+def test_run_operator_simulation_returns_actions(monkeypatch):
+    entry = LayerChecklistEntry(layer="Ingestion", tdsp_stage="data_acquisition_ingestion",
+                                 input_contract=["source_config"], output_contract=["raw_documents"])
+    monkeypatch.setattr(
+        decompose_engine, "_ask_json",
+        lambda system, prompt, max_tokens=600: {"actions": ["choose upload source", "select files on device"]},
+    )
+    actions = decompose_engine.run_operator_simulation(entry, "Source acquisition", "context")
+    assert actions == ["choose upload source", "select files on device"]
+
+
+def test_run_builder_simulation_returns_actions(monkeypatch):
+    entry = LayerChecklistEntry(layer="Ingestion", tdsp_stage="data_acquisition_ingestion")
+    monkeypatch.setattr(
+        decompose_engine, "_ask_json",
+        lambda system, prompt, max_tokens=600: {"actions": ["receive file object", "validate file type"]},
+    )
+    actions = decompose_engine.run_builder_simulation(entry, "Source acquisition", "context")
+    assert actions == ["receive file object", "validate file type"]
+
+
+def test_merge_traces_prefers_ai_response(monkeypatch):
+    monkeypatch.setattr(
+        decompose_engine, "_ask_json",
+        lambda system, prompt, max_tokens=700: {"actions": ["receive file object", "show progress indicator"]},
+    )
+    merged = decompose_engine.merge_traces(["choose upload source"], ["receive file object"], "context")
+    assert merged == ["receive file object", "show progress indicator"]
+
+
+def test_merge_traces_falls_back_to_builder_trace_when_ai_returns_nothing(monkeypatch):
+    monkeypatch.setattr(decompose_engine, "_ask_json", lambda system, prompt, max_tokens=700: {})
+    merged = decompose_engine.merge_traces(["choose upload source"], ["receive file object"], "context")
+    assert merged == ["receive file object"]
+
+
+def test_structure_trace_into_atomic_specs_uses_the_merged_trace(monkeypatch):
+    entry = LayerChecklistEntry(layer="Ingestion", tdsp_stage="data_acquisition_ingestion",
+                                 input_contract=["source_config"], output_contract=["raw_documents"])
+    seen_prompts = []
+
+    def _mock(system, prompt, max_tokens=1800):
+        seen_prompts.append(prompt)
+        return {"atomic_steps": [{"label": "receive_file_object", "consumes": "source_config",
+                                   "produces": "file_object", "requires": [], "terminal_output": False,
+                                   "variables": [], "pillar_tags": [], "rules": [], "notes": ""}]}
+
+    monkeypatch.setattr(decompose_engine, "_ask_json", _mock)
+    result = decompose_engine.structure_trace_into_atomic_specs(
+        entry, "Source acquisition", ["receive file object", "validate file type"], [], "context"
+    )
+    assert result[0]["label"] == "receive_file_object"
+    assert any("receive file object" in p for p in seen_prompts)  # the trace actually reached the prompt
+
+
+def test_generate_and_test_atomic_steps_runs_grounding_before_structuring(monkeypatch):
+    # Full Stage 2.5 -> Stage 3 chain, mocked end to end via _stage_router's default
+    # (empty) traces -- confirms the grounding_record shape returned alongside specs.
+    entry = LayerChecklistEntry(layer="Ingestion", tdsp_stage="data_acquisition_ingestion")
+    clean_candidate = {"label": "Fetch the document", "consumes": "source_config",
+                        "produces": "raw_document", "requires": [], "terminal_output": False,
+                        "variables": [], "pillar_tags": [], "rules": [], "notes": ""}
+    mock = _stage_router(
+        stage3={"atomic_steps": [clean_candidate]},
+        operator_trace=["choose upload source"], builder_trace=["receive file object"],
+        merged_trace=["receive file object", "show progress indicator"],
+    )
+    monkeypatch.setattr(decompose_engine, "_ask_json", mock)
+
+    specs, grounding_record = decompose_engine._generate_and_test_atomic_steps(entry, "Load", [], "context")
+    assert specs == [clean_candidate]
+    assert grounding_record["operator_trace"] == ["choose upload source"]
+    assert grounding_record["builder_trace"] == ["receive file object"]
+    assert grounding_record["merged_trace"] == ["receive file object", "show progress indicator"]
+
+
+def test_propose_tree_saves_grounding_only_for_the_winning_attempt(monkeypatch):
+    stage2 = {"branches": [{"branch_label": None, "sub_tasks": [{"label": "Load and chunk"}]}]}
+    stage3 = {"atomic_steps": [{
+        "label": "Read source file", "consumes": "source_config", "produces": "raw_text",
+        "requires": [], "terminal_output": True, "variables": [], "pillar_tags": _PILLARS_A + _PILLARS_B,
+        "rules": [], "notes": "",
+    }]}
+    mock = _stage_router(
+        stage2=stage2, stage3=stage3,
+        operator_trace=["read the file by hand"], builder_trace=["open(path).read()"],
+        merged_trace=["open(path).read()"],
+    )
+    monkeypatch.setattr(decompose_engine, "_ask_json", mock)
+    checklist = _checklist("Ingestion")
+
+    try:
+        tree = decompose_engine.propose_tree(TEST_DOMAIN, "a RAG pipeline", checklist)
+        assert validate_tree(tree, checklist).passed
+
+        grounding = taxonomy_repo.load_grounding(TEST_DOMAIN)
+        assert grounding is not None
+        atomic_step_id = next(nid for nid, n in tree.nodes.items() if n.level == "Atomic step")
+        sub_task_id = tree.nodes[atomic_step_id].parent_id
+        record = grounding["sub_tasks"][sub_task_id]
+        assert record["sub_task_label"] == "Load and chunk"
+        assert record["versions"][0]["grounding_version"] == 1
+        assert record["versions"][0]["merged_trace"] == ["open(path).read()"]
+    finally:
+        taxonomy_repo._CHECKLISTS_DIR.joinpath(f"{TEST_DOMAIN}.grounding.json").unlink(missing_ok=True)
+
+
+def test_regroup_subtask_reruns_grounding_and_does_not_save(monkeypatch):
+    entry = LayerChecklistEntry(layer="Ingestion", tdsp_stage="data_acquisition_ingestion")
+    mock = _stage_router(
+        operator_trace=["read the file by hand, notice it's a ZIP"],
+        builder_trace=["open(path).read()", "handle ZIP archives"],
+        merged_trace=["open(path).read()", "handle ZIP archives"],
+    )
+    monkeypatch.setattr(decompose_engine, "_ask_json", mock)
+
+    version = decompose_engine.regroup_subtask(entry, "Load and chunk", "files can be ZIP archives too")
+    assert version["builder_trace"] == ["open(path).read()", "handle ZIP archives"]
+    assert version["merged_trace"] == ["open(path).read()", "handle ZIP archives"]
+    # regroup_subtask never writes -- confirmed by simply not touching taxonomy_repo at all
+    # (no save_grounding call possible without a domain/sub_task_id in this function's own
+    # signature), matching its own docstring.
+
+
+# ---------- Endpoint tests: regroup (spec addendum Fix A) ----------
+
+
+def test_regroup_endpoint_requires_auth():
+    client = TestClient(app)
+    response = client.post(f"/api/decompose/domains/{TEST_DOMAIN}/subtasks/some-id/regroup", json={})
+    assert response.status_code == 401
+
+
+def test_regroup_endpoint_404_for_unknown_domain(authed_client):
+    response = authed_client.post(
+        "/api/decompose/domains/__definitely_not_a_real_domain__/subtasks/some-id/regroup", json={}
+    )
+    assert response.status_code == 404
+
+
+def test_regroup_endpoint_404_for_unknown_subtask(authed_client):
+    try:
+        taxonomy_repo.save_tree(_valid_tree())
+        taxonomy_repo.save_checklist(_checklist("Ingestion"))
+        response = authed_client.post(
+            f"/api/decompose/domains/{TEST_DOMAIN}/subtasks/__not_real__/regroup", json={}
+        )
+        assert response.status_code == 404
+    finally:
+        taxonomy_repo._TAXONOMIES_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
+        taxonomy_repo._CHECKLISTS_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
+
+
+def test_regroup_and_confirm_endpoints_end_to_end(authed_client, monkeypatch):
+    try:
+        taxonomy_repo.save_tree(_valid_tree())
+        taxonomy_repo.save_checklist(_checklist("Ingestion"))
+        monkeypatch.setattr(
+            "backend.api.regroup_subtask",
+            lambda entry, label, ctx: {
+                "operator_trace": ["read the file by hand"],
+                "builder_trace": ["open(path).read()"],
+                "merged_trace": ["open(path).read()"],
+            },
+        )
+
+        regroup_response = authed_client.post(
+            f"/api/decompose/domains/{TEST_DOMAIN}/subtasks/s1/regroup", json={"reasoning_context": ""}
+        )
+        assert regroup_response.status_code == 200
+
+        confirm_response = authed_client.post(
+            f"/api/decompose/domains/{TEST_DOMAIN}/subtasks/s1/regroup/confirm",
+            json={"operator_trace": ["read the file by hand"], "builder_trace": ["open(path).read()"],
+                  "merged_trace": ["open(path).read()"]},
+        )
+        assert confirm_response.status_code == 200
+        body = confirm_response.json()
+        assert body["versions"][0]["grounding_version"] == 1
+        assert body["versions"][0]["merged_trace"] == ["open(path).read()"]
+
+        # A second confirm append increments the version rather than overwriting it.
+        confirm_again = authed_client.post(
+            f"/api/decompose/domains/{TEST_DOMAIN}/subtasks/s1/regroup/confirm",
+            json={"operator_trace": [], "builder_trace": ["open(path).read(), then decompress if zip"],
+                  "merged_trace": ["open(path).read(), then decompress if zip"]},
+        )
+        assert confirm_again.status_code == 200
+        assert len(confirm_again.json()["versions"]) == 2
+        assert confirm_again.json()["versions"][1]["grounding_version"] == 2
+    finally:
+        taxonomy_repo._TAXONOMIES_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
+        taxonomy_repo._CHECKLISTS_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
+        taxonomy_repo._CHECKLISTS_DIR.joinpath(f"{TEST_DOMAIN}.grounding.json").unlink(missing_ok=True)
 
 
 # ---------- Unit tests: Decomposition Engine -- full propose_tree orchestration ----------
@@ -474,21 +687,24 @@ def test_propose_tree_runs_all_stages_and_produces_a_valid_tree(monkeypatch):
     monkeypatch.setattr(decompose_engine, "_ask_json", _stage_router(stage2=stage2, stage3=stage3))
     checklist = _checklist("Ingestion")
 
-    tree = decompose_engine.propose_tree(TEST_DOMAIN, "a RAG pipeline", checklist)
-    assert tree.domain == TEST_DOMAIN
-    atomic_steps = [n for n in tree.nodes.values() if n.level == "Atomic step"]
-    assert len(atomic_steps) == 2
-    chunker = next(n for n in atomic_steps if n.label == "Split text into chunks")
-    reader = next(n for n in atomic_steps if n.label == "Read source file")
-    assert chunker.requires == [reader.id]
-    # rules[] round-trips from Stage 3's response into the frozen tree (Fix B); an empty
-    # list on another step is not itself flagged (never forced non-empty).
-    assert reader.rules == ["accepted formats: pdf, docx, txt"]
-    assert chunker.rules == []
-    # Stage 4 grounded variables in the real n8n schema too, not just Stage 3's own list.
-    assert any(v.name == "chunk_size" for v in reader.variables) or any(v.name == "chunk_size" for v in chunker.variables)
-    result = validate_tree(tree, checklist)
-    assert result.passed
+    try:
+        tree = decompose_engine.propose_tree(TEST_DOMAIN, "a RAG pipeline", checklist)
+        assert tree.domain == TEST_DOMAIN
+        atomic_steps = [n for n in tree.nodes.values() if n.level == "Atomic step"]
+        assert len(atomic_steps) == 2
+        chunker = next(n for n in atomic_steps if n.label == "Split text into chunks")
+        reader = next(n for n in atomic_steps if n.label == "Read source file")
+        assert chunker.requires == [reader.id]
+        # rules[] round-trips from Stage 3's response into the frozen tree (Fix B); an empty
+        # list on another step is not itself flagged (never forced non-empty).
+        assert reader.rules == ["accepted formats: pdf, docx, txt"]
+        assert chunker.rules == []
+        # Stage 4 grounded variables in the real n8n schema too, not just Stage 3's own list.
+        assert any(v.name == "chunk_size" for v in reader.variables) or any(v.name == "chunk_size" for v in chunker.variables)
+        result = validate_tree(tree, checklist)
+        assert result.passed
+    finally:
+        taxonomy_repo._CHECKLISTS_DIR.joinpath(f"{TEST_DOMAIN}.grounding.json").unlink(missing_ok=True)
 
 
 def test_propose_tree_retries_the_whole_pipeline_on_validation_failure(monkeypatch):
@@ -500,7 +716,9 @@ def test_propose_tree_retries_the_whole_pipeline_on_validation_failure(monkeypat
     good_step = {**bad_step, "terminal_output": True}  # now a legitimate dead end, P5 satisfied
 
     def _mock(system, prompt, max_tokens=1500):
-        if "Stage 2" in system:
+        if "Grounding Simulation --" in system:  # the 3 dedicated Stage 2.5 calls only --
+            return {"actions": []}                # Stage 3's own prompt mentions "a Grounding
+        if "Stage 2" in system:                   # Simulation" descriptively, without "--"
             return stage2
         if "Stage 3" in system:
             calls["stage3"] += 1
@@ -509,9 +727,12 @@ def test_propose_tree_retries_the_whole_pipeline_on_validation_failure(monkeypat
 
     monkeypatch.setattr(decompose_engine, "_ask_json", _mock)
     checklist = _checklist("Ingestion")
-    tree = decompose_engine.propose_tree(TEST_DOMAIN, "a RAG pipeline", checklist)
-    assert calls["stage3"] == 2
-    assert validate_tree(tree, checklist).passed
+    try:
+        tree = decompose_engine.propose_tree(TEST_DOMAIN, "a RAG pipeline", checklist)
+        assert calls["stage3"] == 2
+        assert validate_tree(tree, checklist).passed
+    finally:
+        taxonomy_repo._CHECKLISTS_DIR.joinpath(f"{TEST_DOMAIN}.grounding.json").unlink(missing_ok=True)
 
 
 # ---------- Unit tests: layer repetition (spec addendum Fix C) ----------
@@ -537,19 +758,22 @@ def test_multi_branch_stage2_creates_two_same_labeled_layer_nodes(monkeypatch):
     monkeypatch.setattr(decompose_engine, "_ask_json", _stage_router(stage2=stage2, stage3=stage3))
     checklist = _checklist("Ingestion")
 
-    tree = decompose_engine.propose_tree(TEST_DOMAIN, "a RAG pipeline with two sources", checklist)
+    try:
+        tree = decompose_engine.propose_tree(TEST_DOMAIN, "a RAG pipeline with two sources", checklist)
 
-    layer_nodes = [tree.nodes[nid] for nid in tree.root_ids]
-    assert len(layer_nodes) == 2
-    assert all(n.label == "Ingestion" for n in layer_nodes)
-    # branch 0 has no distinguishing note; branch 1 carries the branch_label via notes.
-    notes = sorted(n.notes for n in layer_nodes)
-    assert notes == ["", "Web-sourced documents"]
-    # Both branches got their own real sub-task/atomic-step content, not a shared/empty one.
-    assert all(n.children for n in layer_nodes)
+        layer_nodes = [tree.nodes[nid] for nid in tree.root_ids]
+        assert len(layer_nodes) == 2
+        assert all(n.label == "Ingestion" for n in layer_nodes)
+        # branch 0 has no distinguishing note; branch 1 carries the branch_label via notes.
+        notes = sorted(n.notes for n in layer_nodes)
+        assert notes == ["", "Web-sourced documents"]
+        # Both branches got their own real sub-task/atomic-step content, not a shared/empty one.
+        assert all(n.children for n in layer_nodes)
 
-    result = validate_tree(tree, checklist)
-    assert result.passed
+        result = validate_tree(tree, checklist)
+        assert result.passed
+    finally:
+        taxonomy_repo._CHECKLISTS_DIR.joinpath(f"{TEST_DOMAIN}.grounding.json").unlink(missing_ok=True)
 
 
 def test_propose_checklist(monkeypatch):
@@ -701,8 +925,10 @@ def test_draft_and_approve_domain_end_to_end(authed_client, monkeypatch):
     finally:
         tree_path = taxonomy_repo._TAXONOMIES_DIR / f"{TEST_DOMAIN}.json"
         checklist_path = taxonomy_repo._CHECKLISTS_DIR / f"{TEST_DOMAIN}.json"
+        grounding_path = taxonomy_repo._CHECKLISTS_DIR / f"{TEST_DOMAIN}.grounding.json"
         tree_path.unlink(missing_ok=True)
         checklist_path.unlink(missing_ok=True)
+        grounding_path.unlink(missing_ok=True)
 
 
 def test_render_python_endpoint_404_for_unknown_domain(authed_client):

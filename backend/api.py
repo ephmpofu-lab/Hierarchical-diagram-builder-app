@@ -30,7 +30,7 @@ from .db import postgres_cycle_repository as cycle_repo
 from .db import postgres_discovery_repository as discovery_repo
 from .blueprint.commit import commit_blueprint
 from .decomposition.commit import commit_children
-from .decompose.engine import propose_checklist, propose_tree, refine_tree
+from .decompose.engine import propose_checklist, propose_tree, refine_tree, regroup_subtask
 from .discovery.commit import commit_initiation_report
 from .engineering.service import run_engineering_pipeline
 from .intelligence.commit import commit_reasoning_proposal
@@ -113,6 +113,8 @@ from .models import (
     ReferenceCreate,
     ReferenceUpdate,
     RefineTreeRequest,
+    RegroundConfirmRequest,
+    RegroundRequest,
     RenderedCodeBlock,
     ReparentRequest,
     RequirementQualityResult,
@@ -1294,6 +1296,62 @@ def api_refine_domain(domain: str, body: RefineTreeRequest, user: AuthenticatedU
     if validation.passed:
         taxonomy_repo.save_tree(refined_tree)
     return DomainDraftResult(domain=domain, checklist=checklist, tree=refined_tree, validation=validation)
+
+
+def _entry_for_subtask(domain: str, sub_task_id: str):
+    """Shared lookup for both regroup endpoints: resolves a sub-task id (from the still-
+    frozen tree) back to its owning Layer's checklist entry + its own label -- the same
+    Layer/Input-Output-Contract context Stage 2/2.5 originally grounded it in."""
+    tree = taxonomy_repo.load_tree(domain)
+    checklist = taxonomy_repo.load_checklist(domain)
+    if tree is None or checklist is None:
+        raise HTTPException(status_code=404, detail=f"No frozen domain '{domain}'")
+    sub_node = tree.nodes.get(sub_task_id)
+    if sub_node is None or sub_node.level != "Sub-task":
+        raise HTTPException(status_code=404, detail=f"No sub-task '{sub_task_id}' in domain '{domain}'")
+    layer_node = tree.nodes.get(sub_node.parent_id) if sub_node.parent_id else None
+    entry = next((e for e in checklist.mandatory_layers if layer_node and e.layer == layer_node.label), None)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="No matching checklist entry for this sub-task's layer")
+    return entry, sub_node.label
+
+
+@router.post("/decompose/domains/{domain}/subtasks/{sub_task_id}/regroup", response_model=Dict[str, List[str]])
+def api_regroup_subtask(
+    domain: str, sub_task_id: str, body: RegroundRequest, user: AuthenticatedUser = Depends(require_auth)
+):
+    """Manually-triggered re-grounding for ONE already-frozen sub-task (spec addendum
+    Section 2a) -- never automatic. Returns the new candidate version for review; nothing
+    is saved until /regroup/confirm is called explicitly with the reviewed result."""
+    entry, sub_task_label = _entry_for_subtask(domain, sub_task_id)
+    try:
+        return regroup_subtask(entry, sub_task_label, body.reasoning_context)
+    except ReasoningStageError as exc:
+        raise HTTPException(status_code=502, detail=f"Regroup failed: {exc}") from exc
+
+
+@router.post("/decompose/domains/{domain}/subtasks/{sub_task_id}/regroup/confirm", response_model=Dict[str, Any])
+def api_confirm_regroup(
+    domain: str, sub_task_id: str, body: RegroundConfirmRequest, user: AuthenticatedUser = Depends(require_auth)
+):
+    """Explicit confirmation step -- appends the reviewed version to this sub-task's
+    versions[] in the grounding cache. Never touches the frozen tree.json and never
+    regenerates atomic steps (deliberately out of scope, see regroup_subtask's docstring)."""
+    # Confirms this sub-task genuinely exists in the frozen tree before writing anything.
+    _entry_for_subtask(domain, sub_task_id)
+
+    grounding = taxonomy_repo.load_grounding(domain) or {"domain": domain, "sub_tasks": {}}
+    sub_tasks = grounding.setdefault("sub_tasks", {})
+    entry = sub_tasks.setdefault(sub_task_id, {"sub_task_label": "", "versions": []})
+    next_version = len(entry["versions"]) + 1
+    entry["versions"].append({
+        "grounding_version": next_version,
+        "operator_trace": body.operator_trace,
+        "builder_trace": body.builder_trace,
+        "merged_trace": body.merged_trace,
+    })
+    taxonomy_repo.save_grounding(domain, grounding)
+    return entry
 
 
 # ---------- Settings (hidden Screen 3, AMENDMENT 4 item 7) ----------

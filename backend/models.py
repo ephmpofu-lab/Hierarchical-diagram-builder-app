@@ -897,6 +897,16 @@ class RefineTreeRequest(BaseModel):
     instruction: str
 
 
+class RegroundRequest(BaseModel):
+    reasoning_context: str = ""
+
+
+class RegroundConfirmRequest(BaseModel):
+    operator_trace: List[str] = Field(default_factory=list)
+    builder_trace: List[str] = Field(default_factory=list)
+    merged_trace: List[str] = Field(default_factory=list)
+
+
 class N8nNode(BaseModel):
     step_id: str  # the originating TaskTreeNode id, for traceability back to the tree
     name: str  # unique display name on the n8n canvas -- also the connection-graph key

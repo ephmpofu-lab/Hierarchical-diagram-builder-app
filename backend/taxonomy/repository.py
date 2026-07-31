@@ -108,3 +108,25 @@ def load_principles_raw() -> Dict[str, Any]:
 
 def save_principles_raw(data: Dict[str, Any]) -> None:
     _PRINCIPLES_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+# ---------- Grounding cache (AMENDMENT 5 Fix A / Simulation Grounding addendum Section 2a) ----------
+# rules/domain_checklists/{domain}.grounding.json -- a real, separate, versioned audit
+# artifact (not a "skip redundant work" cache: propose_tree's own retry loop generates fresh
+# sub-task ids every attempt, so a same-domain hit mid-pipeline was never possible anyway).
+# Written once by propose_tree, after validation passes, keyed by the winning attempt's own
+# permanently-frozen sub-task ids; appended to later only by the manual regroup_subtask
+# confirm step. Raw dict in/out, same posture as the Settings helpers above.
+
+
+def load_grounding(domain: str) -> Optional[Dict[str, Any]]:
+    path = _CHECKLISTS_DIR / f"{domain}.grounding.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def save_grounding(domain: str, data: Dict[str, Any]) -> None:
+    _CHECKLISTS_DIR.mkdir(parents=True, exist_ok=True)
+    path = _CHECKLISTS_DIR / f"{domain}.grounding.json"
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
