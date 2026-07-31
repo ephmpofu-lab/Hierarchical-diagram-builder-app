@@ -1835,6 +1835,91 @@ html[data-inspector-collapsed="true"] .health-footer {
   stroke-width: 2;
 }
 
+/* Node detail drawer (item 5) -- a slide-in overlay, distinct from .inspector-pane
+   (that one is a permanently-docked column, not an overlay over the canvas). */
+.decompose-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 100;
+}
+
+.decompose-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 90vw);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  overflow-y: auto;
+  z-index: 101;
+  animation: decompose-drawer-slide-in 0.15s ease-out;
+}
+
+@keyframes decompose-drawer-slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .decompose-drawer {
+    animation: none;
+  }
+}
+
+.decompose-drawer-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+}
+
+.decompose-drawer-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 40px 16px 0;
+}
+
+.decompose-drawer-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.decompose-drawer-meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.decompose-drawer-meta-label {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.decompose-drawer-variables {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  font-size: 12px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.decompose-drawer-notes {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
 .discovery-topic-row {
   display: flex;
   flex-wrap: wrap;

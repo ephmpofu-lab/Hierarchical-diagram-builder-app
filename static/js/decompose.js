@@ -17,6 +17,12 @@
 // cached client-side so re-toggling doesn't re-fetch. n8n's diagram reuses editor.js's own
 // createElementNS(SVG_NS, ...) idiom -- this codebase's only other SVG-building code --
 // rather than inventing a different pattern.
+//
+// Item 5 (node detail panel): clicking any atomic-step card opens a slide-in drawer
+// (canvas stays visible behind it -- new CSS, this app's existing `.inspector-pane` is a
+// permanently-docked column, not an overlay) showing variables/requires/produces, and,
+// once a mode is picked, that node's exact snippet/mapping -- found client-side in the
+// already-fetched whole-domain render, no new per-node endpoint.
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const decomposeBoard = document.getElementById("decomposeBoard");
@@ -31,6 +37,7 @@ let state = {
   mode: null, // "python" | "n8n" | null, canvas-state only
   pythonRender: null, // cached List[RenderedCodeBlock] for the current domain
   n8nRender: null, // cached N8nWorkflow for the current domain
+  selectedNodeId: null, // drives the slide-in detail panel, canvas-state only
   submitting: false,
   error: null,
 };
@@ -173,6 +180,10 @@ function renderCanvasView() {
         const card = document.createElement("div");
         card.className = "reasoning-node-card";
         card.textContent = atomic.label;
+        card.addEventListener("click", () => {
+          state = { ...state, selectedNodeId: atomic.id };
+          renderBoard();
+        });
         row.appendChild(card);
       }
       layerSection.appendChild(row);
@@ -195,6 +206,124 @@ function renderCanvasView() {
   if (state.mode) {
     decomposeBoard.appendChild(renderOutputSection());
   }
+
+  if (state.selectedNodeId) {
+    const panel = renderNodeDetailPanel();
+    if (panel) decomposeBoard.appendChild(panel);
+  }
+}
+
+function metaRow(label, value) {
+  const row = document.createElement("div");
+  row.className = "decompose-drawer-meta-row";
+  const labelEl = document.createElement("span");
+  labelEl.className = "decompose-drawer-meta-label";
+  labelEl.textContent = label;
+  const valueEl = document.createElement("span");
+  valueEl.textContent = value;
+  row.appendChild(labelEl);
+  row.appendChild(valueEl);
+  return row;
+}
+
+function closeNodeDetail() {
+  state = { ...state, selectedNodeId: null };
+  renderBoard();
+}
+
+function renderNodeDetailPanel() {
+  const node = state.tree.nodes[state.selectedNodeId];
+  if (!node) return null;
+
+  const wrap = document.createElement("div");
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "decompose-drawer-backdrop";
+  backdrop.addEventListener("click", closeNodeDetail);
+  wrap.appendChild(backdrop);
+
+  const drawer = document.createElement("div");
+  drawer.className = "decompose-drawer";
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "btn btn-small decompose-drawer-close";
+  closeBtn.textContent = "✕";
+  closeBtn.addEventListener("click", closeNodeDetail);
+  drawer.appendChild(closeBtn);
+
+  const title = document.createElement("div");
+  title.className = "decompose-drawer-title";
+  title.textContent = node.label;
+  drawer.appendChild(title);
+
+  const meta = document.createElement("div");
+  meta.className = "decompose-drawer-meta";
+  meta.appendChild(metaRow("Level", node.level));
+  if (node.consumes) meta.appendChild(metaRow("Consumes", node.consumes));
+  if (node.produces) meta.appendChild(metaRow("Produces", node.produces));
+  if (node.requires && node.requires.length > 0) {
+    const requiredLabels = node.requires.map((id) => (state.tree.nodes[id] || {}).label || id).join(", ");
+    meta.appendChild(metaRow("Requires", requiredLabels));
+  }
+  if (node.terminal_output) meta.appendChild(metaRow("Terminal output", "yes"));
+  if (node.pillar_tags && node.pillar_tags.length > 0) meta.appendChild(metaRow("Pillars", node.pillar_tags.join(", ")));
+  drawer.appendChild(meta);
+
+  if (node.variables && node.variables.length > 0) {
+    const varsLabel = document.createElement("div");
+    varsLabel.className = "reasoning-section-label";
+    varsLabel.textContent = "Variables";
+    drawer.appendChild(varsLabel);
+    const varsList = document.createElement("ul");
+    varsList.className = "decompose-drawer-variables";
+    for (const v of node.variables) {
+      const item = document.createElement("li");
+      item.textContent = v.default != null ? `${v.name} = ${v.default}` : v.name;
+      if (v.description) item.title = v.description;
+      varsList.appendChild(item);
+    }
+    drawer.appendChild(varsList);
+  }
+
+  if (node.notes) {
+    const notesLabel = document.createElement("div");
+    notesLabel.className = "reasoning-section-label";
+    notesLabel.textContent = "Notes";
+    drawer.appendChild(notesLabel);
+    const notesText = document.createElement("div");
+    notesText.className = "decompose-drawer-notes";
+    notesText.textContent = node.notes;
+    drawer.appendChild(notesText);
+  }
+
+  if (state.mode === "python" && state.pythonRender) {
+    const block = state.pythonRender.find((b) => b.step_id === node.id);
+    if (block) drawer.appendChild(renderDrawerSnippet("Python", block.code));
+  } else if (state.mode === "n8n" && state.n8nRender) {
+    const mapped = state.n8nRender.nodes.find((n) => n.step_id === node.id);
+    if (mapped) {
+      const snippet = JSON.stringify({ type: mapped.type, parameters: mapped.parameters }, null, 2);
+      drawer.appendChild(renderDrawerSnippet("n8n node", snippet));
+    }
+  }
+
+  wrap.appendChild(drawer);
+  return wrap;
+}
+
+function renderDrawerSnippet(label, code) {
+  const heading = document.createElement("div");
+  heading.className = "reasoning-section-label";
+  heading.textContent = label;
+  const pre = document.createElement("pre");
+  pre.className = "decompose-code-block";
+  const codeEl = document.createElement("code");
+  codeEl.textContent = code;
+  pre.appendChild(codeEl);
+  const container = document.createElement("div");
+  container.appendChild(heading);
+  container.appendChild(pre);
+  return container;
 }
 
 function renderOutputSection() {
@@ -322,7 +451,10 @@ async function selectMode(mode) {
 }
 
 async function selectDomain(domain) {
-  state = { ...state, view: "canvas", domain, tree: null, error: null, mode: null, pythonRender: null, n8nRender: null };
+  state = {
+    ...state, view: "canvas", domain, tree: null, error: null,
+    mode: null, pythonRender: null, n8nRender: null, selectedNodeId: null,
+  };
   renderBoard();
   const res = await fetch(`/api/decompose/domains/${encodeURIComponent(domain)}/tree`);
   if (!res.ok) {
@@ -515,6 +647,9 @@ const LAUNCHPAD_IDEA_KEY = "architeq-launchpad-idea";
 function init() {
   renderBoard();
   loadKnownDomains();
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && state.selectedNodeId) closeNodeDetail();
+  });
   const idea = sessionStorage.getItem(LAUNCHPAD_IDEA_KEY);
   if (idea) {
     sessionStorage.removeItem(LAUNCHPAD_IDEA_KEY);
