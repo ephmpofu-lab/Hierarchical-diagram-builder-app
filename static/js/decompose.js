@@ -11,8 +11,14 @@
 // Item 3 (tree visualization): "canvas" now fetches and renders the real frozen tree --
 // Layers as sections, each Sub-task's Atomic steps as a row of `.reasoning-node-card`s
 // (this codebase's own established "one card per node" convention, reused verbatim).
-// Mode toggle, rendered output, and the node-click detail panel are later items.
+//
+// Item 4 (mode toggle + rendered output): Python | n8n is a toggle on this same canvas
+// state, not a separate Output page. Each mode's render is fetched once per domain and
+// cached client-side so re-toggling doesn't re-fetch. n8n's diagram reuses editor.js's own
+// createElementNS(SVG_NS, ...) idiom -- this codebase's only other SVG-building code --
+// rather than inventing a different pattern.
 
+const SVG_NS = "http://www.w3.org/2000/svg";
 const decomposeBoard = document.getElementById("decomposeBoard");
 
 let state = {
@@ -22,6 +28,9 @@ let state = {
   lastIntentText: "",
   draft: null, // { domain, checklist, tree, validation } from POST .../draft
   tree: null, // the frozen DomainTaskTree, once loaded for the current canvas domain
+  mode: null, // "python" | "n8n" | null, canvas-state only
+  pythonRender: null, // cached List[RenderedCodeBlock] for the current domain
+  n8nRender: null, // cached N8nWorkflow for the current domain
   submitting: false,
   error: null,
 };
@@ -171,10 +180,149 @@ function renderCanvasView() {
     layersWrap.appendChild(layerSection);
   }
   decomposeBoard.appendChild(layersWrap);
+
+  const modeToggle = document.createElement("div");
+  modeToggle.className = "decompose-mode-toggle";
+  for (const mode of ["python", "n8n"]) {
+    const btn = document.createElement("button");
+    btn.className = "btn btn-small" + (state.mode === mode ? " active" : "");
+    btn.textContent = mode === "python" ? "Python" : "n8n";
+    btn.addEventListener("click", () => selectMode(mode));
+    modeToggle.appendChild(btn);
+  }
+  decomposeBoard.appendChild(modeToggle);
+
+  if (state.mode) {
+    decomposeBoard.appendChild(renderOutputSection());
+  }
+}
+
+function renderOutputSection() {
+  const section = document.createElement("div");
+  section.className = "decompose-output-section";
+
+  if (state.mode === "python") {
+    if (!state.pythonRender) {
+      section.textContent = "Rendering…";
+      return section;
+    }
+    for (const block of state.pythonRender) {
+      const pre = document.createElement("pre");
+      pre.className = "decompose-code-block";
+      const code = document.createElement("code");
+      code.textContent = block.code;
+      pre.appendChild(code);
+      section.appendChild(pre);
+    }
+    return section;
+  }
+
+  // n8n
+  if (!state.n8nRender) {
+    section.textContent = "Rendering…";
+    return section;
+  }
+  const diagramWrap = document.createElement("div");
+  diagramWrap.className = "decompose-n8n-diagram-wrap";
+  diagramWrap.appendChild(renderN8nDiagram(state.n8nRender));
+  section.appendChild(diagramWrap);
+  const downloadBtn = document.createElement("button");
+  downloadBtn.className = "btn btn-small";
+  downloadBtn.textContent = "Download workflow.json";
+  downloadBtn.addEventListener("click", () => downloadWorkflowJson(state.n8nRender, state.domain));
+  section.appendChild(downloadBtn);
+  return section;
+}
+
+function renderN8nDiagram(workflow) {
+  const boxWidth = 180;
+  const boxHeight = 50;
+  const padding = 40;
+  const maxX = workflow.nodes.reduce((max, n) => Math.max(max, n.position[0]), 0);
+
+  const totalWidth = maxX + boxWidth + padding * 2;
+  const totalHeight = boxHeight + padding * 2;
+  const svg = document.createElementNS(SVG_NS, "svg");
+  // Explicit pixel size, not width="100%" -- a wide tree (RAG's 32 atomic steps) must
+  // scroll horizontally in its own container, never be squashed illegibly small to fit.
+  svg.setAttribute("width", totalWidth);
+  svg.setAttribute("height", totalHeight);
+  svg.setAttribute("viewBox", `0 0 ${totalWidth} ${totalHeight}`);
+  svg.classList.add("decompose-n8n-diagram");
+
+  const nodeByName = {};
+  for (const node of workflow.nodes) nodeByName[node.name] = node;
+
+  // Connections drawn first so node boxes sit on top of the lines.
+  for (const [sourceName, outputs] of Object.entries(workflow.connections)) {
+    const source = nodeByName[sourceName];
+    const targets = (outputs.main && outputs.main[0]) || [];
+    for (const conn of targets) {
+      const target = nodeByName[conn.node];
+      if (!source || !target) continue;
+      const line = document.createElementNS(SVG_NS, "line");
+      line.setAttribute("x1", source.position[0] + boxWidth + padding);
+      line.setAttribute("y1", padding + boxHeight / 2);
+      line.setAttribute("x2", target.position[0] + padding);
+      line.setAttribute("y2", padding + boxHeight / 2);
+      line.setAttribute("class", "decompose-n8n-connection");
+      svg.appendChild(line);
+    }
+  }
+
+  for (const node of workflow.nodes) {
+    const rect = document.createElementNS(SVG_NS, "rect");
+    rect.setAttribute("x", node.position[0] + padding);
+    rect.setAttribute("y", padding);
+    rect.setAttribute("width", boxWidth);
+    rect.setAttribute("height", boxHeight);
+    rect.setAttribute("rx", "8");
+    rect.setAttribute("class", "decompose-n8n-node-rect");
+    svg.appendChild(rect);
+
+    const text = document.createElementNS(SVG_NS, "text");
+    text.setAttribute("x", node.position[0] + padding + boxWidth / 2);
+    text.setAttribute("y", padding + boxHeight / 2 + 4);
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("class", "decompose-n8n-node-text");
+    text.textContent = node.name.length > 22 ? `${node.name.slice(0, 20)}…` : node.name;
+    svg.appendChild(text);
+  }
+  return svg;
+}
+
+function downloadWorkflowJson(workflow, domain) {
+  const exportable = { name: workflow.name, nodes: workflow.nodes, connections: workflow.connections };
+  const blob = new Blob([JSON.stringify(exportable, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${domain}-workflow.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function selectMode(mode) {
+  state = { ...state, mode };
+  renderBoard();
+  const cacheKey = mode === "python" ? "pythonRender" : "n8nRender";
+  if (state[cacheKey]) return; // already fetched for this domain -- no re-fetch on re-toggle
+  const res = await fetch(`/api/decompose/render/${mode}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ domain: state.domain }),
+  });
+  if (!res.ok) {
+    state = { ...state, error: `Failed to render ${mode} output.` };
+    renderBoard();
+    return;
+  }
+  state = { ...state, [cacheKey]: await res.json() };
+  renderBoard();
 }
 
 async function selectDomain(domain) {
-  state = { ...state, view: "canvas", domain, tree: null, error: null };
+  state = { ...state, view: "canvas", domain, tree: null, error: null, mode: null, pythonRender: null, n8nRender: null };
   renderBoard();
   const res = await fetch(`/api/decompose/domains/${encodeURIComponent(domain)}/tree`);
   if (!res.ok) {
