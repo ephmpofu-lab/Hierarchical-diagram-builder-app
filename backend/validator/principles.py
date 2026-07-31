@@ -9,7 +9,7 @@ rather than a JSON predicate language: a fixed, structurally-different set of ru
 justify inventing a rule interpreter."""
 
 import re
-from typing import List
+from typing import Dict, List
 
 from ..models import DomainChecklist, DomainTaskTree, PrincipleViolation, TaskTreeNode
 from ..render.node_mapper import load_schemas as _load_n8n_schemas
@@ -210,20 +210,31 @@ def check_p6_tool_agnosticism(tree: DomainTaskTree) -> List[PrincipleViolation]:
 
 
 def check_p7_coverage_checklist(tree: DomainTaskTree, checklist: DomainChecklist) -> List[PrincipleViolation]:
-    layer_labels = {tree.nodes[nid].label: nid for nid in tree.root_ids if nid in tree.nodes}
+    """Groups ALL root-level nodes by label (not a {label: id} dict, which would silently
+    keep only the last same-labeled node) -- layer repetition (spec addendum Fix C) means
+    more than one Layer node can legitimately share one label. Satisfied as long as AT
+    LEAST ONE instance of a mandatory layer exists and is non-empty, matching Fix C's own
+    stated rule."""
+    ids_by_label: Dict[str, List[str]] = {}
+    for nid in tree.root_ids:
+        node = tree.nodes.get(nid)
+        if node:
+            ids_by_label.setdefault(node.label, []).append(nid)
+
     violations = []
     for entry in checklist.mandatory_layers:
-        node_id = layer_labels.get(entry.layer)
-        if node_id is None:
+        matching_ids = ids_by_label.get(entry.layer, [])
+        if not matching_ids:
             violations.append(PrincipleViolation(
                 principle_id="P7",
                 message=f"Mandatory layer '{entry.layer}' is missing from the tree.",
             ))
-        elif not tree.nodes[node_id].children:
+        elif not any(tree.nodes[nid].children for nid in matching_ids):
             violations.append(PrincipleViolation(
                 principle_id="P7",
-                message=f"Mandatory layer '{entry.layer}' is present but empty.",
-                node_id=node_id,
+                message=f"Mandatory layer '{entry.layer}' is present but empty "
+                f"(checked {len(matching_ids)} instance(s)).",
+                node_id=matching_ids[0],
             ))
     return violations
 

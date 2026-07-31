@@ -228,6 +228,28 @@ def test_p7_flags_empty_mandatory_layer():
     assert any(v.principle_id == "P7" and "empty" in v.message for v in violations)
 
 
+def test_p7_passes_when_one_of_two_same_labeled_layers_is_non_empty():
+    # Layer repetition (Fix C): a second Layer node sharing "Ingestion"'s label but empty
+    # must not fail P7 as long as at least one same-labeled instance has real content --
+    # the old {label: id} dict silently kept only the LAST one, which this guards against.
+    tree = _valid_tree()
+    tree.nodes["l1_empty"] = TaskTreeNode(id="l1_empty", label="Ingestion", level="Layer", children=[])
+    tree.root_ids.append("l1_empty")
+    checklist = _checklist("Ingestion")
+    violations = principles.check_p7_coverage_checklist(tree, checklist)
+    assert violations == []
+
+
+def test_p7_flags_mandatory_layer_when_every_same_labeled_instance_is_empty():
+    tree = _valid_tree()
+    tree.nodes["l1"].children = []
+    tree.nodes["l1_empty"] = TaskTreeNode(id="l1_empty", label="Ingestion", level="Layer", children=[])
+    tree.root_ids.append("l1_empty")
+    checklist = _checklist("Ingestion")
+    violations = principles.check_p7_coverage_checklist(tree, checklist)
+    assert any(v.principle_id == "P7" and "empty" in v.message for v in violations)
+
+
 # ---------- Unit tests: P8 (Cross-Cutting Concerns) ----------
 
 
@@ -439,7 +461,7 @@ def test_generate_and_test_atomic_steps_accepts_clean_candidate_without_splittin
 
 
 def test_propose_tree_runs_all_stages_and_produces_a_valid_tree(monkeypatch):
-    stage2 = {"sub_tasks": [{"label": "Load and chunk"}]}
+    stage2 = {"branches": [{"branch_label": None, "sub_tasks": [{"label": "Load and chunk"}]}]}
     stage3 = {"atomic_steps": [
         {"label": "Read source file", "consumes": "source_config", "produces": "raw_text",
          "requires": [], "terminal_output": False, "variables": [], "pillar_tags": _PILLARS_A,
@@ -470,7 +492,7 @@ def test_propose_tree_runs_all_stages_and_produces_a_valid_tree(monkeypatch):
 
 
 def test_propose_tree_retries_the_whole_pipeline_on_validation_failure(monkeypatch):
-    stage2 = {"sub_tasks": [{"label": "Load"}]}
+    stage2 = {"branches": [{"branch_label": None, "sub_tasks": [{"label": "Load"}]}]}
     calls = {"stage3": 0}
     bad_step = {"label": "Read source file", "consumes": "source_config", "produces": "raw_text",
                 "requires": [], "terminal_output": False,  # P5 orphan: nothing consumes raw_text
@@ -490,6 +512,44 @@ def test_propose_tree_retries_the_whole_pipeline_on_validation_failure(monkeypat
     tree = decompose_engine.propose_tree(TEST_DOMAIN, "a RAG pipeline", checklist)
     assert calls["stage3"] == 2
     assert validate_tree(tree, checklist).passed
+
+
+# ---------- Unit tests: layer repetition (spec addendum Fix C) ----------
+
+
+def test_generate_subtasks_for_layer_defaults_to_one_branch_when_ai_omits_branches(monkeypatch):
+    entry = LayerChecklistEntry(layer="Ingestion", tdsp_stage="data_acquisition_ingestion")
+    monkeypatch.setattr(decompose_engine, "_ask_json", lambda system, prompt, max_tokens=500: {})
+    branches = decompose_engine._generate_subtasks_for_layer(entry, "context")
+    assert branches == [{"branch_label": None, "sub_tasks": []}]
+
+
+def test_multi_branch_stage2_creates_two_same_labeled_layer_nodes(monkeypatch):
+    stage2 = {"branches": [
+        {"branch_label": None, "sub_tasks": [{"label": "Handle PDFs"}]},
+        {"branch_label": "Web-sourced documents", "sub_tasks": [{"label": "Handle web pages"}]},
+    ]}
+    stage3 = {"atomic_steps": [{
+        "label": "Pull rows", "consumes": "source_config", "produces": "rows", "requires": [],
+        "terminal_output": True, "variables": [], "pillar_tags": _PILLARS_A + _PILLARS_B,
+        "rules": [], "notes": "",
+    }]}
+    monkeypatch.setattr(decompose_engine, "_ask_json", _stage_router(stage2=stage2, stage3=stage3))
+    checklist = _checklist("Ingestion")
+
+    tree = decompose_engine.propose_tree(TEST_DOMAIN, "a RAG pipeline with two sources", checklist)
+
+    layer_nodes = [tree.nodes[nid] for nid in tree.root_ids]
+    assert len(layer_nodes) == 2
+    assert all(n.label == "Ingestion" for n in layer_nodes)
+    # branch 0 has no distinguishing note; branch 1 carries the branch_label via notes.
+    notes = sorted(n.notes for n in layer_nodes)
+    assert notes == ["", "Web-sourced documents"]
+    # Both branches got their own real sub-task/atomic-step content, not a shared/empty one.
+    assert all(n.children for n in layer_nodes)
+
+    result = validate_tree(tree, checklist)
+    assert result.passed
 
 
 def test_propose_checklist(monkeypatch):
@@ -605,7 +665,7 @@ def test_get_domain_tree_404_for_unknown_domain(authed_client):
 
 
 def test_draft_and_approve_domain_end_to_end(authed_client, monkeypatch):
-    stage2 = {"sub_tasks": [{"label": "Pull rows"}]}
+    stage2 = {"branches": [{"branch_label": None, "sub_tasks": [{"label": "Pull rows"}]}]}
     stage3 = {"atomic_steps": [{
         "label": "Query source table", "consumes": "source_config", "produces": "rows",
         "requires": [], "terminal_output": True, "variables": [],

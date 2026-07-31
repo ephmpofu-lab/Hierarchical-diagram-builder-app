@@ -73,15 +73,27 @@ def instantiate_layers(domain: str, checklist: DomainChecklist) -> DomainTaskTre
 def _generate_subtasks_for_layer(entry: LayerChecklistEntry, reasoning_context: str) -> List[dict]:
     """Stage 2 -- one AI call per layer, anchored to that layer's own Input/Output
     Contract. Run once per layer, for every layer, before any layer's sub-tasks decompose
-    further into atomic steps (spec section 4's own breadth-first requirement)."""
+    further into atomic steps (spec section 4's own breadth-first requirement).
+
+    Returns a list of branches (spec addendum, Fix C -- layer repetition): normally exactly
+    one, meaning no repetition. More than one only when the grounded reality genuinely
+    diverges (e.g. two structurally different ingestion sources needing two separate
+    Preprocessing branches) -- never split arbitrarily. The orchestrator
+    (_run_stages_2_and_3) reuses this layer's own already-created node for branch 0 and
+    creates additional same-label Layer nodes for branches 1+."""
     data = _ask_json(
         system=(
             "You are Stage 2 (Sub-task Generation) of a Decomposition Engine. Given a "
             "Layer's Input Contract and Output Contract, propose the minimal set of "
             "Sub-tasks (transformations) needed to move from the input artifacts to the "
             "output artifacts. Propose at most 3 sub-tasks, named by function, never by "
-            "implementation/vendor. "
-            'Respond with strict JSON only: {"sub_tasks": [{"label": str}]}'
+            "implementation/vendor. Normally return exactly ONE branch with branch_label: "
+            "null. Only return more than one branch if this Layer's real-world work "
+            "genuinely splits into separate parallel workflows (e.g. two structurally "
+            "different input sources each needing their own sub-tasks) -- never split "
+            "arbitrarily just to have more than one. "
+            'Respond with strict JSON only: {"branches": [{"branch_label": str or null, '
+            '"sub_tasks": [{"label": str}]}]}'
         ),
         prompt=(
             f"Layer: {entry.layer}\nInput Contract: {entry.input_contract}\n"
@@ -89,7 +101,8 @@ def _generate_subtasks_for_layer(entry: LayerChecklistEntry, reasoning_context: 
         ),
         max_tokens=500,
     )
-    return data.get("sub_tasks", [])
+    branches = data.get("branches", [])
+    return branches or [{"branch_label": None, "sub_tasks": []}]
 
 
 def _generate_atomic_steps_for_subtask(
@@ -192,50 +205,70 @@ def _generate_and_test_atomic_steps(
 
 
 def _run_stages_2_and_3(tree: DomainTaskTree, checklist: DomainChecklist, reasoning_context: str) -> None:
-    """Stage 2 (every layer's sub-tasks) then Stage 3 (every sub-task's atomic steps),
-    processed in checklist order so each layer's generation can see every earlier layer's
-    already-produced outputs -- the checklist's own order becomes the first topological
-    pass (spec section 6, point 3)."""
+    """Stage 2 (every layer's sub-tasks, now possibly multiple branches per layer -- Fix C)
+    then Stage 3 (every branch's sub-tasks' atomic steps), processed in checklist order so
+    each layer's generation can see every earlier layer's already-produced outputs -- the
+    checklist's own order becomes the first topological pass (spec section 6, point 3)."""
     atomic_label_to_id: Dict[str, str] = {}
     produced_so_far: List[str] = []
     layer_id_by_label = {tree.nodes[nid].label: nid for nid in tree.root_ids}
 
     for entry in checklist.mandatory_layers:
-        layer_id = layer_id_by_label.get(entry.layer)
-        if layer_id is None:
+        original_layer_id = layer_id_by_label.get(entry.layer)
+        if original_layer_id is None:
             continue
-        sub_task_specs = _generate_subtasks_for_layer(entry, reasoning_context)
-        sub_task_ids = []
-        for sub_task_spec in sub_task_specs:
-            sub_id = str(uuid.uuid4())
-            sub_task_ids.append(sub_id)
-            sub_label = sub_task_spec.get("label", "")
-            tree.nodes[sub_id] = TaskTreeNode(id=sub_id, label=sub_label, level="Sub-task", parent_id=layer_id)
+        branches = _generate_subtasks_for_layer(entry, reasoning_context)
 
-            atomic_specs = _generate_and_test_atomic_steps(entry, sub_label, produced_so_far, reasoning_context)
-            atomic_ids = []
-            for spec in atomic_specs:
-                step_id = str(uuid.uuid4())
-                atomic_ids.append(step_id)
-                label = spec.get("label", "")
-                atomic_label_to_id[label] = step_id
-                variables = [
-                    Variable(name=v.get("name", ""), default=v.get("default"), description=v.get("description", ""))
-                    for v in spec.get("variables", [])
-                ]
-                tree.nodes[step_id] = TaskTreeNode(
-                    id=step_id, label=label, level="Atomic step", parent_id=sub_id,
-                    consumes=spec.get("consumes"), produces=spec.get("produces"),
-                    terminal_output=bool(spec.get("terminal_output", False)),
-                    requires=spec.get("requires", []) or [],  # still raw labels -- resolved below
-                    variables=variables, pillar_tags=spec.get("pillar_tags", []) or [],
-                    rules=spec.get("rules", []) or [],
-                    notes=spec.get("notes", ""),
+        for branch_index, branch in enumerate(branches):
+            if branch_index == 0:
+                # Branch 0 always reuses Stage 1's already-created node -- repetition never
+                # changes the common, single-branch case's ids.
+                layer_id = original_layer_id
+            else:
+                # Fix C -- layer repetition: additional branches get a NEW node sharing the
+                # SAME label as the checklist entry (never a modified label). Same label is
+                # deliberate: check_reference_architecture_conformance already iterates every
+                # root_id individually, and check_p7_coverage_checklist groups by label
+                # (fixed below) -- both work with zero extra special-casing this way. The
+                # branch_label distinguishes it for a human via `notes` only.
+                layer_id = str(uuid.uuid4())
+                tree.nodes[layer_id] = TaskTreeNode(
+                    id=layer_id, label=entry.layer, level="Layer",
+                    notes=branch.get("branch_label") or "",
                 )
-                if spec.get("produces"):
-                    produced_so_far.append(spec["produces"])
-            tree.nodes[sub_id].children = atomic_ids
-        tree.nodes[layer_id].children = sub_task_ids
+                tree.root_ids.append(layer_id)
+
+            sub_task_ids = []
+            for sub_task_spec in branch.get("sub_tasks", []):
+                sub_id = str(uuid.uuid4())
+                sub_task_ids.append(sub_id)
+                sub_label = sub_task_spec.get("label", "")
+                tree.nodes[sub_id] = TaskTreeNode(id=sub_id, label=sub_label, level="Sub-task", parent_id=layer_id)
+
+                atomic_specs = _generate_and_test_atomic_steps(entry, sub_label, produced_so_far, reasoning_context)
+                atomic_ids = []
+                for spec in atomic_specs:
+                    step_id = str(uuid.uuid4())
+                    atomic_ids.append(step_id)
+                    label = spec.get("label", "")
+                    atomic_label_to_id[label] = step_id
+                    variables = [
+                        Variable(name=v.get("name", ""), default=v.get("default"), description=v.get("description", ""))
+                        for v in spec.get("variables", [])
+                    ]
+                    tree.nodes[step_id] = TaskTreeNode(
+                        id=step_id, label=label, level="Atomic step", parent_id=sub_id,
+                        consumes=spec.get("consumes"), produces=spec.get("produces"),
+                        terminal_output=bool(spec.get("terminal_output", False)),
+                        requires=spec.get("requires", []) or [],  # still raw labels -- resolved below
+                        variables=variables, pillar_tags=spec.get("pillar_tags", []) or [],
+                        rules=spec.get("rules", []) or [],
+                        notes=spec.get("notes", ""),
+                    )
+                    if spec.get("produces"):
+                        produced_so_far.append(spec["produces"])
+                tree.nodes[sub_id].children = atomic_ids
+            tree.nodes[layer_id].children = sub_task_ids
 
     # Resolve every atomic step's requires (raw labels) into real ids -- same "never invent
     # references" posture as before: an unresolvable label is silently dropped.
