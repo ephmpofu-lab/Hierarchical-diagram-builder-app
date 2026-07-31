@@ -784,3 +784,81 @@ def test_refine_domain_endpoint_does_not_save_on_validation_failure(authed_clien
     finally:
         taxonomy_repo._TAXONOMIES_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
         taxonomy_repo._CHECKLISTS_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
+
+
+# ---------- Settings endpoint tests (AMENDMENT 4 item 7) ----------
+
+
+def test_settings_principles_requires_auth():
+    client = TestClient(app)
+    response = client.get("/api/decompose/settings/principles")
+    assert response.status_code == 401
+
+
+def test_settings_principles_get_returns_real_p1_to_p7(authed_client):
+    # rules/decomposition_principles.json documents P1-P7 only -- P8 (Cross-Cutting
+    # Coverage) was added later as enforcement code (validator/principles.py) without a
+    # matching citation entry here; this test reflects that actual, current file content.
+    response = authed_client.get("/api/decompose/settings/principles")
+    assert response.status_code == 200
+    ids = {p["id"] for p in response.json()["principles"]}
+    assert ids == {"P1", "P2", "P3", "P4", "P5", "P6", "P7"}
+
+
+def test_settings_principles_put_round_trips_and_is_restored(authed_client):
+    original = taxonomy_repo.load_principles_raw()
+    try:
+        modified = {"principles": [{"id": "P1", "name": "Test", "description": "x", "severity": "Reject"}]}
+        put_response = authed_client.put("/api/decompose/settings/principles", json=modified)
+        assert put_response.status_code == 200
+        get_response = authed_client.get("/api/decompose/settings/principles")
+        assert get_response.json() == modified
+    finally:
+        authed_client.put("/api/decompose/settings/principles", json=original)
+        assert taxonomy_repo.load_principles_raw() == original
+
+
+def test_settings_reference_architectures_lists_real_files(authed_client):
+    response = authed_client.get("/api/decompose/settings/reference-architectures")
+    assert response.status_code == 200
+    assert set(response.json()) == {"tdsp", "c4_model", "well_architected", "solid"}
+
+
+def test_settings_reference_architecture_get_404_for_unknown_name(authed_client):
+    response = authed_client.get("/api/decompose/settings/reference-architectures/__not_real__")
+    assert response.status_code == 404
+
+
+def test_settings_reference_architecture_put_and_get_round_trip(authed_client):
+    name = "__wp_decompose_test_ref_arch__"
+    try:
+        body = {"stages": [{"id": "x", "name": "X"}]}
+        put_response = authed_client.put(f"/api/decompose/settings/reference-architectures/{name}", json=body)
+        assert put_response.status_code == 200
+        get_response = authed_client.get(f"/api/decompose/settings/reference-architectures/{name}")
+        assert get_response.json() == body
+        assert name in authed_client.get("/api/decompose/settings/reference-architectures").json()
+    finally:
+        taxonomy_repo._REFERENCE_ARCHITECTURES_DIR.joinpath(f"{name}.json").unlink(missing_ok=True)
+
+
+def test_settings_checklists_lists_domains_including_rag(authed_client):
+    response = authed_client.get("/api/decompose/settings/checklists")
+    assert response.status_code == 200
+    assert "rag" in response.json()
+
+
+def test_settings_checklist_get_404_for_unknown_domain(authed_client):
+    response = authed_client.get("/api/decompose/settings/checklists/__not_real__")
+    assert response.status_code == 404
+
+
+def test_settings_checklist_put_and_get_round_trip(authed_client):
+    try:
+        body = {"domain": TEST_DOMAIN, "derived_from": "tdsp", "mandatory_layers": []}
+        put_response = authed_client.put(f"/api/decompose/settings/checklists/{TEST_DOMAIN}", json=body)
+        assert put_response.status_code == 200
+        get_response = authed_client.get(f"/api/decompose/settings/checklists/{TEST_DOMAIN}")
+        assert get_response.json() == body
+    finally:
+        taxonomy_repo._CHECKLISTS_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)

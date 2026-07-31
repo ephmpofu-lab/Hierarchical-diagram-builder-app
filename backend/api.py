@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
@@ -1294,6 +1294,61 @@ def api_refine_domain(domain: str, body: RefineTreeRequest, user: AuthenticatedU
     if validation.passed:
         taxonomy_repo.save_tree(refined_tree)
     return DomainDraftResult(domain=domain, checklist=checklist, tree=refined_tree, validation=validation)
+
+
+# ---------- Settings (hidden Screen 3, AMENDMENT 4 item 7) ----------
+# Not linked from any nav element -- reached only by navigating to settings.html directly.
+# Raw JSON in/out throughout, matching backend/taxonomy/repository.py's own "reached
+# deliberately" posture for this surface (no schema enforcement on save).
+
+
+@router.get("/decompose/settings/principles", response_model=Dict[str, Any])
+def api_get_principles(user: AuthenticatedUser = Depends(require_auth)):
+    return taxonomy_repo.load_principles_raw()
+
+
+@router.put("/decompose/settings/principles", response_model=Dict[str, Any])
+def api_save_principles(body: Dict[str, Any], user: AuthenticatedUser = Depends(require_auth)):
+    taxonomy_repo.save_principles_raw(body)
+    return body
+
+
+@router.get("/decompose/settings/reference-architectures", response_model=List[str])
+def api_list_reference_architectures(user: AuthenticatedUser = Depends(require_auth)):
+    return taxonomy_repo.list_reference_architectures()
+
+
+@router.get("/decompose/settings/reference-architectures/{name}", response_model=Dict[str, Any])
+def api_get_reference_architecture(name: str, user: AuthenticatedUser = Depends(require_auth)):
+    data = taxonomy_repo.load_reference_architecture_raw(name)
+    if data is None:
+        raise HTTPException(status_code=404, detail=f"No reference architecture named '{name}'")
+    return data
+
+
+@router.put("/decompose/settings/reference-architectures/{name}", response_model=Dict[str, Any])
+def api_save_reference_architecture(name: str, body: Dict[str, Any], user: AuthenticatedUser = Depends(require_auth)):
+    taxonomy_repo.save_reference_architecture_raw(name, body)
+    return body
+
+
+@router.get("/decompose/settings/checklists", response_model=List[str])
+def api_list_settings_checklists(user: AuthenticatedUser = Depends(require_auth)):
+    return taxonomy_repo.list_checklist_domains()
+
+
+@router.get("/decompose/settings/checklists/{domain}", response_model=Dict[str, Any])
+def api_get_settings_checklist(domain: str, user: AuthenticatedUser = Depends(require_auth)):
+    data = taxonomy_repo.load_checklist_raw(domain)
+    if data is None:
+        raise HTTPException(status_code=404, detail=f"No checklist for domain '{domain}'")
+    return data
+
+
+@router.put("/decompose/settings/checklists/{domain}", response_model=Dict[str, Any])
+def api_save_settings_checklist(domain: str, body: Dict[str, Any], user: AuthenticatedUser = Depends(require_auth)):
+    taxonomy_repo.save_checklist_raw(domain, body)
+    return body
 
 
 # ---------- Concept Mode: freeform planning objects ----------

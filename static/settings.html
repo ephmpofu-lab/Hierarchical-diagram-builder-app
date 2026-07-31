@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Architeq — Settings</title>
+  <script>
+    document.documentElement.dataset.theme = localStorage.getItem("diagram-builder-theme") || "dark";
+  </script>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-identity">
+      <h1>Settings</h1>
+    </div>
+    <div class="topbar-actions">
+      <button id="themeToggleBtn" class="theme-toggle" title="Toggle light/dark theme"></button>
+    </div>
+  </div>
+
+  <div class="discovery-wrap">
+    <div id="settingsBoard" class="discovery-board discovery-board-wide"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="js/supabase-config.js"></script>
+  <script src="js/supabase-client.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/theme.js"></script>
+  <script src="js/settings.js"></script>
+</body>
+</html>
