@@ -1824,6 +1824,40 @@ html[data-inspector-collapsed="true"] .health-footer {
   border-color: var(--accent);
 }
 
+/* Decompose (AMENDMENT 4 item 2) -- a lightweight draft-review outline; item 3 replaces
+   this with the real card-based canvas tree visualization. */
+.decompose-tree-outline,
+.decompose-tree-outline ul {
+  list-style: disc;
+  margin: 0 0 12px 20px;
+  padding: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.decompose-tree-outline > li {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.decompose-violations-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.decompose-violations-list li {
+  font-size: 13px;
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+}
+
 .kanban-board {
   display: flex;
   gap: 16px;
