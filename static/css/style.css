@@ -1731,6 +1731,49 @@ html[data-inspector-collapsed="true"] .health-footer {
   margin: 0 auto;
 }
 
+/* Decompose's canvas state needs more room than a chat-style thread does. */
+.discovery-board.discovery-board-wide {
+  max-width: 1100px;
+}
+
+.decompose-canvas-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.decompose-canvas-topbar .reasoning-section-label {
+  margin: 0;
+}
+
+.decompose-layers {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.decompose-layer-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  background: var(--surface-2);
+}
+
+.decompose-layer-heading {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.decompose-subtask-heading {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 10px 0 6px;
+}
+
 .discovery-topic-row {
   display: flex;
   flex-wrap: wrap;

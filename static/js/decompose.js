@@ -7,6 +7,11 @@
 // the proposed tree + any validation violations + an Approve action, all in place -- no
 // separate Validation Results page) -> "canvas" once approved. Reuses the already-built
 // draft/approve endpoints verbatim; nothing backend changes for this item.
+//
+// Item 3 (tree visualization): "canvas" now fetches and renders the real frozen tree --
+// Layers as sections, each Sub-task's Atomic steps as a row of `.reasoning-node-card`s
+// (this codebase's own established "one card per node" convention, reused verbatim).
+// Mode toggle, rendered output, and the node-click detail panel are later items.
 
 const decomposeBoard = document.getElementById("decomposeBoard");
 
@@ -16,12 +21,14 @@ let state = {
   domain: null,
   lastIntentText: "",
   draft: null, // { domain, checklist, tree, validation } from POST .../draft
+  tree: null, // the frozen DomainTaskTree, once loaded for the current canvas domain
   submitting: false,
   error: null,
 };
 
 function renderBoard() {
   decomposeBoard.innerHTML = "";
+  decomposeBoard.classList.toggle("discovery-board-wide", state.view === "canvas");
   if (state.view === "drafting") {
     renderDraftingView();
   } else if (state.view === "reviewing_draft") {
@@ -95,30 +102,87 @@ function renderHomeView() {
 }
 
 function renderCanvasView() {
-  // Placeholder for this item -- confirms the state transition works. Real tree
-  // visualization, mode toggle, and node detail panel land in the next few items.
+  const topRow = document.createElement("div");
+  topRow.className = "decompose-canvas-topbar";
   const heading = document.createElement("div");
   heading.className = "reasoning-section-label";
   heading.textContent = `Canvas — ${state.domain}`;
-  decomposeBoard.appendChild(heading);
-
-  const placeholder = document.createElement("div");
-  placeholder.className = "reasoning-empty-state";
-  placeholder.textContent = "Tree visualization lands in the next increment.";
-  decomposeBoard.appendChild(placeholder);
-
   const backBtn = document.createElement("button");
   backBtn.className = "btn btn-small";
   backBtn.textContent = "← Home";
   backBtn.addEventListener("click", () => {
-    state = { ...state, view: "home" };
+    state = { ...state, view: "home", tree: null };
     renderBoard();
   });
-  decomposeBoard.appendChild(backBtn);
+  topRow.appendChild(heading);
+  topRow.appendChild(backBtn);
+  decomposeBoard.appendChild(topRow);
+
+  if (state.error) {
+    const errorBox = document.createElement("div");
+    errorBox.className = "reasoning-empty-state";
+    errorBox.textContent = state.error;
+    decomposeBoard.appendChild(errorBox);
+    return;
+  }
+
+  if (!state.tree) {
+    const loading = document.createElement("div");
+    loading.className = "reasoning-empty-state";
+    loading.textContent = "Loading tree…";
+    decomposeBoard.appendChild(loading);
+    return;
+  }
+
+  const tree = state.tree;
+  const layersWrap = document.createElement("div");
+  layersWrap.className = "decompose-layers";
+  for (const layerId of tree.root_ids) {
+    const layer = tree.nodes[layerId];
+    if (!layer) continue;
+    const layerSection = document.createElement("div");
+    layerSection.className = "decompose-layer-section";
+
+    const layerHeading = document.createElement("div");
+    layerHeading.className = "decompose-layer-heading";
+    layerHeading.textContent = layer.label;
+    layerSection.appendChild(layerHeading);
+
+    for (const subId of layer.children) {
+      const sub = tree.nodes[subId];
+      if (!sub) continue;
+      const subHeading = document.createElement("div");
+      subHeading.className = "decompose-subtask-heading";
+      subHeading.textContent = sub.label;
+      layerSection.appendChild(subHeading);
+
+      const row = document.createElement("div");
+      row.className = "reasoning-node-row";
+      for (const atomicId of sub.children) {
+        const atomic = tree.nodes[atomicId];
+        if (!atomic) continue;
+        const card = document.createElement("div");
+        card.className = "reasoning-node-card";
+        card.textContent = atomic.label;
+        row.appendChild(card);
+      }
+      layerSection.appendChild(row);
+    }
+    layersWrap.appendChild(layerSection);
+  }
+  decomposeBoard.appendChild(layersWrap);
 }
 
-function selectDomain(domain) {
-  state = { ...state, view: "canvas", domain };
+async function selectDomain(domain) {
+  state = { ...state, view: "canvas", domain, tree: null, error: null };
+  renderBoard();
+  const res = await fetch(`/api/decompose/domains/${encodeURIComponent(domain)}/tree`);
+  if (!res.ok) {
+    state = { ...state, error: `Failed to load the tree for '${domain}'.` };
+    renderBoard();
+    return;
+  }
+  state = { ...state, tree: await res.json() };
   renderBoard();
 }
 
