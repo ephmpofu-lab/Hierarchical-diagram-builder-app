@@ -75,6 +75,14 @@ Per `ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md`.
 - **R35.** A non-leaf node's completion status is always computed from its children (all `[x]` to children to `[x]`; all `[ ]` to children to `[ ]`; otherwise `[-]`) and is never directly writable by a user action (CD9, the 100% Rule).
 - **R36.** `PROGRESS.md`'s module-level status is generated from tree node statuses, never edited directly and independently of them.
 
+### Roadmap & Checklist Rendering
+Per `rules/principles/component-decomposition.md` CD11.
+- **R37.** Once a domain's tree (Component Tree or Workflow Tree) is frozen, the Python
+  Renderer and n8n Renderer can each produce a Roadmap + Checklist view: the tree's nodes in
+  topological build order (R10), each showing its current completion status (R34-R36).
+  Derived entirely from existing tree fields at render time, never a separately authored or
+  maintained document.
+
 ## 4a. Modules
 
 Requirements are grouped into modules so Plan/Build/Test/Commit cycles and `PROGRESS.md` can track status at a buildable grain, not just as one long requirement list. Module order follows the dependency order in `ARCHITEQ-Build-Directive.md` Section 6 — each module is buildable once the ones before it are committed.
@@ -90,7 +98,7 @@ Requirements are grouped into modules so Plan/Build/Test/Commit cycles and `PROG
 - **Module 9: Visual Diagram Renderer** — R15
 - **Module 10: UI Shell (Home/Canvas, Detail Panel, Persistent Input)** — R16, R17, R18, R19
 - **Module 5a: Grounding Simulation (Stage 2.5)** — R22, R23. Depends on Module 5. Omitted from the original module list when R22/R23 were added; listed here to close that gap.
-- **Module 11: Dual Tree Architecture (Component Tree)** — R24 to R36. Depends on Modules 1 to 10 (reconciles against the Workflow Tree per R29). Rated Complex; built as a sequence of sub-plans per `~/.claude/CLAUDE.md`'s Development Loop, not as one item.
+- **Module 11: Dual Tree Architecture (Component Tree)** — R24 to R37. Depends on Modules 1 to 10 (reconciles against the Workflow Tree per R29). Rated Complex; built as a sequence of sub-plans per `~/.claude/CLAUDE.md`'s Development Loop, not as one item.
 
 Each module is the unit `PROGRESS.md` tracks. A module is `[x]` complete only when every requirement listed under it has passed Test and been Committed.
 

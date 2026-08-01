@@ -219,6 +219,32 @@ document in the same pass that discovers the gap, per DP8, rather than deferring
 
 ---
 
+## DP12 — A Roadmap and Checklist Exist Beyond the Current Work Item
+
+**Statement:** Beyond DP11's six documents and `PROGRESS.md`'s module-level tracking,
+ARCHITEQ's own project maintains a Roadmap (a sequenced, phased view of what comes after the
+current work, not just the current module) and a Checklist (per-item completion status).
+Already established in practice via `ARCHITEQ-ROADMAP.md` and `PROGRESS.md`; formalized here
+as a standing requirement rather than an incidental convention that happens to exist.
+
+**Grounding:** Standard product/engineering roadmap practice (Lombardo, McCarthy, Ryan,
+Connors, "Product Roadmaps Relaunched," O'Reilly, 2017) — a roadmap sequences work at a
+level above individual tasks, distinct from and complementary to a task-level plan. The
+checklist half reuses the same WBS 100% Rule (PMI) grounding already established for
+completion tracking elsewhere in this corpus (CD9, WD11, WD12), rather than a new mechanism.
+
+**Applies to:** Any Complex-rated new capability (mirrors DP5/DP9's Complex-rating trigger).
+
+**Predicate:**
+```
+before or alongside a Complex-rated capability's PRD, an entry exists in
+ARCHITEQ-ROADMAP.md naming it and its rough sequencing relative to other
+planned work; PROGRESS.md tracks its checklist-style completion status
+once work begins
+```
+
+---
+
 ## Summary Table
 
 | ID | Rule | Grounding |
@@ -234,5 +260,6 @@ document in the same pass that discovers the gap, per DP8, rather than deferring
 | DP9 | Human Confirmation Gate for Complex/Irreversible Items | Boehm (DP5) + EU AI Act Art. 14 (G4) |
 | DP10 | Autonomy Level Is Stated, Never Assumed | Generalizes WD10 to the process layer |
 | DP11 | Full Pre-Build Documentation Set Precedes Planning | IEEE 830, IEEE 1016, Nygard (ADRs), Garrett (UX), Frost (Atomic Design), Chen (ER Model), PMI (WBS) |
+| DP12 | A Roadmap and Checklist Exist Beyond the Current Work Item | Lombardo et al., Product Roadmaps Relaunched, 2017; PMI (WBS 100% Rule) |
 
 This file is referenced from `RULES-INDEX.md`.

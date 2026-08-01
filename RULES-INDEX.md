@@ -13,11 +13,11 @@ Shared template across every file: **Statement | Grounding | Applies to | Predic
 | `workflow-design.md` | WD1-WD10 | How any workflow (Python or n8n) is structured, sequenced, and branched | Workflow Patterns (van der Aalst et al.), Dijkstra, Constantine & Yourdon, BPMN |
 | `governance.md` | G1-G10 | Traceability, accountability, auditability, oversight | NIST AI RMF, ISO/IEC 42001, EU AI Act |
 | `ui-design.md` | UI1-UI10 | The Home/Canvas screen, detail panel, tree diagram | Nielsen heuristics, Fitts's/Hick's Laws, Gestalt principles, WCAG |
-| `dev-process.md` | DP1-DP11 | How ARCHITEQ itself gets built, module by module | Deming (PDCA), Boehm (Spiral Model), Beck (XP/TDD), Poppendieck (Lean), Scrum, IEEE 830/1016 |
+| `dev-process.md` | DP1-DP12 | How ARCHITEQ itself gets built, module by module | Deming (PDCA), Boehm (Spiral Model), Beck (XP/TDD), Poppendieck (Lean), Scrum, IEEE 830/1016, Lombardo et al. (Roadmaps) |
 | `decomposition.md` | P1-P8 | The task tree engine (prose companion to the machine-checkable JSON) | SOLID, C4 Model, TDSP, Well-Architected Framework |
 | `prompting.md` | PR1-PR7 | ARCHITEQ's own internal LLM calls (Intent Parser, grounding simulations) | Anthropic prompt engineering guidance, few-shot/chain-of-thought literature |
 | `node-translation.md` | NT1-NT10 | How a validated atomic step becomes a real n8n node, including its display name | Extends WD9, P4, G9; n8n's actual node schema and naming best practice |
-| `component-decomposition.md` | CD1-CD10 | The structural Component Tree (Python track): requirements to capabilities to components to attributes; also gates that any generated architecture (Python or n8n) carries its own TDD/App-Flow/Design-Brief-equivalent documentation before freezing | ISO/IEC/IEEE 29148, TOGAF Business Capability Modeling, DeMarco/Yourdon Structured Analysis, DDD (Evans), PMI (WBS), restates DP11 |
+| `component-decomposition.md` | CD1-CD11 | The structural Component Tree (Python track): requirements to capabilities to components to attributes; also gates that any generated architecture (Python or n8n) carries its own TDD/App-Flow/Design-Brief-equivalent documentation and a Roadmap+Checklist view before freezing | ISO/IEC/IEEE 29148, TOGAF Business Capability Modeling, DeMarco/Yourdon Structured Analysis, DDD (Evans), PMI (WBS), restates DP11/DP12 |
 | `n8n-canvas-rules.md` | CR1-CR14 | How a validated node graph is *rendered* as an n8n canvas: layout, routing, ports, naming — distinct from node-translation.md's step-to-node *mapping* | n8n's node-and-connection execution model; left-to-right diagramming convention |
 
 ---
@@ -37,14 +37,14 @@ Shared template across every file: **Statement | Grounding | Applies to | Predic
 - Workflow Design: 12
 - Governance: 10
 - UI Design: 10
-- Development Process: 11
+- Development Process: 12
 - Decomposition Engine: 8
 - Prompting: 7
 - Node Translation: 10
-- Component & Requirements Decomposition: 9
+- Component & Requirements Decomposition: 11
 - n8n Canvas Rendering: 14
 
-**Total: 91 grounded rules**, each traceable to a named source, each written as a testable predicate.
+**Total: 94 grounded rules**, each traceable to a named source, each written as a testable predicate.
 
 ---
 

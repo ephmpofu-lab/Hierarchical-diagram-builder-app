@@ -213,6 +213,40 @@ before a Workflow Tree is approved:
 
 ---
 
+## CD11 — Generated Architecture Also Gets a Roadmap and Checklist
+
+**Statement:** Restates DP12 at the generated-architecture layer, the same way CD10 restates
+DP11. Once a domain's tree(s) are frozen, the system renders a human-readable Roadmap +
+Checklist view of that architecture's own build sequence — the tree's layers/components in
+topological build order (R10), each node's current completion status
+(`[ ]`/`[-]`/`[x]`, per CD9/R34-R36) — rather than requiring a user to read raw JSON or
+infer sequencing from the diagram alone. This is a rendering requirement, not a new data
+requirement: every field it displays already exists per CD9/R10; CD11 requires that data be
+surfaced as one coherent view, not left as scattered per-node state a user has to assemble
+themselves.
+
+**Grounding:** Restates DP12 (`dev-process.md`) at the generated-architecture layer, per the
+same cross-layer-restatement convention CD10 already established. The checklist portion is
+literally CD9's own 100%-Rule completion tracking (PMI); this rule's job is only to require
+that tracking be exposed as a rendered artifact, not to invent a new tracking mechanism.
+
+**Applies to:** Python Renderer and n8n Renderer — both consume the same underlying tree
+data (per NT9/R15's existing "positions and connections computed once" discipline) to
+produce this view, rather than each building an independent one.
+
+**Predicate:**
+```
+for a frozen tree (Component Tree or Workflow Tree), a Roadmap + Checklist
+render exists, showing:
+    the tree's nodes in topological build order (R10)
+    each node's current completion status ([ ]/[-]/[x], per CD9/R34-R36)
+this render is derived entirely from existing tree fields at render time;
+it is never a separately authored or separately maintained document that
+can drift from the tree's actual state
+```
+
+---
+
 ## Summary Table
 
 | ID | Rule | Grounding |
@@ -227,5 +261,6 @@ before a Workflow Tree is approved:
 | CD8 | Components Map to One Code Construct | Restates NT1/SOLID at the Python level |
 | CD9 | Attributes Recurse Until Atomic; Completion Rolls Up | WBS Practice Standard + 100% Rule (PMI) |
 | CD10 | Generated Architecture Carries Its Own Documentation Set Before Freezing | Restates DP11 at the generated-architecture layer |
+| CD11 | Generated Architecture Also Gets a Roadmap and Checklist | Restates DP12 at the generated-architecture layer |
 
 This file is referenced from `RULES-INDEX.md`.
