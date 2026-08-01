@@ -6,10 +6,11 @@ ARCHITEQ-Dual-Tree-Architecture.md and rules/principles/component-decomposition.
 Stage -3 (Requirements Engineering) is the only stage implemented so far (sub-plan 11a).
 """
 
+import re
 from typing import Dict, List
 
 from ..intelligence.stages import _ask_json
-from ..models import Attribute, Capability, Component, ExtractedRequirement
+from ..models import Attribute, Capability, Component, DomainTaskTree, ExtractedRequirement
 
 # Same fixed-constant posture as MAX_ATOMICITY_SPLIT_DEPTH (backend/decompose/engine.py).
 MAX_ATTRIBUTE_SPLIT_DEPTH = 3
@@ -192,4 +193,42 @@ def check_no_shared_attributes(attributes: List[Attribute]) -> List[str]:
             violations.append(
                 f"Attribute '{name}' is claimed by more than one component: {', '.join(sorted(components))}"
             )
+    return violations
+
+
+def _canonical_name(name: str) -> str:
+    """CD6's "canonical name" comparison -- lowercase, strip everything but letters/digits,
+    so "Batch Size" and "batch_size" reconcile (both -> "batchsize"). Deliberately literal,
+    not fuzzy/semantic matching -- see check_tree_reconciliation's own docstring for the
+    real limitation this implies."""
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def check_tree_reconciliation(attributes: List[Attribute], tree: DomainTaskTree) -> List[str]:
+    """R29/CD6, the Reconciliation Rule -- every Component Tree attribute must resolve to
+    exactly one Workflow Tree variable (by canonical name) and vice versa. Returns one
+    violation message per unmatched attribute or variable; empty if fully reconciled.
+
+    Known limitation, not solved here: this only reconciles names that are the same words
+    under formatting differences. It does not perform semantic matching between
+    genuinely different-looking names for the same fact (e.g. the Dual-Tree-Architecture
+    doc's own worked example, "Model" vs "model_name", would NOT reconcile under this
+    check) -- that would need an explicit shared-alias mechanism at authoring time or a
+    real AI judgment call, out of scope here."""
+    variable_names = [
+        variable.name
+        for node in tree.nodes.values()
+        if node.level == "Atomic step"
+        for variable in node.variables
+    ]
+    attr_canon = {_canonical_name(a.name): a.name for a in attributes}
+    var_canon = {_canonical_name(v): v for v in variable_names}
+
+    violations = []
+    for canon, original in attr_canon.items():
+        if canon not in var_canon:
+            violations.append(f"Component attribute '{original}' has no corresponding Workflow Tree variable")
+    for canon, original in var_canon.items():
+        if canon not in attr_canon:
+            violations.append(f"Workflow Tree variable '{original}' has no corresponding Component attribute")
     return violations

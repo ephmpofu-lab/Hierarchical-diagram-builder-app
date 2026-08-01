@@ -1156,6 +1156,54 @@ def test_check_no_shared_attributes_passes_with_no_overlap():
     assert component_engine.check_no_shared_attributes(attrs) == []
 
 
+# ---- Module 11 -- Tree Reconciliation (11e, R29/CD6) ----
+
+def _reconciliation_tree():
+    return DomainTaskTree(domain="rag", version=1, root_ids=["L1"], nodes={
+        "L1": TaskTreeNode(id="L1", label="Ingestion", level="Layer", children=["A1"]),
+        "A1": TaskTreeNode(
+            id="A1", label="Split Text Into Chunks", level="Atomic step", parent_id="L1",
+            produces="text_chunks",
+            variables=[Variable(name="batch_size", default="500"), Variable(name="overlap", default="50")],
+        ),
+    })
+
+
+def test_check_tree_reconciliation_passes_when_names_match_under_normalization():
+    attrs = [
+        Attribute(name="Batch Size", type="integer", component_label="Chunker", domain="rag"),
+        Attribute(name="Overlap", type="integer", component_label="Chunker", domain="rag"),
+    ]
+
+    violations = component_engine.check_tree_reconciliation(attrs, _reconciliation_tree())
+
+    assert violations == []
+
+
+def test_check_tree_reconciliation_flags_unmatched_attribute():
+    attrs = [
+        Attribute(name="Batch Size", type="integer", component_label="Chunker", domain="rag"),
+        Attribute(name="Overlap", type="integer", component_label="Chunker", domain="rag"),
+        Attribute(name="Encoding", type="string", component_label="Chunker", domain="rag"),
+    ]
+
+    violations = component_engine.check_tree_reconciliation(attrs, _reconciliation_tree())
+
+    assert len(violations) == 1
+    assert "Encoding" in violations[0] and "no corresponding Workflow Tree variable" in violations[0]
+
+
+def test_check_tree_reconciliation_flags_unmatched_variable():
+    attrs = [
+        Attribute(name="Batch Size", type="integer", component_label="Chunker", domain="rag"),
+    ]
+
+    violations = component_engine.check_tree_reconciliation(attrs, _reconciliation_tree())
+
+    assert len(violations) == 1
+    assert "overlap" in violations[0] and "no corresponding Component attribute" in violations[0]
+
+
 def test_render_python_endpoint_404_for_unknown_domain(authed_client):
     response = authed_client.post("/api/decompose/render/python", json={"domain": "__definitely_not_a_real_domain__"})
     assert response.status_code == 404
