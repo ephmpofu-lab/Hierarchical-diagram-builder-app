@@ -811,6 +811,11 @@ class TaskTreeNode(BaseModel):
     # only on Atomic step (leaf) nodes; Sub-task/Layer status is always derived from
     # children by compute_workflow_tree_rollup (backend/component/engine.py), never
     # directly writable
+    requires_rationale: bool = False  # R32/CD10 -- True when this Atomic step's n8n
+    # node-mapping was a genuine, non-deterministic choice (not a single-schema match);
+    # Atomic step level only
+    rationale: Optional[str] = None  # the one-line explanation for that choice, checked
+    # non-empty by check_workflow_tree_rationale_gate whenever requires_rationale is True
 
 
 class DomainTaskTree(BaseModel):
@@ -1186,6 +1191,12 @@ class Component(BaseModel):
     realizes_capability: str
     domain: str
     status: str = "[ ]"  # R34-R36/CD9 -- always derived from its Attributes, never user-set
+    requires_rationale: bool = False  # R32/CD10 -- True when this Component's realization
+    # required a genuine implementation choice (not a deterministic single match)
+    rationale: Optional[str] = None  # the one-line explanation for that choice, checked
+    # non-empty by check_component_rationale_gate whenever requires_rationale is True
+    is_ui_tagged: bool = False  # R33/CD10 -- whether this Component is part of the system's
+    # UI, triggering the App-Flow/Design-Brief-equivalent requirement at freeze time
 
 
 class Attribute(BaseModel):
@@ -1200,6 +1211,16 @@ class Attribute(BaseModel):
 class RenderedComponentModule(BaseModel):
     component_label: str
     code: str
+
+
+class ComponentTreeDocumentation(BaseModel):
+    """R33/CD10 -- the Component Tree's App-Flow/Design-Brief-equivalent, one per tree (one
+    system being described), not one per Component. `not_applicable=True` is only valid when
+    no Component in the tree is UI-tagged (see check_ui_documentation_gate)."""
+
+    app_flow_equivalent: Optional[str] = None
+    design_brief_equivalent: Optional[str] = None
+    not_applicable: bool = False
 
 
 Project.model_rebuild()

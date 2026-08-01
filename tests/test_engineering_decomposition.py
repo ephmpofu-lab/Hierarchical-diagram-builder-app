@@ -30,6 +30,7 @@ from backend.models import (
     Attribute,
     Capability,
     Component,
+    ComponentTreeDocumentation,
     DomainChecklist,
     DomainTaskTree,
     ExtractedRequirement,
@@ -1233,6 +1234,79 @@ def test_compute_component_tree_rollup():
     cap_by_label = {c.label: c.status for c in capabilities}
     assert cap_by_label["Intent Resolution"] == "[x]"  # its only component is [x]
     assert cap_by_label["Document Ingestion"] == "[-]"  # one [x] component, one [ ] component
+
+
+# ---- Module 11 -- Output Documentation Gate (11j, R32-R33/CD10) ----
+
+def test_check_component_rationale_gate():
+    components = [
+        Component(label="Vector Store", realizes_capability="Storage", domain="rag",
+                   requires_rationale=True, rationale="Chose Pinecone for managed scaling."),
+        Component(label="Text Extractor", realizes_capability="Ingestion", domain="rag",
+                   requires_rationale=True, rationale=""),
+        Component(label="File Validator", realizes_capability="Ingestion", domain="rag",
+                   requires_rationale=False),
+    ]
+    violations = component_engine.check_component_rationale_gate(components)
+    assert len(violations) == 1
+    assert "Text Extractor" in violations[0]
+
+
+def test_check_workflow_tree_rationale_gate():
+    tree = DomainTaskTree(domain="rag", version=1, root_ids=["A1"], nodes={
+        "A1": TaskTreeNode(id="A1", label="Choose Embedding Model", level="Atomic step",
+                            requires_rationale=True, rationale="Chose text-embedding-3 for cost/quality balance."),
+        "A2": TaskTreeNode(id="A2", label="Persist Chunk", level="Atomic step",
+                            requires_rationale=True, rationale=""),
+        "A3": TaskTreeNode(id="A3", label="Read File Bytes", level="Atomic step",
+                            requires_rationale=False),
+    })
+    violations = component_engine.check_workflow_tree_rationale_gate(tree)
+    assert len(violations) == 1
+    assert "Persist Chunk" in violations[0]
+
+
+def test_check_ui_documentation_gate_no_ui_component():
+    components = [Component(label="Resolver", realizes_capability="Intent Resolution", domain="rag")]
+
+    assert component_engine.check_ui_documentation_gate(
+        components, ComponentTreeDocumentation(not_applicable=True)
+    ) == []
+
+    violations = component_engine.check_ui_documentation_gate(components, None)
+    assert len(violations) == 1
+
+    violations = component_engine.check_ui_documentation_gate(
+        components, ComponentTreeDocumentation(not_applicable=False)
+    )
+    assert len(violations) == 1
+
+
+def test_check_ui_documentation_gate_with_ui_component():
+    components = [
+        Component(label="Chat Widget", realizes_capability="User Interface", domain="rag", is_ui_tagged=True),
+    ]
+
+    violations = component_engine.check_ui_documentation_gate(components, None)
+    assert len(violations) == 1
+
+    violations = component_engine.check_ui_documentation_gate(
+        components, ComponentTreeDocumentation(app_flow_equivalent="A -> B -> C")
+    )
+    assert len(violations) == 1  # design_brief_equivalent still missing
+
+    violations = component_engine.check_ui_documentation_gate(
+        components, ComponentTreeDocumentation(
+            app_flow_equivalent="A -> B -> C", design_brief_equivalent="Monospace, dark theme",
+        ),
+    )
+    assert violations == []
+
+    # both-or-neither: not_applicable is itself a violation once a UI component exists
+    violations = component_engine.check_ui_documentation_gate(
+        components, ComponentTreeDocumentation(not_applicable=True)
+    )
+    assert len(violations) == 1
 
 
 # ---- Module 11 -- Tree Reconciliation (11e, R29/CD6) ----

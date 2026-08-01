@@ -7,10 +7,17 @@ Stage -3 (Requirements Engineering) is the only stage implemented so far (sub-pl
 """
 
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from ..intelligence.stages import _ask_json
-from ..models import Attribute, Capability, Component, DomainTaskTree, ExtractedRequirement
+from ..models import (
+    Attribute,
+    Capability,
+    Component,
+    ComponentTreeDocumentation,
+    DomainTaskTree,
+    ExtractedRequirement,
+)
 
 # A runaway-loop safety bound, NOT a depth ceiling (R21/CD9, amended by
 # ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md), same posture as
@@ -310,3 +317,75 @@ def compute_component_tree_rollup(
     for capability in capabilities:
         comps = [c for c in components if c.realizes_capability == capability.label]
         capability.status = _rollup_status([c.status for c in comps])
+
+
+# ============================================================================
+# Output Documentation Gate (R32-R33, CD10). Two rationale-gate functions (Component Tree
+# vs Workflow Tree, mirroring 11i's two rollup functions), plus the UI-conditional
+# App-Flow/Design-Brief check -- all completion-gate predicates evaluated over already-real
+# data, same posture as check_no_shared_attributes/check_tree_reconciliation/
+# check_attribute_leaf above.
+# ============================================================================
+
+
+def check_component_rationale_gate(components: List[Component]) -> List[str]:
+    """R32/CD10, Python track -- every Component whose realization required a genuine
+    implementation choice (requires_rationale=True) must carry a non-empty rationale.
+    Returns one violation message per unrationalized component; empty if none."""
+    violations = []
+    for component in components:
+        if component.requires_rationale and not (component.rationale or "").strip():
+            violations.append(
+                f"Component '{component.label}' required a genuine implementation choice "
+                "but has no rationale (R32/CD10, Tech-Decisions-equivalent)"
+            )
+    return violations
+
+
+def check_workflow_tree_rationale_gate(tree: DomainTaskTree) -> List[str]:
+    """R32/CD10, Workflow Tree track -- every Atomic step whose n8n node-mapping was a
+    genuine, non-deterministic choice (requires_rationale=True) must carry a non-empty
+    rationale. Returns one violation message per unrationalized step; empty if none."""
+    violations = []
+    for node in tree.nodes.values():
+        if node.level != "Atomic step":
+            continue
+        if node.requires_rationale and not (node.rationale or "").strip():
+            violations.append(
+                f"Atomic step '{node.label}' required a genuine node-mapping choice but "
+                "has no rationale (R32/CD10, Tech-Decisions-equivalent)"
+            )
+    return violations
+
+
+def check_ui_documentation_gate(
+    components: List[Component], documentation: Optional[ComponentTreeDocumentation]
+) -> List[str]:
+    """R33/CD10 -- if the tree contains at least one UI-tagged Component, an
+    App-Flow-equivalent and a Design-Brief-equivalent must be present (not_applicable is
+    itself a violation in that case, per CD10's own "both-or-neither" predicate); if it
+    contains none, both must be explicitly recorded as not applicable rather than silently
+    absent. Returns a single-item violation list describing the gap; empty if satisfied."""
+    has_ui_component = any(c.is_ui_tagged for c in components)
+
+    if has_ui_component:
+        if documentation is None or documentation.not_applicable:
+            return [
+                "Component Tree has a UI-tagged component but no App-Flow/Design-Brief-"
+                "equivalent (R33/CD10) -- 'not applicable' is not valid here"
+            ]
+        if not (documentation.app_flow_equivalent or "").strip() or not (
+            documentation.design_brief_equivalent or ""
+        ).strip():
+            return [
+                "Component Tree has a UI-tagged component but is missing an App-Flow-"
+                "equivalent or a Design-Brief-equivalent (R33/CD10)"
+            ]
+        return []
+
+    if documentation is None or not documentation.not_applicable:
+        return [
+            "Component Tree has no UI-tagged component but does not explicitly record "
+            "the App-Flow/Design-Brief-equivalent as not applicable (R33/CD10)"
+        ]
+    return []
