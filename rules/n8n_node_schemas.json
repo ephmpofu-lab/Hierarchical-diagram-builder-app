@@ -42,6 +42,46 @@
       "display_name": "Postgres",
       "match_keywords": ["store", "save", "insert", "database", "sql", "postgres", "persist", "retrieve", "load", "query", "index"],
       "default_parameters": {"operation": "executeQuery", "query": ""}
+    },
+    {
+      "type": "n8n-nodes-base.stopAndError",
+      "type_version": 1,
+      "display_name": "Stop And Error",
+      "match_keywords": ["reject", "error", "fail", "stop", "abort", "throw", "unsupported", "invalid"],
+      "default_parameters": {"errorType": "errorMessage", "errorMessage": ""},
+      "_verified": "docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.stopanderror/ -- type_version not published in docs, defaulted to 1 per this file's own spot-check-before-import disclaimer"
+    },
+    {
+      "type": "n8n-nodes-base.extractFromFile",
+      "type_version": 1,
+      "display_name": "Extract From File",
+      "match_keywords": ["extract", "parse document", "parse file", "read text", "pdf", "docx", "csv", "convert to json"],
+      "default_parameters": {"operation": "text", "binaryPropertyName": "data"},
+      "_verified": "docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.extractfromfile/ -- type_version confirmed as 1"
+    },
+    {
+      "type": "n8n-nodes-base.readWriteFile",
+      "type_version": 1,
+      "display_name": "Read/Write Files from Disk",
+      "match_keywords": ["read file", "write file", "read bytes", "load file", "save to disk", "file system"],
+      "default_parameters": {"operation": "read", "fileSelector": ""},
+      "_verified": "docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.readwritefile/ -- type_version not published in docs, defaulted to 1; casing (readWriteFile) follows this schema's own camelCase convention for the other core-node entries, spot-check against a running instance before import per this file's top-level note"
+    },
+    {
+      "type": "n8n-nodes-base.googleDrive",
+      "type_version": 3,
+      "display_name": "Google Drive",
+      "match_keywords": ["google drive", "drive folder", "shared drive", "drive upload", "drive download"],
+      "default_parameters": {"resource": "fileFolder", "operation": "search"},
+      "_verified": "docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.googledrive/ -- resource/operation options confirmed, exact current type_version not published in docs, spot-check against a running instance before import"
+    },
+    {
+      "type": "n8n-nodes-base.notion",
+      "type_version": 2.2,
+      "display_name": "Notion",
+      "match_keywords": ["notion", "notion page", "notion database", "notion workspace"],
+      "default_parameters": {"resource": "page", "operation": "get"},
+      "_verified": "docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.notion/ -- resource/operation options confirmed, exact current type_version not published in docs, spot-check against a running instance before import"
     }
   ],
   "fallback": {
@@ -49,5 +89,14 @@
     "type_version": 2,
     "display_name": "Code",
     "default_parameters": {"language": "javaScript", "jsCode": ""}
+  },
+  "deferred_cluster_nodes": {
+    "_note": "Real, verified n8n node data that deliberately is NOT in the `nodes` array above, and must not be moved there until backend/render/node_mapper.py's one-atomic-step-to-one-standalone-node model can represent a cluster/parent-child node structure. match_schema() iterates `nodes` directly by keyword; an entry here that got moved into `nodes` today would match real atomic steps (e.g. 'embed_chunks') and silently emit an orphaned sub-node with no parent Vector Store node, producing a workflow JSON that looks valid but fails to import cleanly -- exactly the R14/NT2 defect this file exists to prevent. Steps that would otherwise match these keywords correctly fall back to the Code node (NT3) until the Node Mapper supports cluster nodes.",
+    "n8n-nodes-langchain.embeddingsOpenAi": {
+      "type_version": 1.2,
+      "display_name": "Embeddings OpenAI",
+      "default_parameters": {"model": "text-embedding-3-small"},
+      "_verified": "docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.embeddingsopenai/ -- confirmed real type and versions 1/1.1/1.2 via n8n's own source. Requires a parent Vector Store (or similar cluster) node to function; cannot be wired standalone the way HTTP Request/Set/If are."
+    }
   }
 }

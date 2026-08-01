@@ -1,0 +1,2256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ARCHITEQ — UX Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0B0C0F;
+    --bg-raised:#141519;
+    --bg-panel:#17181D;
+    --border:#26282F;
+    --border-soft:#1D1F25;
+    --text:#E7E8EA;
+    --text-dim:#8A8D96;
+    --text-faint:#54575F;
+    --accent:#7C8CFF;
+    --accent-dim:#3A3F73;
+    --accent-soft:#1A1C2E;
+    --ok:#4ECD8E;
+    --warn:#E8B854;
+    --err:#E5677A;
+    --embed:#B98CFF;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:'Inter',sans-serif; font-size:14px;
+    height:100vh; overflow:hidden;
+  }
+  .mono{font-family:'JetBrains Mono',monospace;}
+
+  /* ---- Demo state switcher (not part of the real product UI) ---- */
+  .demo-bar{
+    position:fixed; top:0; left:0; right:0; z-index:100;
+    background:#000; border-bottom:1px solid #222;
+    display:flex; align-items:center; gap:8px; padding:8px 14px;
+    font-size:12px; color:#777;
+  }
+  .demo-bar b{color:#aaa; font-weight:500;}
+  .demo-btn{
+    background:#1a1a1a; border:1px solid #2c2c2c; color:#999;
+    padding:5px 10px; border-radius:6px; cursor:pointer; font-size:12px;
+    font-family:'Inter',sans-serif;
+  }
+  .demo-btn.active{background:var(--accent-soft); border-color:var(--accent-dim); color:var(--accent);}
+
+  .app{ position:absolute; top:34px; left:0; right:0; bottom:0; display:flex; }
+
+  .screen-wrap{ flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  .screen{ display:none; height:100%; flex-direction:column; }
+  .screen.active{ display:flex; }
+
+  /* ---- Top chrome ---- */
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 20px; border-bottom:1px solid var(--border-soft);
+    flex-shrink:0;
+  }
+  .brand{ font-weight:600; letter-spacing:0.02em; font-size:15px; }
+  .brand span{ color:var(--accent); }
+  .settings-icon{
+    width:28px; height:28px; border-radius:7px; display:flex; align-items:center; justify-content:center;
+    color:var(--text-faint); cursor:pointer; border:1px solid transparent;
+  }
+  .settings-icon:hover{ background:var(--bg-raised); color:var(--text-dim); }
+
+  /* ---- Empty state ---- */
+  .empty-wrap{
+    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:24px;
+  }
+  .empty-head{ text-align:center; margin-bottom:28px; max-width:480px; }
+  .empty-head h1{ font-size:22px; font-weight:600; margin:0 0 8px; }
+  .empty-head p{ color:var(--text-dim); font-size:14px; line-height:1.5; margin:0; }
+  .intent-box{ width:100%; max-width:640px; }
+  .intent-input{
+    width:100%; background:var(--bg-panel); border:1px solid var(--border);
+    border-radius:var(--radius); padding:16px 18px; color:var(--text); font-size:15px;
+    font-family:'Inter',sans-serif;
+  }
+  .intent-input:focus{ outline:none; border-color:var(--accent-dim); }
+  .examples{ display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; justify-content:center; }
+  .example-chip{
+    background:var(--bg-raised); border:1px solid var(--border-soft); color:var(--text-dim);
+    padding:7px 12px; border-radius:20px; font-size:12.5px; cursor:pointer;
+  }
+  .example-chip:hover{ border-color:var(--accent-dim); color:var(--text); }
+
+  /* ---- History state (populated, still same screen) ---- */
+  .history-wrap{ flex:1; overflow-y:auto; padding:22px 24px 80px; }
+  .history-input-row{ max-width:640px; margin:0 auto 28px; }
+  .history-list{ max-width:640px; margin:0 auto; display:flex; flex-direction:column; gap:10px; }
+  .history-label{ color:var(--text-faint); font-size:11px; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:10px; }
+  .history-card{
+    background:var(--bg-panel); border:1px solid var(--border-soft); border-radius:var(--radius);
+    padding:14px 16px; display:flex; align-items:center; justify-content:space-between; cursor:pointer;
+  }
+  .history-card:hover{ border-color:var(--border); }
+  .hc-left{ display:flex; flex-direction:column; gap:4px; }
+  .hc-title{ font-size:13.5px; font-weight:500; }
+  .hc-meta{ font-size:12px; color:var(--text-faint); }
+  .badge{
+    font-size:11px; padding:3px 8px; border-radius:5px; font-weight:500;
+  }
+  .badge-ok{ background:rgba(78,205,142,0.12); color:var(--ok); }
+  .badge-warn{ background:rgba(232,184,84,0.12); color:var(--warn); }
+
+  /* ---- Canvas / tree state ---- */
+  .canvas-topbar{
+    display:flex; align-items:center; justify-content:space-between; padding:12px 20px;
+    border-bottom:1px solid var(--border-soft); flex-shrink:0;
+  }
+  .breadcrumb{ font-size:12.5px; color:var(--text-faint); }
+  .breadcrumb b{ color:var(--text-dim); font-weight:500; }
+  .mode-toggle{ display:flex; background:var(--bg-panel); border:1px solid var(--border-soft); border-radius:8px; padding:3px; transition:opacity .2s; }
+  .mode-toggle.locked{ opacity:0.35; pointer-events:none; }
+  .mode-opt{ padding:6px 14px; border-radius:6px; font-size:12.5px; color:var(--text-faint); cursor:pointer; }
+  .mode-opt.active{ background:var(--accent-soft); color:var(--accent); }
+
+  .build-status{
+    max-width:440px; margin:0 auto 26px; background:var(--bg-panel); border:1px solid var(--border-soft);
+    border-radius:var(--radius); padding:16px 18px; display:none;
+  }
+  .build-status.show{ display:block; }
+  .bs-line{
+    display:flex; align-items:center; gap:9px; padding:5px 0; font-size:13px; color:var(--text-faint);
+    opacity:0.35; transition:opacity .25s, color .25s;
+  }
+  .bs-line.pending{ opacity:1; color:var(--text-dim); }
+  .bs-line.done{ opacity:1; color:var(--text); }
+  .bs-line.failed{ opacity:1; color:var(--err); }
+  .bs-icon{ width:16px; text-align:center; font-size:12px; flex-shrink:0; }
+  .bs-line.done .bs-icon{ color:var(--ok); }
+  .bs-line.failed .bs-icon{ color:var(--err); }
+  .bs-line.pending .bs-icon{ display:inline-block; animation:spin 0.9s linear infinite; }
+  @keyframes spin{ from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+  .bs-fail-note{
+    margin-top:10px; padding:10px 12px; background:rgba(229,103,122,0.08); border:1px solid rgba(229,103,122,0.25);
+    border-radius:8px; font-size:12.5px; color:var(--err); display:none;
+  }
+  .bs-fail-note.show{ display:block; }
+  .node-atom.flagged rect{ stroke:var(--err); stroke-width:1.5; }
+  .node-atom.needs-config rect{ stroke:var(--warn); stroke-width:1.5; stroke-dasharray:4,3; }
+
+  /* ---- n8n-style node tile (replaces the plain rectangle in n8n mode) ---- */
+  .n8n-tile rect{ fill:#191A1F; stroke:rgba(255,255,255,0.18); stroke-width:1; cursor:grab; }
+  .n8n-tile:active rect{ cursor:grabbing; }
+  .n8n-tile.needs-config rect{ stroke:var(--warn); stroke-width:1.4; stroke-dasharray:4,3; }
+  .n8n-tile.flagged rect{ stroke:var(--err); stroke-width:1.4; }
+  .n8n-tile .n8n-icon{ font-size:22px; text-anchor:middle; dominant-baseline:central; pointer-events:none; }
+  .n8n-tile .n8n-tile-label{ font-size:11px; fill:var(--text-dim); text-anchor:middle; pointer-events:none; }
+  .edge-port-label{ font-size:9px; fill:var(--text-faint); font-family:'JetBrains Mono',monospace; text-anchor:middle; opacity:0.55; }
+  .n8n-port{ fill:var(--bg-raised); stroke:var(--border); stroke-width:1.2; }
+  .n8n-port.filled{ fill:var(--accent); stroke:var(--accent); }
+
+  #n8n-tooltip{
+    position:absolute; z-index:50; background:#0E0F12; border:1px solid var(--border);
+    border-radius:8px; padding:9px 12px; font-size:12px; color:var(--text-dim); max-width:290px;
+    pointer-events:none; opacity:0; transition:opacity .12s; box-shadow:0 6px 18px rgba(0,0,0,0.4);
+  }
+  #n8n-tooltip .tt-name{ color:var(--text); font-weight:600; font-size:12.5px; margin-bottom:2px; }
+  #n8n-tooltip .tt-type{ color:var(--accent); font-size:10.5px; margin-bottom:5px; font-family:'JetBrains Mono',monospace; }
+  #n8n-tooltip .tt-status{ margin-top:5px; font-size:10.5px; }
+
+  .dp-status-ready{
+    display:flex; align-items:center; gap:8px; padding:9px 12px; border-radius:8px;
+    background:rgba(78,205,142,0.1); border:1px solid rgba(78,205,142,0.3); color:var(--ok); font-size:12.5px;
+  }
+  .dp-status-needs{
+    display:flex; align-items:center; gap:8px; padding:9px 12px; border-radius:8px;
+    background:rgba(232,184,84,0.1); border:1px solid rgba(232,184,84,0.3); color:var(--warn); font-size:12.5px;
+  }
+  .dp-param-row{
+    display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px;
+    background:var(--bg-raised); border:1px solid var(--border-soft); border-radius:7px; margin-bottom:6px;
+  }
+  .dp-param-key{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text-dim); }
+  .dp-param-val{ font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--text-faint); flex:1; margin:0 8px; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dp-param-tag{ font-size:9.5px; padding:2px 6px; border-radius:4px; text-transform:uppercase; letter-spacing:0.04em; flex-shrink:0; }
+  .dp-param-tag.req{ background:rgba(232,184,84,0.15); color:var(--warn); }
+  .dp-param-tag.opt{ background:var(--bg-panel); color:var(--text-faint); }
+  .dp-param-empty{ color:var(--text-faint); font-style:italic; }
+  .node-atom.pulse-hint rect{ animation:pulseRing 1.6s ease-in-out infinite; }
+  @keyframes pulseRing{
+    0%{ stroke:var(--border-soft); stroke-width:1; }
+    50%{ stroke:var(--accent); stroke-width:2; }
+    100%{ stroke:var(--border-soft); stroke-width:1; }
+  }
+  .canvas-hint{
+    position:absolute; top:14px; left:50%; transform:translateX(-50%); z-index:5;
+    background:var(--accent-soft); border:1px solid var(--accent-dim); color:var(--accent);
+    padding:7px 14px; border-radius:20px; font-size:12px; opacity:0; transition:opacity .3s;
+    pointer-events:none; white-space:nowrap;
+  }
+
+  .canvas-body{ flex:1; display:flex; overflow:hidden; position:relative; }
+  .tree-scroll{
+    flex:1; overflow:auto; padding:30px 40px 120px;
+    background-image: radial-gradient(circle, #202226 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  /* ---- Python folder-structure view (Level 1/2/3) ---- */
+  .py-crumbs{ font-size:12.5px; color:var(--text-faint); margin-bottom:18px; }
+  .py-crumbs span{ cursor:pointer; }
+  .py-crumbs span:hover{ color:var(--accent); }
+  .py-crumbs .sep{ margin:0 6px; cursor:default; }
+  .py-crumbs .current{ color:var(--text); cursor:default; }
+
+  .py-level{ display:none; max-width:640px; }
+  .py-level.active{ display:block; }
+
+  .py-tree-node{ margin-bottom:2px; }
+  .py-folder-row{
+    display:flex; align-items:center; gap:8px; padding:8px 10px; font-size:13.5px;
+    color:var(--text); font-weight:600;
+  }
+  .py-children{ margin-left:22px; padding-left:16px; border-left:1px solid var(--border-soft); }
+  .py-file-row{
+    display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:7px; cursor:pointer;
+    font-size:13px; color:var(--text-dim); font-family:'JetBrains Mono',monospace;
+  }
+  .py-file-row:hover{ background:var(--bg-panel); color:var(--text); }
+  .py-file-row .chev{ margin-left:auto; color:var(--text-faint); font-family:'Inter',sans-serif; }
+  .py-file-icon{ opacity:0.7; }
+
+  .py-func-row{
+    display:flex; flex-direction:column; gap:2px; padding:11px 14px; border-radius:8px; cursor:pointer;
+    background:var(--bg-panel); border:1px solid var(--border-soft); margin-bottom:8px;
+    position:relative;
+  }
+  .py-func-row:hover{ border-color:var(--accent-dim); }
+  .py-func-name{ font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--text); }
+
+  .py-file-flow-strip{
+    display:flex; align-items:center; gap:8px; padding:8px 10px; margin-bottom:16px;
+    background:var(--bg-panel); border:1px solid var(--border-soft); border-radius:8px;
+    font-size:12px; color:var(--text-dim); width:fit-content; cursor:pointer;
+  }
+  .py-file-flow-strip:hover{ border-color:var(--accent-dim); }
+  .py-file-flow-strip .fs-file{ font-family:'JetBrains Mono',monospace; }
+  .py-file-flow-strip .fs-arrow{ color:var(--text-faint); }
+  .py-file-flow-strip .fs-field{ font-size:10px; color:var(--accent); font-family:'JetBrains Mono',monospace; background:var(--accent-soft); padding:2px 6px; border-radius:4px; }
+
+  .py-func-chain{ position:relative; padding-left:18px; }
+  .py-func-connector{
+    position:absolute; left:0; top:-8px; bottom:0; width:18px; display:flex; justify-content:center;
+  }
+  .py-func-connector::before{
+    content:''; position:absolute; top:8px; bottom:-8px; left:50%; width:1px;
+    background:repeating-linear-gradient(to bottom, var(--border) 0 3px, transparent 3px 6px);
+  }
+  .py-func-connector-dot{
+    position:absolute; top:20px; left:50%; transform:translateX(-50%); width:6px; height:6px;
+    border-radius:50%; background:var(--accent);
+  }
+  .py-func-portlabel{
+    position:absolute; left:22px; top:2px; font-size:9.5px; color:var(--text-faint);
+    font-family:'JetBrains Mono',monospace; white-space:nowrap;
+  }
+  .py-func-branch{ margin-left:30px; margin-top:-2px; margin-bottom:8px; }
+  .py-func-branch-label{
+    font-size:10px; color:var(--err); text-transform:uppercase; letter-spacing:0.04em;
+    margin:6px 0 6px 30px; display:flex; align-items:center; gap:5px;
+  }
+  .py-func-branch-label::before{ content:'↳'; }
+  .py-flow-banner{
+    display:flex; align-items:center; gap:8px; padding:9px 12px; margin-bottom:14px;
+    background:var(--accent-soft); border:1px solid var(--accent-dim); border-radius:8px;
+    font-size:12px; color:var(--text-dim);
+  }
+  .py-flow-banner.out{ margin-top:6px; margin-bottom:0; }
+  .py-flow-banner b{ color:var(--accent); font-family:'JetBrains Mono',monospace; font-weight:500; }
+
+  .py-ghost-card{
+    display:flex; flex-direction:column; gap:2px; padding:10px 14px; border-radius:8px; cursor:pointer;
+    background:transparent; border:1px dashed var(--border); margin-bottom:0; opacity:0.75;
+  }
+  .py-ghost-card:hover{ opacity:1; border-color:var(--accent-dim); }
+  .py-ghost-card .py-func-name{ color:var(--text-faint); }
+  .py-ghost-card .py-ghost-file{ font-size:10.5px; color:var(--text-faint); font-family:'JetBrains Mono',monospace; }
+
+  .py-folder-connector{ position:relative; height:26px; margin-left:22px; }
+  .py-folder-connector::before{
+    content:''; position:absolute; top:0; bottom:0; left:0; width:1px;
+    background:repeating-linear-gradient(to bottom, var(--border) 0 3px, transparent 3px 6px);
+  }
+  .py-folder-connector-dot{ position:absolute; bottom:-3px; left:-3px; width:7px; height:7px; border-radius:50%; background:var(--accent); }
+  .py-folder-connector-label{
+    position:absolute; left:14px; top:6px; font-size:9.5px; color:var(--text-faint);
+    font-family:'JetBrains Mono',monospace;
+  }
+  .py-func-desc{ font-size:12px; color:var(--text-faint); }
+
+  .py-code-block{
+    background:#0E0F12; border:1px solid var(--border-soft); border-radius:8px; padding:16px 18px;
+    font-family:'JetBrains Mono',monospace; font-size:12.5px; color:var(--text-dim); white-space:pre-wrap;
+    line-height:1.6; position:relative;
+  }
+  .py-copy-btn{
+    position:absolute; top:10px; right:10px; background:var(--bg-raised); border:1px solid var(--border-soft);
+    color:var(--text-faint); font-size:11px; padding:5px 10px; border-radius:6px; cursor:pointer;
+    font-family:'Inter',sans-serif;
+  }
+  .py-copy-btn:hover{ color:var(--text); border-color:var(--accent-dim); }
+
+  .code-blank{
+    background:rgba(232,184,84,0.16); border-bottom:1.5px dashed var(--warn); color:var(--warn);
+    padding:0 3px; border-radius:3px; cursor:help;
+  }
+  .py-build-status{
+    display:flex; align-items:center; gap:7px; font-size:12px; color:var(--text-dim);
+    margin-bottom:10px; transition:color .2s;
+  }
+  .py-build-status.done{ color:var(--ok); }
+  .py-file-func-code{ display:inline; transition:background .3s; }
+  #py-config-panel-wrap:not(:empty){ margin-bottom:16px; display:flex; flex-direction:column; gap:10px; }
+
+  .py-suggestion{
+    background:var(--accent-soft); border:1px solid var(--accent-dim); border-radius:10px;
+    padding:14px 16px; margin-bottom:16px;
+  }
+  .py-suggestion-q{ font-size:13px; color:var(--accent); font-weight:500; margin-bottom:10px; }
+  .py-suggestion-opts{ display:flex; gap:8px; flex-wrap:wrap; }
+  .py-suggestion-chip{
+    background:var(--bg-raised); border:1px solid var(--border); color:var(--text-dim);
+    padding:7px 13px; border-radius:20px; font-size:12.5px; cursor:pointer;
+  }
+  .py-suggestion-chip:hover{ border-color:var(--accent); color:var(--text); }
+  .py-suggestion-chip.selected{ background:var(--accent); border-color:var(--accent); color:#0B0C0F; font-weight:600; }
+  .py-suggestion-chip.confirmed{ background:var(--ok); border-color:var(--ok); color:#0B0C0F; font-weight:600; transition:background .15s, border-color .15s; }
+  .py-suggestion-confirmed{
+    display:flex; align-items:center; gap:10px; padding:9px 14px; margin-bottom:16px;
+    background:rgba(78,205,142,0.1); border:1px solid rgba(78,205,142,0.3); border-radius:8px;
+    font-size:12.5px; color:var(--ok); width:fit-content;
+  }
+  .py-suggestion-change{ color:var(--text-faint); cursor:pointer; font-size:11.5px; text-decoration:underline; }
+  .py-suggestion-change:hover{ color:var(--text-dim); }
+  .py-code-block.flash{ animation:flashUpdate .5s ease; }
+  @keyframes flashUpdate{
+    0%{ background:rgba(124,140,255,0.12); }
+    100%{ background:#0E0F12; }
+  }
+  svg{ overflow:visible; }
+  .node-layer rect{ fill:var(--accent-soft); stroke:var(--accent-dim); stroke-width:1.3; }
+  .node-layer text{ fill:var(--accent); font-weight:600; }
+  .node-sub rect{ fill:#1B1C22; stroke:var(--border); stroke-width:1; }
+  .node-sub text{ fill:var(--text-dim); font-weight:500; }
+  .node-atom rect{ fill:var(--bg-panel); stroke:var(--border-soft); stroke-width:1; cursor:pointer; }
+  .node-atom rect:hover{ stroke:var(--accent-dim); }
+  .node-atom text{ fill:var(--text); font-family:'JetBrains Mono',monospace; font-size:11.5px; }
+  .edge{ stroke:var(--border); stroke-width:1.3; fill:none; }
+  .status-dot{ }
+  .status-done{ fill:var(--ok); }
+  .status-progress{ fill:var(--warn); }
+  .status-none{ fill:var(--text-faint); }
+
+  /* ---- Detail panel ---- */
+  .detail-panel{
+    width:340px; flex-shrink:0; border-left:1px solid var(--border-soft); background:var(--bg-panel);
+    padding:20px; overflow-y:auto; transform:translateX(100%); transition:transform .18s ease;
+  }
+  .detail-panel.open{ transform:translateX(0); }
+  .dp-close{ float:right; color:var(--text-faint); cursor:pointer; font-size:13px; }
+
+  /* ---- Python side panel: the growing file, separate from Level 3 above ---- */
+  .py-side-panel{
+    width:0; flex-shrink:0; overflow:hidden; box-sizing:border-box;
+    background:var(--bg-panel); border-left:1px solid var(--border-soft);
+    padding:20px; transition:width .2s ease;
+  }
+  .py-side-panel.open{ width:380px; overflow-y:auto; }
+  .py-side-header{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
+  .py-side-title{ font-family:'Inter',sans-serif; font-size:14.5px; font-weight:600; color:var(--text); margin-bottom:2px; }
+  .py-side-subtitle{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-faint); margin-bottom:4px; }
+  .dp-title{ font-family:'JetBrains Mono',monospace; font-size:14px; margin-bottom:2px; }
+  .dp-sub{ color:var(--text-faint); font-size:12px; margin-bottom:18px; }
+  .dp-section{ margin-bottom:18px; }
+  .dp-label{ font-size:11px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:7px; }
+  .dp-tag-list{ display:flex; flex-direction:column; gap:6px; }
+  .dp-tag{
+    background:var(--bg-raised); border:1px solid var(--border-soft); border-radius:6px;
+    padding:7px 10px; font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text-dim);
+  }
+  .dp-why{ font-size:12.5px; color:var(--text-dim); line-height:1.5; }
+  .dp-why b{ color:var(--text); }
+  .dp-complete{
+    display:flex; align-items:center; gap:8px; padding:10px 12px; background:var(--bg-raised);
+    border:1px solid var(--border-soft); border-radius:8px; cursor:pointer; margin-top:4px;
+  }
+  .checkbox{ width:16px; height:16px; border:1.5px solid var(--text-faint); border-radius:4px; flex-shrink:0; }
+  .checkbox.checked{ background:var(--ok); border-color:var(--ok); }
+
+  /* ---- Persistent refine bar ---- */
+  .refine-bar{
+    position:absolute; bottom:16px; right:20px; z-index:10;
+    display:flex; gap:8px; background:var(--bg-panel); border:1px solid var(--border);
+    border-radius:22px; box-shadow:0 8px 24px rgba(0,0,0,0.4); transition:opacity .2s, width .18s ease, left .18s ease;
+    align-items:center; overflow:hidden;
+  }
+  .refine-bar.locked{ opacity:0.35; pointer-events:none; }
+  .refine-bar.collapsed{ width:auto; left:auto; padding:0; }
+  .refine-bar.expanded{ left:20px; padding:5px; }
+  .refine-pill{
+    display:flex; align-items:center; gap:7px; padding:11px 16px; cursor:pointer;
+    color:var(--text-dim); font-size:13px; white-space:nowrap;
+  }
+  .refine-bar.expanded .refine-pill{ display:none; }
+  .refine-bar.collapsed .refine-fields{ display:none; }
+  .refine-fields{ display:flex; gap:8px; flex:1; align-items:center; }
+  .refine-bar input{
+    flex:1; background:transparent; border:none; color:var(--text); padding:9px 12px; font-size:13px;
+    font-family:'Inter',sans-serif; min-width:200px;
+  }
+  .refine-bar input:focus{ outline:none; }
+  .refine-bar button{
+    background:var(--accent-soft); border:1px solid var(--accent-dim); color:var(--accent);
+    padding:9px 16px; border-radius:7px; font-size:13px; cursor:pointer; font-family:'Inter',sans-serif;
+    white-space:nowrap;
+  }
+</style>
+</head>
+<body>
+
+<div class="demo-bar">
+  <b>Mockup — surrogate data, click to review states:</b>
+  <button class="demo-btn active" onclick="showScreen('empty', this)">Empty</button>
+  <button class="demo-btn" onclick="showScreen('history', this)">History</button>
+  <button class="demo-btn" onclick="showScreen('canvas', this)">Canvas + Tree (finished)</button>
+  <span style="width:1px;height:16px;background:#2c2c2c;margin:0 4px;"></span>
+  <button class="demo-btn" style="color:#7C8CFF;border-color:#3A3F73;" onclick="runBuildSequence(false)">▶ Run progressive build</button>
+  <button class="demo-btn" style="color:#E5677A;border-color:#5a2a33;" onclick="runBuildSequence(true)">▶ Run build (auto-fixes itself)</button>
+</div>
+
+<div class="app">
+
+  <div class="screen-wrap">
+
+  <!-- SCREEN 1: EMPTY STATE -->
+  <div class="screen active" id="screen-empty">
+    <div class="topbar">
+      <div class="brand">ARCHITEQ<span>.</span></div>
+    </div>
+    <div class="empty-wrap">
+      <div class="empty-head">
+        <h1>What are you building?</h1>
+        <p>Describe it in plain language. Architeq breaks it down to the atomic level, then renders Python or an n8n workflow — your choice, either way.</p>
+      </div>
+      <div class="intent-box">
+        <input class="intent-input" placeholder="I want to develop a...">
+        <div class="examples">
+          <div class="example-chip" onclick="showScreen('canvas', document.querySelectorAll('.demo-btn')[2])">I want to develop a RAG</div>
+          <div class="example-chip">I want to automate invoice processing</div>
+          <div class="example-chip">I want to build a support ticket triage system</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 2: HISTORY (POPULATED) STATE -->
+  <div class="screen" id="screen-history">
+    <div class="topbar">
+      <div class="brand">ARCHITEQ<span>.</span></div>
+    </div>
+    <div class="history-wrap">
+      <div class="history-input-row">
+        <input class="intent-input" placeholder="I want to develop a...">
+      </div>
+      <div class="history-label">Recent</div>
+      <div class="history-list">
+        <div class="history-card" onclick="showScreen('canvas', document.querySelectorAll('.demo-btn')[2])">
+          <div class="hc-left">
+            <div class="hc-title">RAG — document Q&A over policy PDFs</div>
+            <div class="hc-meta">n8n · last touched 2 hours ago</div>
+          </div>
+          <div class="badge badge-ok">validated</div>
+        </div>
+        <div class="history-card">
+          <div class="hc-left">
+            <div class="hc-title">Support ticket triage automation</div>
+            <div class="hc-meta">Python · last touched yesterday</div>
+          </div>
+          <div class="badge badge-warn">2 open issues</div>
+        </div>
+        <div class="history-card">
+          <div class="hc-left">
+            <div class="hc-title">Invoice processing pipeline</div>
+            <div class="hc-meta">n8n · 4 days ago</div>
+          </div>
+          <div class="badge badge-ok">validated</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 3: CANVAS + TREE -->
+  <div class="screen" id="screen-canvas" style="flex-direction:column;">
+    <div class="canvas-topbar">
+      <div class="breadcrumb"><b>RAG</b> · document Q&A over policy PDFs</div>
+      <div id="layer-legend" style="display:flex; gap:12px; align-items:center;"></div>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div class="mode-toggle" id="mode-toggle">
+          <div class="mode-opt active" onclick="setMode(this,'python')">Python</div>
+          <div class="mode-opt" onclick="setMode(this,'n8n')">n8n</div>
+        </div>
+        <button id="autoarrange-btn" onclick="autoArrangeN8n()" style="background:var(--bg-panel); border:1px solid var(--border); color:var(--text-dim); padding:8px 14px; border-radius:7px; font-size:12.5px; cursor:pointer; font-family:'Inter',sans-serif;" title="Layered arrangement (Sugiyama-style), ranked by dependency depth">⤢ Auto-arrange</button>
+        <button id="export-btn" onclick="doExport()" style="background:var(--accent-soft); border:1px solid var(--accent-dim); color:var(--accent); padding:8px 14px; border-radius:7px; font-size:12.5px; cursor:pointer; font-family:'Inter',sans-serif;">Export</button>
+      </div>
+    </div>
+    <div class="canvas-body">
+      <div class="tree-scroll" id="tree-scroll">
+        <div class="canvas-hint" id="canvas-hint">← Click any highlighted step to see it rendered</div>
+        <div class="build-status" id="build-status">
+          <div class="bs-line" id="bs-1"><span class="bs-icon">○</span> Domain resolved: RAG</div>
+          <div class="bs-line" id="bs-2"><span class="bs-icon">○</span> Requirements extracted (4)</div>
+          <div class="bs-line" id="bs-3"><span class="bs-icon">○</span> Identifying capabilities</div>
+          <div class="bs-line" id="bs-4"><span class="bs-icon">○</span> Functional decomposition</div>
+          <div class="bs-line" id="bs-5"><span class="bs-icon">○</span> Grounding simulation</div>
+          <div class="bs-line" id="bs-6"><span class="bs-icon">○</span> Atomicity validation</div>
+          <div class="bs-fail-note" id="bs-fail-note">2 issues found — <b>collect_raw_documents</b> fails atomicity (maps to more than one implementation unit). Fix before Python/n8n rendering unlocks.</div>
+        </div>
+        <div id="tree-zoom-wrapper" style="position:relative;">
+          <svg width="900" height="760" id="tree-svg" style="position:absolute; top:0; left:0; transform-origin:0 0;"></svg>
+        </div>
+        <div id="n8n-tooltip"></div>
+
+        <div id="py-zoom-wrapper" style="position:relative;">
+          <div id="python-structure-view" style="display:none; transform-origin:0 0; position:absolute; top:0; left:0;">
+            <div class="py-crumbs" id="py-crumbs"></div>
+
+            <!-- Level 1: folder / file structure -->
+            <div class="py-level active" id="py-level-1"></div>
+
+            <!-- Level 2: functions inside a file -->
+            <div class="py-level" id="py-level-2"></div>
+
+            <!-- Level 3: one function's code -->
+            <div class="py-level" id="py-level-3"></div>
+          </div>
+        </div>
+      </div>
+      <div class="py-side-panel" id="py-side-panel">
+        <div class="py-side-header">
+          <div>
+            <div class="py-side-title" id="py-side-title">—</div>
+            <div class="py-side-subtitle" id="py-side-subtitle"></div>
+            <div class="py-build-status" id="py-side-status"></div>
+          </div>
+          <span class="dp-close" onclick="toggleSidePanel()">close ×</span>
+        </div>
+        <div id="py-side-config"></div>
+        <div class="py-code-block" id="py-side-code-block">
+          <button class="py-copy-btn" onclick="copyCode(this)">copy</button>
+          <div class="code-text" id="py-side-code"></div>
+        </div>
+      </div>
+      <div class="detail-panel" id="detail-panel">
+        <span class="dp-close" onclick="closePanel()">close ×</span>
+        <div class="dp-title" id="dp-title">validate_file_type</div>
+        <div class="dp-sub" id="dp-sub">Ingestion → Document Ingestion → Upload</div>
+
+        <div class="dp-section" id="dp-status-banner"></div>
+
+        <div class="dp-section" id="dp-suggestion-section" style="display:none;"></div>
+
+        <div class="dp-section">
+          <div class="dp-label">Parameters</div>
+          <div id="dp-params"></div>
+        </div>
+
+        <div class="dp-section">
+          <div class="dp-label">Requires → Produces</div>
+          <div class="dp-tag-list" style="flex-direction:row; flex-wrap:wrap;" id="dp-flow"></div>
+        </div>
+
+        <div class="dp-section">
+          <div class="dp-label">Payload passed forward (JSON)</div>
+          <pre id="dp-payload" style="background:#0E0F12; border:1px solid var(--border-soft); border-radius:8px; padding:10px 12px; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-dim); white-space:pre-wrap; margin:0; line-height:1.5;"></pre>
+
+        <div class="dp-section">
+          <div class="dp-label">Rules</div>
+          <div class="dp-tag-list" id="dp-rules"></div>
+        </div>
+
+        <details class="dp-section" style="cursor:pointer;">
+          <summary style="color:var(--text-faint); font-size:11px; text-transform:uppercase; letter-spacing:0.05em; cursor:pointer;">Why this exists</summary>
+          <div class="dp-why" id="dp-why" style="margin-top:8px;"></div>
+        </details>
+      </div>
+    </div>
+    <div class="refine-bar collapsed" id="refine-bar">
+      <div class="refine-pill" onclick="expandRefineBar()">✦ Refine</div>
+      <div class="refine-fields">
+        <input id="refine-input" placeholder='Refine this tree… e.g. "also add a rate-limiting step to Retrieval"'>
+        <button onclick="submitRefine()">Refine</button>
+      </div>
+    </div>
+  </div>
+
+  </div>
+</div>
+
+<div id="toast" style="position:fixed; bottom:26px; left:50%; transform:translateX(-50%) translateY(20px); background:#17181D; border:1px solid #2A2D33; color:#E7E8EA; padding:12px 18px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .25s, transform .25s; z-index:200; pointer-events:none;"></div>
+
+<script>
+let currentMode = 'python';
+let currentAtom = null;
+
+const renderData = {
+  select_upload_source: {
+    desc:'Receives a file from whichever source the user picked.',
+    requires:['upload_config'], produces:['raw_file_object'],
+    rules:['accepted sources: local upload, URL, cloud drive'],
+    exampleJson:`[{ "json": {}, "binary": { "raw_file_object": { "fileName": "policy_2026.pdf", "mimeType": "application/pdf" } } }]`,
+    python:`def select_upload_source(config: UploadConfig) -> RawFile:
+    """Single entry point for receiving a file from any accepted source."""
+    source = resolve_source(config.source_type)
+    return source.fetch()`,
+    n8n:{ type:'Webhook (Trigger)', params:{ 'httpMethod':'POST', 'path':'/upload', 'binaryData':'true' } }
+  },
+  validate_file_type: {
+    desc:'Rejects any file outside the accepted format list.',
+    requires:['raw_file_object'], produces:['validated_file'],
+    rules:['accepted formats: pdf, docx, txt','max file size: 50MB'],
+    exampleJson:`[{ "json": { "mimeType": "application/pdf", "valid": true } }]`,
+    python:`def validate_file_type(file: RawFile) -> ValidatedFile:
+    """Rejects anything outside the accepted format list."""
+    if file.mime_type not in ACCEPTED_FORMATS:
+        raise UnsupportedFormatError(file.mime_type)
+    return ValidatedFile(file)`,
+    n8n:{ type:'IF', params:{ 'condition':"{{$binary.data.mimeType}} in [pdf, docx, txt]" } }
+  },
+  validate_file_size: {
+    desc:'Rejects any file over the size limit.',
+    requires:['validated_file'], produces:['size_checked_file'],
+    rules:['max file size: 50MB'],
+    exampleJson:`[{ "json": { "fileSizeMb": 4.2, "withinLimit": true } }]`,
+    python:`def validate_file_size(file: ValidatedFile) -> SizeCheckedFile:
+    if file.size_mb > 50:
+        raise FileTooLargeError(file.size_mb)
+    return SizeCheckedFile(file)`,
+    n8n:{ type:'IF', params:{ 'condition':"{{$binary.data.fileSize}} <= 50MB" } }
+  },
+  read_file_bytes: {
+    desc:'Reads the raw bytes of a validated file off disk.',
+    requires:['size_checked_file'], produces:['raw_bytes'],
+    rules:['idempotent: true'],
+    exampleJson:`[{ "json": {}, "binary": { "raw_bytes": { "data": "<binary buffer>" } } }]`,
+    python:`def read_file_bytes(file: SizeCheckedFile) -> bytes:
+    with file.open('rb') as f:
+        return f.read()`,
+    n8n:{ type:'Read/Write File', params:{ 'operation':'read', 'encoding':'binary' } }
+  },
+  extract_text_content: {
+    desc:'Pulls plain text out of the raw bytes, based on file type.',
+    requires:['raw_bytes'], produces:['extracted_text'],
+    rules:['handles: pdf, docx, txt'],
+    exampleJson:`[{ "json": { "extracted_text": "Section 4.2: Data Retention Policy..." } }]`,
+    python:`def extract_text_content(data: bytes, mime_type: str) -> str:
+    extractor = get_extractor(mime_type)
+    return extractor.extract(data)`,
+    n8n:{ type:'Extract From File', params:{ 'operation':'auto-detect' } }
+  },
+  handle_unsupported_format: {
+    desc:'Logs and notifies when a file cannot be processed.',
+    requires:['raw_file_object'], produces:['error_output'],
+    rules:['non_idempotent: true — logs once per failure'],
+    exampleJson:`[{ "json": { "error": "unsupported_format", "mimeType": "image/heic" } }]`,
+    python:`def handle_unsupported_format(file: RawFile) -> None:
+    log.warning(f"Unsupported format: {file.mime_type}")
+    notify_user(file, reason="unsupported_format")`,
+    n8n:{ type:'Stop and Error', params:{ 'message':"Unsupported file format" } }
+  },
+  define_source_scope:{
+    desc:'Sets which sources are allowed for this project.',
+    requires:['project_config'], produces:['source_scope'],
+    rules:['scope: single knowledge base per project'],
+    exampleJson:`[{ "json": { "source_scope": { "allowed_sources": ["local_upload"] } } }]`,
+    python:`def define_source_scope(config: ProjectConfig) -> SourceScope:
+    return SourceScope(config.allowed_sources)`,
+    n8n:{ type:'Set', params:{ 'field':'source_scope' } },
+    suggestion:{
+      question:'Where are your documents coming from?',
+      options:[
+        { label:'Local upload', rules:['scope: single knowledge base per project'],
+          python:`def define_source_scope(config: ProjectConfig) -> SourceScope:
+    return SourceScope(config.allowed_sources)`,
+          n8n:{ type:'Set', params:{ 'field':'source_scope' } } },
+        { label:'Google Drive', rules:['scope: files under one shared Drive folder','requires: Google OAuth token'],
+          python:`def define_source_scope(config: ProjectConfig) -> SourceScope:
+    drive = GoogleDriveClient(token=config.google_oauth_token)
+    folder = drive.get_folder(config.drive_folder_id)
+    return SourceScope(folder.list_documents())`,
+          n8n:{ type:'Google Drive', params:{ 'operation':'list', 'folderId':'{{$json.drive_folder_id}}' } } },
+        { label:'URL / website', rules:['scope: pages under one root URL','crawl depth: 2'],
+          python:`def define_source_scope(config: ProjectConfig) -> SourceScope:
+    crawler = WebCrawler(root_url=config.root_url, max_depth=2)
+    return SourceScope(crawler.discover_pages())`,
+          n8n:{ type:'HTTP Request', params:{ 'method':'GET', 'url':'{{$json.root_url}}' } } },
+        { label:'Notion', rules:['scope: pages under one Notion workspace','requires: Notion integration token'],
+          python:`def define_source_scope(config: ProjectConfig) -> SourceScope:
+    notion = NotionClient(token=config.notion_token)
+    pages = notion.list_pages(config.workspace_id)
+    return SourceScope(pages)`,
+          n8n:{ type:'Notion', params:{ 'resource':'page', 'operation':'getAll' } } }
+      ]
+    }
+  },
+  collect_upload_source:{
+    desc:'Picks the default upload source for this session.',
+    requires:['source_scope'], produces:['upload_config'],
+    rules:['single source per upload session'],
+    exampleJson:`[{ "json": { "upload_config": { "source_type": "local_upload" } } }]`,
+    python:`def collect_upload_source(scope: SourceScope) -> UploadConfig:
+    return UploadConfig(scope.default_source)`,
+    n8n:{ type:'Set', params:{ 'field':'upload_config' } }
+  },
+
+  // ---- Preprocessing layer ----
+  parse_document_text:{
+    desc:'Turns extracted text into a structured document, preserving paragraph breaks.',
+    requires:['extracted_text'], produces:['parsed_document'],
+    rules:['preserves paragraph and section breaks'],
+    exampleJson:`[{ "json": { "paragraphs": ["Section 4.2...", "Section 4.3..."] } }]`,
+    python:`def parse_document_text(text: str) -> ParsedDocument:
+    return ParsedDocument(paragraphs=split_on_breaks(text))`,
+    n8n:{ type:'Code', params:{ 'language':'javaScript', 'mode':'runOnceForEachItem' } }
+  },
+  normalize_document_text:{
+    desc:'Cleans and standardizes text before chunking (unicode, whitespace, casing).',
+    requires:['parsed_document'], produces:['normalized_text'],
+    rules:['unicode normalization: NFKC','collapses repeated whitespace'],
+    exampleJson:`[{ "json": { "normalized_text": "section 4.2: data retention policy..." } }]`,
+    python:`def normalize_document_text(doc: ParsedDocument) -> str:
+    return unicodedata.normalize('NFKC', doc.raw_text()).strip()`,
+    n8n:{ type:'Code', params:{ 'language':'javaScript', 'mode':'runOnceForEachItem' } }
+  },
+  split_text_into_chunks:{
+    desc:'Splits normalized text into overlapping chunks sized for the embedding model.',
+    requires:['normalized_text'], produces:['text_chunks'],
+    rules:['chunk_size: 500 tokens','chunk_overlap: 50 tokens'],
+    exampleJson:`[{ "json": { "chunks": [{ "text": "Section 4.2...", "index": 0 }] } }]`,
+    python:`def split_text_into_chunks(text: str, size=500, overlap=50) -> list[str]:
+    return sliding_window_split(text, size, overlap)`,
+    n8n:{ type:'Code', params:{ 'language':'javaScript', 'mode':'runOnceForAllItems' } }
+  },
+  attach_chunk_metadata:{
+    desc:'Tags each chunk with its source document and position for later citation.',
+    requires:['text_chunks'], produces:['chunks_with_metadata'],
+    rules:['metadata: source_document_id, chunk_index, page_number'],
+    exampleJson:`[{ "json": { "text": "Section 4.2...", "source_document_id": "doc_881", "chunk_index": 0 } }]`,
+    python:`def attach_chunk_metadata(chunks: list[str], doc_id: str) -> list[Chunk]:
+    return [Chunk(text=c, source_document_id=doc_id, chunk_index=i) for i,c in enumerate(chunks)]`,
+    n8n:{ type:'Set', params:{ 'field':'chunks_with_metadata' } }
+  },
+
+  // ---- Embedding layer ----
+  prepare_chunk_embedding_text:{
+    desc:'Strips metadata back out, leaving just the text each embedding model call needs.',
+    requires:['chunks_with_metadata'], produces:['embedding_input_text'],
+    rules:['metadata excluded from embedding input, reattached after'],
+    exampleJson:`[{ "json": { "embedding_input_text": "Section 4.2: Data Retention Policy..." } }]`,
+    python:`def prepare_chunk_embedding_text(chunk: Chunk) -> str:
+    return chunk.text`,
+    n8n:{ type:'Set', params:{ 'field':'embedding_input_text' } }
+  },
+  embed_chunks:{
+    desc:'Calls the embedding model to turn chunk text into vectors.',
+    requires:['embedding_input_text'], produces:['chunk_vectors'],
+    rules:['dimension must match the model chosen'],
+    exampleJson:`[{ "json": { "vector": [0.0123, -0.0456, 0.0789], "dimensions": 1536 } }]`,
+    python:`def embed_chunks(text: str, model: str) -> list[float]:
+    return embedding_client(model).embed(text)`,
+    n8n:{ type:'Set', params:{ 'field':'chunk_vectors' } },
+    suggestion:{
+      question:'Which embedding model should generate these vectors?',
+      options:[
+        { label:'OpenAI', rules:['model: text-embedding-3-small','dimensions: 1536'],
+          python:`def embed_chunks(text: str, model="text-embedding-3-small") -> list[float]:
+    client = OpenAIClient(api_key=config.openai_key)
+    return client.embed(text, model=model)`,
+          n8n:{ type:'OpenAI', params:{ 'operation':'createEmbedding', 'model':'text-embedding-3-small' } } },
+        { label:'Cohere', rules:['model: embed-v3','dimensions: 1024','no dedicated n8n node — uses HTTP Request'],
+          python:`def embed_chunks(text: str, model="embed-v3") -> list[float]:
+    response = requests.post("https://api.cohere.ai/v1/embed",
+        headers={"Authorization": f"Bearer {config.cohere_key}"},
+        json={"texts":[text], "model":model})
+    return response.json()["embeddings"][0]`,
+          n8n:{ type:'HTTP Request', params:{ 'method':'POST', 'url':'https://api.cohere.ai/v1/embed', 'credential':'' } } },
+        { label:'Self-hosted (open source)', rules:['model: BAAI/bge-small-en','dimensions: 384','requires: reachable inference endpoint'],
+          python:`def embed_chunks(text: str, endpoint: str) -> list[float]:
+    response = requests.post(endpoint, json={"text": text})
+    return response.json()["vector"]`,
+          n8n:{ type:'HTTP Request', params:{ 'method':'POST', 'url':'https://<your-inference-endpoint>/embed', 'credential':'' } } }
+      ]
+    }
+  },
+  validate_embedding_output:{
+    desc:'Confirms the returned vector has the expected dimensionality before storage.',
+    requires:['chunk_vectors'], produces:['validated_vectors'],
+    rules:['dimension check must match the configured model'],
+    exampleJson:`[{ "json": { "dimensions": 1536, "valid": true } }]`,
+    python:`def validate_embedding_output(vector: list[float], expected_dim: int) -> ValidatedVectors:
+    if len(vector) != expected_dim:
+        raise DimensionMismatchError(len(vector), expected_dim)
+    return ValidatedVectors(vector)`,
+    n8n:{ type:'IF', params:{ 'condition':'{{$json.dimensions}} == expected_dim' } }
+  }
+};
+
+// ---- Folder structure for the Python three-level view ----
+const folderData = {
+  name: 'architeq_rag/',
+  folders: [
+    { name:'ingestion/', files:[
+      { name:'source_config.py', label:'source_config.py', functions:['define_source_scope','collect_upload_source'] },
+      { name:'document_ingestion.py', label:'document_ingestion.py', functions:['select_upload_source','validate_file_type','validate_file_size','read_file_bytes','extract_text_content','handle_unsupported_format'] }
+    ]},
+    { name:'preprocessing/', files:[
+      { name:'text_processing.py', label:'text_processing.py', functions:['parse_document_text','normalize_document_text','split_text_into_chunks','attach_chunk_metadata'] }
+    ]},
+    { name:'embedding/', files:[
+      { name:'embed_documents.py', label:'embed_documents.py', functions:['prepare_chunk_embedding_text','embed_chunks','validate_embedding_output'] }
+    ]}
+  ]
+};
+function findFile(name){
+  for(const folder of folderData.folders){
+    const f = folder.files.find(x=>x.name===name);
+    if(f) return f;
+  }
+  return null;
+}
+function findFileContaining(fnName){
+  for(const folder of folderData.folders){
+    for(const file of folder.files){
+      if(file.functions.includes(fnName)) return file;
+    }
+  }
+  return null;
+}
+
+function showScreen(name, btn){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('screen-'+name).classList.add('active');
+  document.querySelectorAll('.demo-btn').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  closePanel(); // panel never carries over between screens or mode switches
+  if(name==='canvas') setTimeout(()=>{ if(currentMode==='python'){ showPythonStructure(); } else { drawN8nFlow(); } }, 30);
+}
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+async function runBuildSequence(withFailure){
+  showScreen('canvas', null);
+  showN8nTree();
+  document.getElementById('mode-toggle').classList.add('locked');
+  document.getElementById('refine-bar').classList.add('locked');
+  document.getElementById('bs-fail-note').classList.remove('show');
+  document.getElementById('bs-fail-note').removeAttribute('style');
+  const bs = document.getElementById('build-status');
+  bs.classList.add('show');
+  ['bs-1','bs-2','bs-3','bs-4','bs-5','bs-6'].forEach(id=>{
+    const el = document.getElementById(id);
+    el.className = 'bs-line';
+    el.querySelector('.bs-icon').textContent = '○';
+  });
+  drawTree(true); // draw skeleton, hidden nodes, before status lines even start
+  document.querySelectorAll('.node-layer,.node-sub,.node-atom').forEach(n=> n.style.opacity=0);
+
+  async function step(id, delay, mode){
+    await sleep(delay);
+    const el = document.getElementById(id);
+    el.classList.add(mode==='fail' ? 'failed' : 'done');
+    el.classList.remove('pending');
+    el.querySelector('.bs-icon').textContent = mode==='fail' ? '✕' : '✓';
+  }
+  async function pending(id, delay){
+    await sleep(delay);
+    const el = document.getElementById(id);
+    el.classList.add('pending');
+    el.querySelector('.bs-icon').textContent = '⏳';
+  }
+
+  await step('bs-1', 350);
+  await step('bs-2', 500);
+  await pending('bs-3', 150); await step('bs-3', 600);
+  await pending('bs-4', 150); await step('bs-4', 650);
+
+  // reveal Layer node
+  document.querySelectorAll('.node-layer').forEach(n=>{ n.style.transition='opacity .3s'; n.style.opacity=1; });
+  await sleep(450);
+  // reveal Sub-task nodes
+  document.querySelectorAll('.node-sub').forEach(n=>{ n.style.transition='opacity .3s'; n.style.opacity=1; });
+  await sleep(400);
+
+  await pending('bs-5', 100);
+  // stream in atomic steps one at a time
+  const atoms = document.querySelectorAll('.node-atom');
+  for(const n of atoms){
+    n.style.transition='opacity .2s'; n.style.opacity=1;
+    await sleep(160);
+  }
+  await step('bs-5', 200);
+
+  await pending('bs-6', 150);
+  await sleep(700);
+
+  if(withFailure){
+    document.getElementById('bs-6').classList.remove('pending');
+    document.getElementById('bs-6').classList.add('failed');
+    document.getElementById('bs-6').querySelector('.bs-icon').textContent = '✕';
+    const note = document.getElementById('bs-fail-note');
+    note.classList.add('show');
+    note.innerHTML = '⏳ Found an issue — <b>collect_upload_source</b> does more than one thing. Fixing automatically, splitting it into separate steps...';
+    document.querySelectorAll('.node-atom').forEach(n=>{
+      if(n.getAttribute('data-name')==='collect_upload_source') n.classList.add('flagged');
+    });
+
+    await sleep(1600); // the engine is "working on it" here
+
+    // auto-fix resolves on its own — no user action needed
+    document.getElementById('bs-6').classList.remove('failed');
+    document.getElementById('bs-6').classList.add('pending');
+    document.getElementById('bs-6').querySelector('.bs-icon').textContent = '⏳';
+    note.innerHTML = '⏳ Re-checking after the fix...';
+    await sleep(1200);
+
+    document.getElementById('bs-6').classList.remove('pending');
+    document.getElementById('bs-6').classList.add('done');
+    document.getElementById('bs-6').querySelector('.bs-icon').textContent = '✓';
+    document.querySelectorAll('.node-atom').forEach(n=> n.classList.remove('flagged'));
+    note.style.color = 'var(--ok)';
+    note.style.background = 'rgba(78,205,142,0.08)';
+    note.style.borderColor = 'rgba(78,205,142,0.25)';
+    note.innerHTML = '✓ Fixed automatically — no action needed. collect_upload_source split into select_upload_source and receive_uploaded_files.';
+
+    await sleep(1400);
+    bs.classList.remove('show');
+    document.getElementById('mode-toggle').classList.remove('locked');
+    document.getElementById('refine-bar').classList.remove('locked');
+  } else {
+    await step('bs-6', 0);
+    await sleep(500);
+    bs.classList.remove('show');
+    document.getElementById('mode-toggle').classList.remove('locked');
+    document.getElementById('refine-bar').classList.remove('locked');
+  }
+}
+// ---- Python three-level structure view ----
+let pyState = { level:1, file:null, func:null };
+
+function renderPyCrumbs(){
+  const c = document.getElementById('py-crumbs');
+  let parts = [`<span onclick="pyGoLevel(1)">${folderData.name}</span>`];
+  if(pyState.level>=2 && pyState.file){
+    parts.push(`<span class="sep">›</span><span onclick="pyGoLevel(2)">${pyState.file.label}</span>`);
+  }
+  if(pyState.level===3 && pyState.func){
+    parts.push(`<span class="sep">›</span><span class="current">${pyState.func}()</span>`);
+  }
+  c.innerHTML = parts.join('');
+}
+
+function pyGoLevel(n){
+  pyState.level = n;
+  document.querySelectorAll('.py-level').forEach(l=>l.classList.remove('active'));
+  document.getElementById('py-level-'+n).classList.add('active');
+  renderPyCrumbs();
+  measurePyBase();
+}
+
+function renderPyLevel1(){
+  const el = document.getElementById('py-level-1');
+  let html = `<div class="py-tree-node"><div class="py-folder-row">📁 ${folderData.name}</div><div class="py-children">`;
+  folderData.folders.forEach(folder=>{
+    html += `<div class="py-folder-row" style="font-size:12.5px; margin-top:6px;">📁 ${folder.name}</div><div class="py-children">`;
+    folder.files.forEach(f=>{
+      html += `<div class="py-file-row" onclick="openPyFile('${f.name}')">
+        <span class="py-file-icon">📄</span> ${f.label}
+        <span style="color:var(--text-faint); font-weight:400; margin-left:6px;">(${f.functions.length} functions)</span>
+        <span class="chev">›</span>
+      </div>`;
+    });
+    html += `</div>`;
+  });
+  html += `</div></div>`;
+  el.innerHTML = html;
+}
+
+function findProducerAcrossFiles(inputName, excludeFileName){
+  for(const folder of folderData.folders){
+    for(const file of folder.files){
+      if(file.name === excludeFileName) continue;
+      for(const fn of file.functions){
+        const d = renderData[fn];
+        if(d && d.produces && d.produces.includes(inputName)) return { fn, file: folder.name+file.name };
+      }
+    }
+  }
+  return null;
+}
+function findConsumerAcrossFiles(outputName, excludeFileName){
+  for(const folder of folderData.folders){
+    for(const file of folder.files){
+      if(file.name === excludeFileName) continue;
+      for(const fn of file.functions){
+        const d = renderData[fn];
+        if(d && d.requires && d.requires.includes(outputName)) return { fn, file: folder.name+file.name };
+      }
+    }
+  }
+  return null;
+}
+
+function openPyFile(name){
+  const f = findFile(name);
+  pyState.file = f;
+  const el = document.getElementById('py-level-2');
+
+  const mainFuncs = f.functions.filter(fn => n8nFlowChain.includes(fn))
+    .sort((a,b)=> n8nFlowChain.indexOf(a) - n8nFlowChain.indexOf(b));
+  const branchFuncs = f.functions.filter(fn => fn === n8nFlowBranch.to);
+
+  let html = '';
+
+  // where this file's first input actually comes from — a compact strip,
+  // structurally separate from the function list, not shaped like a function
+  if(mainFuncs.length){
+    const firstD = renderData[mainFuncs[0]];
+    const producer = findProducerAcrossFiles(firstD.requires[0], name);
+    if(producer){
+      html += `<div class="py-file-flow-strip" onclick="openPyFile('${producer.file.split('/')[1]}')">
+        <span class="fs-file">📄 ${producer.file.split('/')[1]}</span>
+        <span class="fs-arrow">→</span>
+        <span class="fs-field">${firstD.requires[0]}</span>
+        <span class="fs-arrow">→</span>
+        <span class="fs-file">📄 ${name}</span>
+      </div>`;
+    }
+  }
+
+  html += `<div class="py-func-chain">`;
+  mainFuncs.forEach((fn,i)=>{
+    const d = renderData[fn];
+    if(i>0){
+      const prevD = renderData[mainFuncs[i-1]];
+      html += `<div class="py-func-connector"><div class="py-func-connector-dot"></div></div>
+        <div class="py-func-portlabel">${prevD.produces[0]}</div>`;
+    }
+    html += `<div class="py-func-row" onclick="openPyFunc('${fn}')">
+      <div class="py-func-name">${fn}()</div>
+      <div class="py-func-desc">${d.desc}</div>
+    </div>`;
+    if(fn === n8nFlowBranch.from && branchFuncs.length){
+      html += `<div class="py-func-branch-label">${n8nFlowBranch.label}</div>`;
+      branchFuncs.forEach(bfn=>{
+        const bd = renderData[bfn];
+        html += `<div class="py-func-row py-func-branch" style="border-color:rgba(229,103,122,0.3);" onclick="openPyFunc('${bfn}')">
+          <div class="py-func-name">${bfn}()</div>
+          <div class="py-func-desc">${bd.desc}</div>
+        </div>`;
+      });
+    }
+  });
+  html += `</div>`;
+  el.innerHTML = html;
+  pyGoLevel(2);
+}
+
+let pySuggestionConfirmed = {}; // fnName -> true once a choice has been made
+let pySelectedIndex = {};       // fnName -> chosen option index
+let pyFileBuilt = {};           // fileName -> true once fully built at least once
+
+// Flags any token in the code that still needs real input from the person —
+// API keys, tokens, placeholder endpoints — highlighted directly where it's
+// used, not just listed separately in a parameters panel.
+function highlightBlanks(codeText){
+  let escaped = codeText.replace(/</g,'&lt;');
+  escaped = escaped.replace(/config\.\w*(token|key)\w*/gi, m => `<span class="code-blank" title="Needs a real value before this can run">${m}</span>`);
+  escaped = escaped.replace(/&lt;[^&]*?&gt;/g, m => `<span class="code-blank" title="Needs a real value before this can run">${m}</span>`);
+  return escaped;
+}
+
+function scrollToFunc(fn){
+  const target = document.getElementById(`side-fcode-${fn}`);
+  if(!target) return;
+  target.scrollIntoView({behavior:'smooth', block:'center'});
+  target.style.background = 'rgba(124,140,255,0.14)';
+  setTimeout(()=>{ target.style.background=''; }, 900);
+}
+
+// ---- Main Level 3 area: back to one function at a time, its own build animation ----
+function openPyFunc(name){
+  pyState.func = name;
+  revealPyFuncBody(name);
+  pyGoLevel(3);
+  updateSidePanel(name);
+}
+
+function suggestionSectionHtml(name){
+  const d = renderData[name];
+  if(!d.suggestion) return '';
+  const selectedIdx = pySelectedIndex[name] ?? 0;
+  if(pySuggestionConfirmed[name]){
+    return `<div class="py-suggestion-confirmed" id="py-sugg-confirmed">
+      <span>✓ ${d.suggestion.options[selectedIdx].label}</span>
+      <span class="py-suggestion-change" onclick="reopenSuggestion('${name}')">change</span>
+    </div>`;
+  }
+  return `<div class="py-suggestion" id="py-sugg-box">
+    <div class="py-suggestion-q">${d.suggestion.question}</div>
+    <div class="py-suggestion-opts">
+      ${d.suggestion.options.map((o,i)=>`<span class="py-suggestion-chip ${i===selectedIdx?'selected':''}" onclick="selectSuggestion('${name}',${i},this)">${o.label}</span>`).join('')}
+    </div>
+  </div>`;
+}
+
+function renderPyFuncBody(name){
+  const d = renderData[name];
+  const el = document.getElementById('py-level-3');
+  const activeRules = d.suggestion ? d.suggestion.options[pySelectedIndex[name] ?? 0].rules : d.rules;
+  el.innerHTML = `${suggestionSectionHtml(name)}
+    <div class="py-code-block" id="py-active-code"><button class="py-copy-btn" onclick="copyCode(this)">copy</button><span class="code-text">${highlightBlanks(activeCodeFor(name))}</span></div>
+    <div style="margin-top:14px; font-size:12px; color:var(--text-faint);">requires: ${d.requires.join(', ')} &nbsp;·&nbsp; produces: ${d.produces.join(', ')}<br>rules: ${activeRules.join('; ')}</div>`;
+  measurePyBase();
+}
+
+async function revealPyFuncBody(name){
+  const d = renderData[name];
+  const el = document.getElementById('py-level-3');
+  const activeRules = d.suggestion ? d.suggestion.options[pySelectedIndex[name] ?? 0].rules : d.rules;
+  const lines = activeCodeFor(name).split('\n');
+
+  el.innerHTML = `${suggestionSectionHtml(name)}
+    <div class="py-build-status" id="py-build-status">⏳ Building ${titleCase(name)}()...</div>
+    <div class="py-code-block" id="py-active-code"><button class="py-copy-btn" onclick="copyCode(this)">copy</button><span class="code-text" id="py-code-text"></span></div>
+    <div id="py-meta-line" style="margin-top:14px; font-size:12px; color:var(--text-faint); opacity:0;">requires: ${d.requires.join(', ')} &nbsp;·&nbsp; produces: ${d.produces.join(', ')}<br>rules: ${activeRules.join('; ')}</div>`;
+  measurePyBase();
+  await sleep(300);
+
+  const codeEl = document.getElementById('py-code-text');
+  for(let i=0;i<lines.length;i++){
+    codeEl.innerHTML = highlightBlanks(lines.slice(0,i+1).join('\n'));
+    measurePyBase();
+    await sleep(280);
+  }
+  const meta = document.getElementById('py-meta-line');
+  if(meta) meta.style.opacity = 1;
+  const status = document.getElementById('py-build-status');
+  if(status){
+    status.textContent = `✓ ${titleCase(name)}() ready`;
+    status.classList.add('done');
+  }
+  measurePyBase();
+}
+
+function selectSuggestion(name, idx, chipEl){
+  if(chipEl){
+    document.querySelectorAll('#py-sugg-box .py-suggestion-chip').forEach(c=>c.classList.remove('selected'));
+    chipEl.classList.add('confirmed');
+  }
+  pySelectedIndex[name] = idx;
+  setTimeout(()=>{
+    pySuggestionConfirmed[name] = true;
+    renderPyFuncBody(name);
+    const block = document.getElementById('py-active-code');
+    if(block){ block.classList.add('flash'); setTimeout(()=> block.classList.remove('flash'), 500); }
+    updateSidePanel(name); // side panel's copy of this function updates too
+  }, 450);
+  const t = document.getElementById('toast');
+  t.textContent = '✓ Code updated to use ' + renderData[name].suggestion.options[idx].label;
+  t.style.opacity = 1; t.style.transform = 'translateX(-50%) translateY(0)';
+  setTimeout(()=>{ t.style.opacity=0; t.style.transform='translateX(-50%) translateY(20px)'; }, 2000);
+}
+
+function reopenSuggestion(name){
+  pySuggestionConfirmed[name] = false;
+  renderPyFuncBody(name);
+}
+
+// ---- Side panel: the growing file, separate from the main view above ----
+let pyFileVisited = {}; // fileName -> Set of function names visited so far, in visit order
+let pySidePanelOpen = false;
+
+// What each group of functions in a file actually amounts to, in plain
+// terms — the "this is a complete window" heading, not just a filename.
+const fileComponentName = {
+  'source_config.py': 'Source Configuration',
+  'document_ingestion.py': 'File Ingestion Pipeline',
+  'text_processing.py': 'Text Preprocessing Pipeline',
+  'embed_documents.py': 'Embedding Pipeline'
+};
+
+// Imports are DERIVED from what the code actually uses, not asserted upfront.
+// Each pattern only contributes its import line if a function's real code
+// contains it — so nothing appears here that isn't justified by code you
+// can see right below it.
+const importTriggers = [
+  { pattern: /unicodedata\./, line: 'import unicodedata' },
+  { pattern: /requests\./, line: 'import requests' },
+  { pattern: /log\.(warning|error|info)/, line: 'import logging\nlog = logging.getLogger(__name__)' },
+  { pattern: /Path\(/, line: 'from pathlib import Path' }
+];
+function deriveImports(codeBlocks){
+  const found = [];
+  codeBlocks.forEach(code=>{
+    importTriggers.forEach(t=>{
+      if(t.pattern.test(code) && !found.includes(t.line)) found.push(t.line);
+    });
+  });
+  return found;
+}
+
+function updateSidePanel(name){
+  const file = findFileContaining(name);
+  if(!file) return;
+  if(!pyFileVisited[file.name]) pyFileVisited[file.name] = [];
+  if(!pyFileVisited[file.name].includes(name)) pyFileVisited[file.name].push(name);
+
+  const panel = document.getElementById('py-side-panel');
+  panel.classList.add('open');
+  pySidePanelOpen = true;
+
+  // Always the complete, real file — clicking function 4 without clicking
+  // 1-3 first never leaves gaps. The file exists in full; Level 3 is just
+  // where you're currently looking.
+  const allCode = file.functions.map(fn=>activeCodeFor(fn));
+  const imports = deriveImports(allCode).join('\n');
+
+  let codeHtml = (imports ? highlightBlanks(imports) + '\n\n\n' : '');
+  file.functions.forEach(fn=>{
+    codeHtml += `<span class="py-file-func-code" id="side-fcode-${fn}">${highlightBlanks(activeCodeFor(fn))}</span>\n\n`;
+  });
+
+  document.getElementById('py-side-title').textContent = fileComponentName[file.name] || file.name;
+  document.getElementById('py-side-subtitle').textContent = file.name;
+  document.getElementById('py-side-status').textContent = `✓ complete — ${file.functions.length} functions`;
+  document.getElementById('py-side-status').classList.add('done');
+  document.getElementById('py-side-code').innerHTML = codeHtml;
+  document.getElementById('py-side-config').innerHTML = configPanelHtml(file);
+
+  setTimeout(()=>{
+    const justViewed = document.getElementById(`side-fcode-${name}`);
+    if(justViewed){
+      justViewed.style.background = 'rgba(124,140,255,0.14)';
+      justViewed.scrollIntoView({behavior:'smooth', block:'center'});
+      setTimeout(()=>{ justViewed.style.background=''; }, 900);
+    }
+  }, 50);
+}
+
+function activeCodeFor(fn){
+  const d = renderData[fn];
+  const idx = pySelectedIndex[fn] ?? 0;
+  return d.suggestion ? d.suggestion.options[idx].python : d.python;
+}
+
+function configPanelHtml(file){
+  const needing = file.functions.filter(fn => renderData[fn] && renderData[fn].suggestion && !pySuggestionConfirmed[fn]);
+  if(needing.length===0) return '';
+  return needing.map(fn => `
+    <div class="py-suggestion" id="py-sugg-box-side-${fn}">
+      <div class="py-suggestion-q">${renderData[fn].suggestion.question} <span style="color:var(--text-faint); font-weight:400;">— ${fn}()</span></div>
+      <div class="py-suggestion-opts">
+        ${renderData[fn].suggestion.options.map((o,i)=>`<span class="py-suggestion-chip" onclick="selectSuggestion('${fn}',${i},this); updateSidePanel('${fn}')">${o.label}</span>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function toggleSidePanel(){
+  const panel = document.getElementById('py-side-panel');
+  panel.classList.toggle('open');
+  pySidePanelOpen = panel.classList.contains('open');
+}
+
+function copyCode(btn){
+  const text = btn.parentElement.querySelector('.code-text').textContent;
+  navigator.clipboard.writeText(text).then(()=>{
+    btn.textContent = 'copied ✓';
+    setTimeout(()=> btn.textContent='copy', 1400);
+  });
+}
+
+function showPythonStructure(){
+  document.getElementById('tree-zoom-wrapper').style.display = 'none';
+  document.getElementById('canvas-hint').style.display = 'none';
+  document.getElementById('py-zoom-wrapper').style.display = 'block';
+  document.getElementById('python-structure-view').style.display = 'block';
+  document.getElementById('detail-panel').style.display = 'none'; // n8n-only panel; stop reserving its space here
+  closePanel();
+  renderPyLevel1();
+  pyGoLevel(1);
+  measurePyBase();
+  renderLayerLegend();
+}
+function showN8nTree(){
+  document.getElementById('py-zoom-wrapper').style.display = 'none';
+  document.getElementById('tree-zoom-wrapper').style.display = 'block';
+  document.getElementById('canvas-hint').style.display = 'block';
+  document.getElementById('detail-panel').style.display = '';
+  const sp = document.getElementById('py-side-panel');
+  if(sp) sp.classList.remove('open');
+}
+
+// ---- Real n8n orchestration order: left-to-right by actual data dependency, not hierarchy ----
+const n8nFlowChain = [
+  'define_source_scope','collect_upload_source','select_upload_source',
+  'validate_file_type','validate_file_size','read_file_bytes','extract_text_content',
+  'parse_document_text','normalize_document_text','split_text_into_chunks','attach_chunk_metadata',
+  'prepare_chunk_embedding_text','embed_chunks','validate_embedding_output'
+];
+const n8nFlowBranch = { from:'validate_file_type', to:'handle_unsupported_format', label:'unsupported format' };
+
+// Naming protocol (NT10): Verb + Object — Layer. Grounded in n8n community practice:
+// start with a verb, name descriptively, include the context/service — never leave a
+// generic default name. See rules/principles/node-translation.md NT10.
+const nodeLayer = {
+  define_source_scope:'Ingestion', collect_upload_source:'Ingestion', select_upload_source:'Ingestion',
+  validate_file_type:'Ingestion', validate_file_size:'Ingestion', read_file_bytes:'Ingestion',
+  extract_text_content:'Ingestion', handle_unsupported_format:'Ingestion',
+  parse_document_text:'Preprocessing', normalize_document_text:'Preprocessing',
+  split_text_into_chunks:'Preprocessing', attach_chunk_metadata:'Preprocessing',
+  prepare_chunk_embedding_text:'Embedding', embed_chunks:'Embedding', validate_embedding_output:'Embedding'
+};
+
+function n8nDisplayName(name){
+  return titleCase(name);
+}
+function n8nDisplayLines(name){
+  const n = getTentativeN8n(name);
+  const lines = [ titleCase(name), n ? n.type : '—' ];
+  if(!isComplete(name)) lines.push('⚠ needs setup');
+  return lines;
+}
+
+const nodeIcon = {
+  'Webhook (Trigger)':'⚡','IF':'⑂','Read/Write File':'💾','Extract From File':'📄',
+  'Stop and Error':'⛔','Set':'✎','Google Drive':'📁','HTTP Request':'🌐','Notion':'📝',
+  'Code':'⌨️','OpenAI':'✳️'
+};
+function iconFor(name){
+  const n = getTentativeN8n(name);
+  return (n && nodeIcon[n.type]) || '⬛';
+}
+
+let nodePositions = {}; // name -> {x,y}, persists across redraws, reset by autoArrangeN8n()
+let n8nEdgeList = [];   // recomputed each draw: [{from,to,color,marker,animate,label}]
+
+const layerColor = { Ingestion:'--accent', Preprocessing:'--ok', Embedding:'--embed' };
+let nodeRow = {};      // name -> GLOBAL row index (unique across the whole canvas, for edge classification)
+let nodeStage = {};    // name -> stage/layer name
+let stageZones = {};   // stage name -> {top, bottom} for background rendering
+
+// Corrected algorithm (per the spatial-hierarchy spec): allocate each
+// top-level stage its own non-overlapping vertical zone FIRST, then compute
+// rows *within* that zone. A row never spans two stages — that was the
+// actual cause of the earlier overlap bug. Rows only multiply within a
+// single stage if that stage alone exceeds the per-row cap.
+function computeDefaultPositions(){
+  const tileSize=58, gapX=110, gapY=150, startX=50;
+  const maxPerRow = 9; // CR4 / rule 9: ~9-10 per row
+  const headerH = 34, stagePadTop = 20, stagePadBottom = 20, interStageGap = 70;
+  const branchDrop = 78; // local branch offset beneath its source, within the same stage zone
+
+  const pos = {};
+  nodeRow = {}; nodeStage = {}; stageZones = {};
+
+  // Group into stages in first-appearance order (each stage's full node list,
+  // regardless of position — no longer split into disconnected runs, since
+  // a stage's rows are now calculated as its OWN local block)
+  const stageOrder = [];
+  const stageNodes = {};
+  n8nFlowChain.forEach(name=>{
+    const s = nodeLayer[name];
+    if(!stageNodes[s]){ stageNodes[s]=[]; stageOrder.push(s); }
+    stageNodes[s].push(name);
+  });
+
+  let globalRow = 0;
+  let cursorY = 40;
+
+  stageOrder.forEach(stageName=>{
+    const names = stageNodes[stageName];
+    const rowsNeeded = Math.ceil(names.length / maxPerRow);
+    const hasBranch = nodeLayer[n8nFlowBranch.from] === stageName;
+    const zoneTop = cursorY;
+    const contentTop = zoneTop + headerH + stagePadTop;
+
+    names.forEach((name,i)=>{
+      const localRow = Math.floor(i / maxPerRow);
+      const col = i % maxPerRow;
+      pos[name] = { x: startX + col*(tileSize+gapX), y: contentTop + localRow*gapY };
+      nodeRow[name] = globalRow + localRow;
+      nodeStage[name] = stageName;
+    });
+
+    if(hasBranch){
+      const fromPos = pos[n8nFlowBranch.from];
+      pos[n8nFlowBranch.to] = { x: fromPos.x, y: fromPos.y + branchDrop };
+      nodeRow[n8nFlowBranch.to] = nodeRow[n8nFlowBranch.from];
+      nodeStage[n8nFlowBranch.to] = stageName;
+    }
+
+    const contentBottom = contentTop + (rowsNeeded-1)*gapY + tileSize + (hasBranch ? branchDrop : 0);
+    const zoneBottom = contentBottom + stagePadBottom;
+    stageZones[stageName] = { top: zoneTop, bottom: zoneBottom };
+
+    globalRow += rowsNeeded;
+    cursorY = zoneBottom + interStageGap;
+  });
+
+  return pos;
+}
+
+// ---- Canvas panning: hold the middle mouse button and drag, like AutoCAD/Figma ----
+// ---- Canvas zoom: scroll wheel in/out, centered on cursor ----
+let n8nZoom = 1;
+let n8nBaseW = 900, n8nBaseH = 760; // unscaled content size, set whenever the tree is (re)drawn
+
+function applyN8nZoom(){
+  const svg = document.getElementById('tree-svg');
+  const wrapper = document.getElementById('tree-zoom-wrapper');
+  svg.style.transform = `scale(${n8nZoom})`;
+  wrapper.style.width = (n8nBaseW * n8nZoom) + 'px';
+  wrapper.style.height = (n8nBaseH * n8nZoom) + 'px';
+}
+
+// Python view zoom — same principle, applied to flowing HTML content instead
+// of a fixed SVG canvas. Base size is re-measured whenever content changes,
+// since the folder tree / function list / code view are all different sizes.
+let pyZoom = 1;
+let pyBaseW = 800, pyBaseH = 400;
+
+function measurePyBase(){
+  const el = document.getElementById('python-structure-view');
+  const prevTransform = el.style.transform;
+  el.style.transform = 'none'; // measure unscaled, then reapply
+  pyBaseW = el.scrollWidth || 800;
+  pyBaseH = el.scrollHeight || 400;
+  el.style.transform = prevTransform;
+  applyPyZoom();
+}
+function applyPyZoom(){
+  const el = document.getElementById('python-structure-view');
+  const wrapper = document.getElementById('py-zoom-wrapper');
+  el.style.transform = `scale(${pyZoom})`;
+  wrapper.style.width = (pyBaseW * pyZoom) + 'px';
+  wrapper.style.height = (pyBaseH * pyZoom) + 'px';
+}
+
+(function setupCanvasZoom(){
+  const scroller = document.getElementById('tree-scroll');
+  scroller.addEventListener('wheel', (e)=>{
+    const inPython = document.getElementById('tree-zoom-wrapper').style.display === 'none';
+    e.preventDefault();
+    const rect = scroller.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top;
+    if(inPython){
+      const prevZoom = pyZoom;
+      const contentX = (scroller.scrollLeft + mouseX) / prevZoom;
+      const contentY = (scroller.scrollTop + mouseY) / prevZoom;
+      pyZoom = Math.min(2.2, Math.max(0.5, pyZoom + (e.deltaY < 0 ? 0.08 : -0.08)));
+      applyPyZoom();
+      scroller.scrollLeft = contentX*pyZoom - mouseX;
+      scroller.scrollTop = contentY*pyZoom - mouseY;
+    } else {
+      const prevZoom = n8nZoom;
+      const contentX = (scroller.scrollLeft + mouseX) / prevZoom;
+      const contentY = (scroller.scrollTop + mouseY) / prevZoom;
+      n8nZoom = Math.min(2.2, Math.max(0.4, n8nZoom + (e.deltaY < 0 ? 0.08 : -0.08)));
+      applyN8nZoom();
+      scroller.scrollLeft = contentX*n8nZoom - mouseX;
+      scroller.scrollTop = contentY*n8nZoom - mouseY;
+    }
+  }, {passive:false});
+})();
+
+(function setupCanvasPan(){
+  const scroller = document.getElementById('tree-scroll');
+  let panning=false, startX=0, startY=0, startScrollL=0, startScrollT=0;
+  scroller.addEventListener('mousedown', (e)=>{
+    if(e.button !== 1) return; // middle mouse button only
+    e.preventDefault();
+    panning = true;
+    startX = e.clientX; startY = e.clientY;
+    startScrollL = scroller.scrollLeft; startScrollT = scroller.scrollTop;
+    scroller.style.cursor = 'grabbing';
+  });
+  window.addEventListener('mousemove', (e)=>{
+    if(!panning) return;
+    scroller.scrollLeft = startScrollL - (e.clientX - startX);
+    scroller.scrollTop = startScrollT - (e.clientY - startY);
+  });
+  window.addEventListener('mouseup', ()=>{ panning=false; scroller.style.cursor=''; });
+  // prevent the browser's default middle-click autoscroll icon from appearing
+  scroller.addEventListener('auxclick', (e)=>{ if(e.button===1) e.preventDefault(); });
+})();
+
+function autoArrangeN8n(){
+  nodePositions = computeDefaultPositions();
+  drawN8nFlow();
+  const t = document.getElementById('toast');
+  t.textContent = '⤢ Re-arranged — layered by dependency depth (Sugiyama-style)';
+  t.style.opacity = 1; t.style.transform = 'translateX(-50%) translateY(0)';
+  setTimeout(()=>{ t.style.opacity=0; t.style.transform='translateX(-50%) translateY(20px)'; }, 2200);
+}
+
+function showTooltip(evt, name){
+  const tt = document.getElementById('n8n-tooltip');
+  const n = getTentativeN8n(name);
+  const d = renderData[name];
+  tt.innerHTML = `<div class="tt-name">${n8nDisplayName(name)}</div>
+    <div class="tt-type">${n ? n.type : '—'}</div>
+    <div>${(d&&d.desc)||''}</div>
+    <div class="tt-status" style="color:${isComplete(name)?'var(--ok)':'var(--warn)'}">${isComplete(name)?'✓ ready':'⚠ needs configuration'}</div>
+    ${d&&d.exampleJson ? `<div style="margin-top:7px; padding-top:7px; border-top:1px solid var(--border-soft); font-size:9.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.04em;">output passed forward (JSON)</div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-dim); margin-top:4px; white-space:pre-wrap;">${d.exampleJson.replace(/</g,'&lt;')}</div>` : ''}`;
+  const wrap = document.querySelector('.tree-scroll').getBoundingClientRect();
+  tt.style.left = (evt.clientX - wrap.left + 16) + 'px';
+  tt.style.top = (evt.clientY - wrap.top + 12) + 'px';
+  tt.style.opacity = 1;
+}
+function hideTooltip(){ document.getElementById('n8n-tooltip').style.opacity = 0; }
+
+function drawN8nFlow(){
+  const svg = document.getElementById('tree-svg');
+  const ns = 'http://www.w3.org/2000/svg';
+  svg.innerHTML = '';
+
+  if(Object.keys(nodePositions).length===0) nodePositions = computeDefaultPositions();
+  const tileSize = 58;
+
+  const maxX = Math.max(...Object.values(nodePositions).map(p=>p.x)) + tileSize + 80;
+  const maxY = Math.max(...Object.values(nodePositions).map(p=>p.y)) + tileSize + 60;
+  n8nBaseW = maxX; n8nBaseH = maxY;
+  svg.setAttribute('width', maxX);
+  svg.setAttribute('height', maxY);
+
+  const defs = document.createElementNS(ns,'defs');
+  defs.innerHTML = `
+    <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="var(--accent)"></path>
+    </marker>
+    <marker id="arrowhead-warn" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="var(--warn)"></path>
+    </marker>`;
+  svg.appendChild(defs);
+
+  const stageLayer = document.createElementNS(ns,'g'); stageLayer.setAttribute('id','stage-layer');
+  const edgesLayer = document.createElementNS(ns,'g'); edgesLayer.setAttribute('id','edges-layer');
+  const nodesLayer = document.createElementNS(ns,'g'); nodesLayer.setAttribute('id','nodes-layer');
+  svg.appendChild(stageLayer); svg.appendChild(edgesLayer); svg.appendChild(nodesLayer);
+
+  // Stage backgrounds — now trivial and structurally non-overlapping, since
+  // stageZones was computed as part of layout itself (stacked vertical
+  // bands), not derived after the fact from node positions. Rule 66's
+  // collision check ("if boundingBox(A) intersects boundingBox(B), the
+  // layout is invalid") is satisfied by construction: zones are stacked
+  // sequentially with cursorY, never computed independently per stage.
+  const zoneWidth = Math.max(...Object.values(nodePositions).map(p=>p.x)) + tileSize + 60;
+  Object.entries(stageZones).forEach(([stageName, zone])=>{
+    const rect = document.createElementNS(ns,'rect');
+    rect.setAttribute('x', 20); rect.setAttribute('y', zone.top);
+    rect.setAttribute('width', zoneWidth); rect.setAttribute('height', zone.bottom - zone.top);
+    rect.setAttribute('rx', 12);
+    rect.setAttribute('fill', `var(${layerColor[stageName]||'--text-faint'})`);
+    rect.setAttribute('fill-opacity','0.05');
+    rect.setAttribute('stroke', `var(${layerColor[stageName]||'--text-faint'})`);
+    rect.setAttribute('stroke-opacity','0.22');
+    rect.setAttribute('stroke-width','1');
+    stageLayer.appendChild(rect);
+    const label = document.createElementNS(ns,'text');
+    label.setAttribute('x', 34); label.setAttribute('y', zone.top+22);
+    label.setAttribute('font-size','11'); label.setAttribute('font-weight','600');
+    label.setAttribute('fill', `var(${layerColor[stageName]||'--text-faint'})`);
+    label.textContent = 'STAGE — ' + stageName.toUpperCase();
+    stageLayer.appendChild(label);
+  });
+  // Row-count debug info removed from production canvas (rules 17-18) — the
+  // 9-10 node cap remains enforced internally in computeDefaultPositions,
+  // it's just no longer rendered as visible text on the canvas itself.
+
+  const cornerR = 14; // one consistent corner radius, everywhere (rule 30 / doc2 rule "consistent corner radius")
+
+  // Rounds each interior vertex of an orthogonal waypoint path into a smooth
+  // quarter-turn using a quadratic curve, all at the same radius — this is
+  // the "rounded orthogonal routing" the spec requires in place of large
+  // sweeping Bézier arcs or sharp 90° elbows.
+  function roundedPath(points){
+    if(points.length < 2) return '';
+    let d = `M${points[0].x},${points[0].y}`;
+    for(let i=1;i<points.length-1;i++){
+      const prev=points[i-1], cur=points[i], next=points[i+1];
+      const d1x=cur.x-prev.x, d1y=cur.y-prev.y, len1=Math.hypot(d1x,d1y)||1;
+      const r1 = Math.min(cornerR, len1/2);
+      const p1 = { x: cur.x-(d1x/len1)*r1, y: cur.y-(d1y/len1)*r1 };
+      const d2x=next.x-cur.x, d2y=next.y-cur.y, len2=Math.hypot(d2x,d2y)||1;
+      const r2 = Math.min(cornerR, len2/2);
+      const p2 = { x: cur.x+(d2x/len2)*r2, y: cur.y+(d2y/len2)*r2 };
+      d += ` L${p1.x},${p1.y} Q${cur.x},${cur.y} ${p2.x},${p2.y}`;
+    }
+    const last = points[points.length-1];
+    d += ` L${last.x},${last.y}`;
+    return d;
+  }
+
+  // Same-row adjacent nodes: a plain straight line — the simplest, strongest
+  // connection on the canvas, never curved unnecessarily (rule 3).
+  function adjacentPath(x1,y1,x2,y2){
+    return `M${x1},${y1} L${x2},${y2}`;
+  }
+
+  // Local branch: NOT a separate routing case. CR16 applies uniformly, no
+  // branch exception -- a real n8n connection always enters a node's actual
+  // left input port; there's no such thing as a "top port" to route into.
+  // A branch is routed exactly like a cross-stage connection (exit the
+  // source's real output port, travel through a lane, enter the target's
+  // real left input port) just over a much shorter vertical distance, since
+  // the branch target sits close beneath its source. See crossPath below --
+  // branch routing calls it directly rather than duplicating the pattern.
+
+  // Cross-stage / cross-row: exit the source's RIGHT port, drop into the
+  // routing lane (the whitespace between stages/rows), travel horizontally
+  // through the lane, then approach the target's normal LEFT input port —
+  // never its top. This is the corrected routing; entering via the top
+  // regardless of actual port semantics was the earlier defect.
+  function crossPath(a, b, laneY){
+    const sx = a.x+tileSize, sy = a.y+tileSize/2;
+    const tx = b.x, ty = b.y+tileSize/2;
+    const nudge = 34, approach = 24;
+    return roundedPath([
+      {x:sx, y:sy},
+      {x:sx+nudge, y:sy},
+      {x:sx+nudge, y:laneY},
+      {x:tx-approach, y:laneY},
+      {x:tx-approach, y:ty},
+      {x:tx, y:ty}
+    ]);
+  }
+
+  function drawEdge(fromName, toName, color, marker, animate, errLabel, route, kind){
+    const a = nodePositions[fromName], b = nodePositions[toName];
+    let x1, y1, x2, y2, d;
+    if(route === 'branch'){
+      // Short local lane just below the source row -- same left-entry
+      // routing as crossPath, not a separate top-entry path (CR16).
+      x1 = a.x+tileSize; y1 = a.y+tileSize/2; x2 = b.x; y2 = b.y+tileSize/2;
+      const laneY = a.y + tileSize + 18;
+      d = crossPath(a, b, laneY);
+    } else if(route === 'elbow'){
+      x1 = a.x+tileSize; y1 = a.y+tileSize/2; x2 = b.x; y2 = b.y+tileSize/2;
+      const stageA = nodeStage[fromName], stageB = nodeStage[toName];
+      const laneY = (stageZones[stageA] && stageZones[stageB])
+        ? (stageZones[stageA].bottom + stageZones[stageB].top) / 2
+        : (y1 + (y2 - a.y)) / 2;
+      d = crossPath(a, b, laneY);
+    } else {
+      x1 = a.x+tileSize; y1 = a.y+tileSize/2; x2 = b.x; y2 = b.y+tileSize/2;
+      d = adjacentPath(x1,y1,x2,y2);
+    }
+    const p = document.createElementNS(ns,'path');
+    p.setAttribute('d', d); p.setAttribute('class','edge'); p.setAttribute('data-edge', fromName+'>'+toName);
+    p.style.stroke = `var(${color})`;
+    p.style.strokeWidth = kind==='primary' ? '1.6' : '1.2';
+    // dash = routing behavior (displaced by layout), never "not executable";
+    // color/weight = semantic role. A dashed row/stage transition is still
+    // the exact same execution connection as an adjacent one (rule 22/28).
+    p.setAttribute('stroke-dasharray', route==='elbow' ? '6,4' : '0');
+    p.setAttribute('marker-end', `url(#${marker})`);
+    edgesLayer.appendChild(p);
+
+    if(animate){
+      const dot = document.createElementNS(ns,'circle');
+      dot.setAttribute('r',3); dot.setAttribute('fill', `var(${color})`);
+      dot.setAttribute('data-flow-for', fromName+'>'+toName);
+      const anim = document.createElementNS(ns,'animateMotion');
+      anim.setAttribute('dur','1.8s'); anim.setAttribute('repeatCount','indefinite'); anim.setAttribute('path', d);
+      dot.appendChild(anim);
+      edgesLayer.appendChild(dot);
+    }
+
+    // connection data labels (the field name passed) are secondary
+    // information — muted by default, per the corrected rule
+    const fromData = renderData[fromName];
+    const portName = fromData && fromData.produces && fromData.produces[0];
+    if(portName && kind==='primary'){
+      const lbl = document.createElementNS(ns,'text');
+      lbl.setAttribute('x', (x1+x2)/2); lbl.setAttribute('y', (y1+y2)/2 - 8);
+      lbl.setAttribute('class','edge-port-label'); lbl.setAttribute('data-edge-label', fromName+'>'+toName);
+      lbl.textContent = portName;
+      edgesLayer.appendChild(lbl);
+    }
+    if(errLabel){
+      const lbl2 = document.createElementNS(ns,'text');
+      lbl2.setAttribute('x', b.x + tileSize + 10); lbl2.setAttribute('y', b.y + tileSize/2 + 4); lbl2.setAttribute('font-size',10);
+      lbl2.setAttribute('fill','var(--warn)'); lbl2.setAttribute('data-edge-errlabel', fromName+'>'+toName);
+      lbl2.textContent = errLabel;
+      edgesLayer.appendChild(lbl2);
+    }
+  }
+
+  function redrawEdgesFor(name){
+    n8nEdgeList.forEach(e=>{
+      if(e.from===name || e.to===name){
+        svg.querySelectorAll(`[data-edge="${CSS.escape(e.from+'>'+e.to)}"], [data-flow-for="${CSS.escape(e.from+'>'+e.to)}"], [data-edge-label="${CSS.escape(e.from+'>'+e.to)}"], [data-edge-errlabel="${CSS.escape(e.from+'>'+e.to)}"]`).forEach(el=>el.remove());
+        drawEdge(e.from, e.to, e.color, e.marker, e.animate, e.label, e.route, e.kind);
+      }
+    });
+  }
+
+  n8nEdgeList = [];
+  for(let i=0;i<n8nFlowChain.length-1;i++){
+    const from = n8nFlowChain[i], to = n8nFlowChain[i+1];
+    const sameRow = nodeRow[from] === nodeRow[to];
+    n8nEdgeList.push({
+      from, to,
+      color: '--accent',
+      marker:'arrowhead', animate:true,
+      route: sameRow ? 'curve' : 'elbow',
+      kind: 'primary' // every main-chain edge is primary, whether or not it crosses a row
+    });
+  }
+  n8nEdgeList.push({from:n8nFlowBranch.from, to:n8nFlowBranch.to, color:'--warn', marker:'arrowhead-warn', animate:false, label:n8nFlowBranch.label, route:'branch', kind:'branch'});
+  n8nEdgeList.forEach(e=> drawEdge(e.from, e.to, e.color, e.marker, e.animate, e.label, e.route, e.kind));
+
+  function makeTile(name){
+    const pos = nodePositions[name];
+    const g = document.createElementNS(ns,'g');
+    g.setAttribute('class','node-atom n8n-tile' + (isComplete(name)?'':' needs-config'));
+    g.setAttribute('data-name', name);
+
+    const r = document.createElementNS(ns,'rect');
+    r.setAttribute('width',tileSize); r.setAttribute('height',tileSize); r.setAttribute('rx',12);
+    g.appendChild(r);
+
+    // Compact layer indicator — replaces the old row-based background band,
+    // since rows no longer align with layers (CR3). Grouping shown per-node,
+    // never repeated as text on the label itself (CR12).
+    const layerDot = document.createElementNS(ns,'circle');
+    layerDot.setAttribute('cx', 8); layerDot.setAttribute('cy', 8); layerDot.setAttribute('r', 3.5);
+    layerDot.setAttribute('fill', `var(${layerColor[nodeLayer[name]] || '--text-faint'})`);
+    g.appendChild(layerDot);
+
+    const icon = document.createElementNS(ns,'text');
+    icon.setAttribute('x', tileSize/2); icon.setAttribute('y', tileSize/2+2);
+    icon.setAttribute('class','n8n-icon'); icon.textContent = iconFor(name);
+    g.appendChild(icon);
+
+    const lbl = document.createElementNS(ns,'text');
+    lbl.setAttribute('x', tileSize/2); lbl.setAttribute('y', tileSize+16);
+    lbl.setAttribute('class','n8n-tile-label node-label-text');
+    const lines = n8nDisplayLines(name);
+    lines.forEach((line,i)=>{
+      const tsp = document.createElementNS(ns,'tspan');
+      tsp.setAttribute('x', tileSize/2); tsp.setAttribute('dy', i===0 ? 0 : 13);
+      if(i===2) tsp.setAttribute('fill','var(--warn)'); // the separate warning line, never the type line
+      tsp.textContent = line;
+      lbl.appendChild(tsp);
+    });
+    g.appendChild(lbl);
+
+    const portIn = document.createElementNS(ns,'circle');
+    portIn.setAttribute('cx',0); portIn.setAttribute('cy',tileSize/2); portIn.setAttribute('r',4);
+    portIn.setAttribute('class','n8n-port');
+    g.appendChild(portIn);
+
+    const portOut = document.createElementNS(ns,'circle');
+    portOut.setAttribute('cx',tileSize); portOut.setAttribute('cy',tileSize/2); portOut.setAttribute('r',4);
+    portOut.setAttribute('class','n8n-port' + (isComplete(name)?' filled':''));
+    portOut.setAttribute('data-dot-for', name);
+    g.appendChild(portOut);
+
+    g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
+
+    // click vs drag disambiguation, and drag updates position while keeping connections intact
+    let dragging=false, startX=0, startY=0, moved=false, origX=pos.x, origY=pos.y;
+    g.addEventListener('mousedown', (e)=>{
+      dragging=true; moved=false; startX=e.clientX; startY=e.clientY;
+      origX=nodePositions[name].x; origY=nodePositions[name].y;
+      hideTooltip();
+      e.stopPropagation();
+    });
+    window.addEventListener('mousemove', (e)=>{
+      if(!dragging) return;
+      const dx=(e.clientX-startX)/n8nZoom, dy=(e.clientY-startY)/n8nZoom;
+      if(Math.abs(dx)>3||Math.abs(dy)>3) moved=true;
+      nodePositions[name] = { x: origX+dx, y: origY+dy };
+      g.setAttribute('transform', `translate(${nodePositions[name].x},${nodePositions[name].y})`);
+      redrawEdgesFor(name);
+    });
+    window.addEventListener('mouseup', ()=>{
+      if(dragging && !moved){ openPanel(name, 'RAG orchestration'); g.classList.remove('pulse-hint'); document.getElementById('canvas-hint').style.opacity=0; }
+      if(dragging && moved){ /* position changed */ }
+      dragging=false;
+    });
+    g.addEventListener('mouseenter', (e)=> showTooltip(e, name));
+    g.addEventListener('mousemove', (e)=> showTooltip(e, name));
+    g.addEventListener('mouseleave', hideTooltip);
+
+    nodesLayer.appendChild(g);
+  }
+
+  [...n8nFlowChain, n8nFlowBranch.to].forEach(makeTile);
+  renderLayerLegend();
+  applyN8nZoom();
+}
+
+function renderLayerLegend(){
+  const el = document.getElementById('layer-legend');
+  const layers = [...new Set(n8nFlowChain.map(n=>nodeLayer[n]))];
+  el.innerHTML = layers.map(l=>
+    `<span style="display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--text-faint);">
+      <span style="width:8px; height:8px; border-radius:50%; background:var(${layerColor[l]||'--accent'}); display:inline-block;"></span>${l}
+    </span>`
+  ).join('');
+}
+
+function setMode(el, mode){
+  el.parentElement.querySelectorAll('.mode-opt').forEach(o=>o.classList.remove('active'));
+  el.classList.add('active');
+  currentMode = mode;
+  if(mode==='python'){ showPythonStructure(); }
+  else { showN8nTree(); drawN8nFlow(); }
+  if(currentAtom) renderDetail(currentAtom);
+  const t = document.getElementById('toast');
+  t.textContent = mode==='python' ? '✓ Showing folder structure — drill in to see code' : '✓ Showing n8n node types on the canvas';
+  t.style.opacity = 1; t.style.transform = 'translateX(-50%) translateY(0)';
+  setTimeout(()=>{ t.style.opacity=0; t.style.transform='translateX(-50%) translateY(20px)'; }, 2200);
+}
+function toggleComplete(el){
+  el.querySelector('.checkbox').classList.toggle('checked');
+}
+function closePanel(){ document.getElementById('detail-panel').classList.remove('open'); currentAtom=null; clearTimeout(panelIdleTimer); }
+
+let nodeConfigured = {}; // name -> selected suggestion index, once chosen
+let nodeParamValues = {}; // name -> {paramKey: liveValue}, editable by the person
+
+function hasSuggestion(name){
+  const d = renderData[name];
+  return !!(d && d.suggestion);
+}
+function isComplete(name){
+  if(!hasSuggestion(name)) return true;
+  if(!nodeConfigured.hasOwnProperty(name)) return false;
+  const opt = renderData[name].suggestion.options[nodeConfigured[name]];
+  const needed = userInputKeys[opt.n8n.type] || [];
+  if(needed.length===0) return true;
+  const vals = nodeParamValues[name] || {};
+  return needed.every(k => vals[k] && vals[k].trim() !== '');
+}
+function getActiveN8n(name){
+  const d = renderData[name];
+  if(!d) return null;
+  if(hasSuggestion(name)){
+    if(nodeConfigured.hasOwnProperty(name)) return d.suggestion.options[nodeConfigured[name]].n8n;
+    return null; // not configured yet
+  }
+  return d.n8n;
+}
+// For DISPLAY: always resolve to a real node type (default option if not yet
+// confirmed), so the type label is never blank or replaced by warning text.
+// isComplete() / getActiveN8n() remain the source of truth for whether the
+// node is actually functionally ready — this is display-only (rule 49).
+function getTentativeN8n(name){
+  const active = getActiveN8n(name);
+  if(active) return active;
+  const d = renderData[name];
+  if(d && d.suggestion) return d.suggestion.options[0].n8n;
+  return d ? d.n8n : null;
+}
+function titleCase(name){
+  return name.split('_').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+}
+
+const requiredParamKeys = {
+  'Webhook (Trigger)':['path','httpMethod'],
+  'IF':['condition'],
+  'Read/Write File':['operation'],
+  'Extract From File':['operation'],
+  'Stop and Error':['message'],
+  'Set':['field'],
+  'Code':['language'],
+  'Google Drive':['folderId','credential'],
+  'HTTP Request':['url','credential'],
+  'Notion':['resource','credential']
+};
+// Which required params the PERSON must actually type or paste in, rather than
+// values the system already determined. These start empty on purpose.
+const userInputKeys = {
+  'Google Drive':['folderId','credential'],
+  'Notion':['credential'],
+  'HTTP Request':['credential']
+};
+const paramPlaceholders = {
+  folderId:'Paste your Google Drive folder ID…',
+  credential:'Paste your API key / access token / connect account…'
+};
+
+function tagList(id, items){
+  document.getElementById(id).innerHTML = items.map(i=>`<div class="dp-tag">${i}</div>`).join('');
+}
+
+function renderDetail(name){
+  const d = renderData[name];
+  if(!d) return;
+
+  // status banner
+  const banner = document.getElementById('dp-status-banner');
+  if(isComplete(name)){
+    banner.innerHTML = `<div class="dp-status-ready">✓ Ready — all required parameters set</div>`;
+  } else {
+    banner.innerHTML = `<div class="dp-status-needs">⚠ Needs configuration before this can send data forward</div>`;
+  }
+
+  // suggestion (only shown while unconfigured)
+  const sugSection = document.getElementById('dp-suggestion-section');
+  if(hasSuggestion(name) && !nodeConfigured.hasOwnProperty(name)){
+    sugSection.style.display = 'block';
+    sugSection.innerHTML = `<div class="py-suggestion">
+      <div class="py-suggestion-q">${d.suggestion.question}</div>
+      <div class="py-suggestion-opts">
+        ${d.suggestion.options.map((o,i)=>`<span class="py-suggestion-chip" onclick="selectPanelSuggestion('${name}',${i})">${o.label}</span>`).join('')}
+      </div>
+    </div>`;
+  } else if(hasSuggestion(name)){
+    sugSection.style.display = 'block';
+    sugSection.innerHTML = `<div class="py-suggestion">
+      <div class="py-suggestion-q">${d.suggestion.question}</div>
+      <div class="py-suggestion-opts">
+        ${d.suggestion.options.map((o,i)=>`<span class="py-suggestion-chip ${i===nodeConfigured[name]?'selected':''}" onclick="selectPanelSuggestion('${name}',${i})">${o.label}</span>`).join('')}
+      </div>
+    </div>`;
+  } else {
+    sugSection.style.display = 'none';
+  }
+
+  // parameters
+  const paramsEl = document.getElementById('dp-params');
+  const n = getActiveN8n(name);
+  if(!n){
+    paramsEl.innerHTML = `<div class="dp-param-empty">No source selected yet — pick one above to set this node's type and parameters.</div>`;
+  } else {
+    const required = requiredParamKeys[n.type] || [];
+    const needsInput = userInputKeys[n.type] || [];
+    const vals = nodeParamValues[name] || {};
+    let rows = `<div class="dp-param-row"><span class="dp-param-key">node type</span><span class="dp-param-val">${n.type}</span></div>`;
+    rows += Object.keys(n.params).map(k=>{
+      const isReq = required.includes(k);
+      const isInput = needsInput.includes(k);
+      if(isInput){
+        const val = vals[k] || '';
+        const filled = val.trim() !== '';
+        return `<div class="dp-param-row" style="align-items:flex-start;">
+          <span class="dp-param-key" style="padding-top:6px;">${k}</span>
+          <input type="text" value="${val.replace(/"/g,'&quot;')}" placeholder="${paramPlaceholders[k]||'Paste value…'}"
+            oninput="updateParamValue('${name}','${k}', this.value)"
+            style="flex:1; margin:0 8px; background:var(--bg-panel); border:1px solid ${filled?'var(--ok)':'var(--border)'}; border-radius:6px; padding:6px 9px; color:var(--text); font-family:'JetBrains Mono',monospace; font-size:11.5px;">
+          <span class="dp-param-tag req" id="pstat-${name}-${k}">${filled?'✓ set':'required'}</span>
+        </div>`;
+      }
+      const v = n.params[k];
+      return `<div class="dp-param-row">
+        <span class="dp-param-key">${k}</span>
+        <span class="dp-param-val">${v}</span>
+        <span class="dp-param-tag ${isReq?'req':'opt'}">${isReq?'required':'optional'}</span>
+      </div>`;
+    }).join('');
+    paramsEl.innerHTML = rows;
+  }
+
+  tagList('dp-flow', [...d.requires, '→', ...d.produces]);
+  document.getElementById('dp-payload').textContent = d.exampleJson || '(no example captured yet)';
+  const activeRules = (hasSuggestion(name) && nodeConfigured.hasOwnProperty(name)) ? d.suggestion.options[nodeConfigured[name]].rules : d.rules;
+  tagList('dp-rules', activeRules);
+  document.getElementById('dp-why').innerHTML = `Grounded via Builder simulation trace. Passes Atomicity Test (P1): single verb, single input, single output, maps to one node.`;
+}
+
+function updateParamValue(name, key, val){
+  nodeParamValues[name] = nodeParamValues[name] || {};
+  nodeParamValues[name][key] = val;
+  refreshCompleteness(name);
+}
+
+function refreshCompleteness(name){
+  const banner = document.getElementById('dp-status-banner');
+  if(isComplete(name)){
+    banner.innerHTML = `<div class="dp-status-ready">✓ Ready — all required parameters set</div>`;
+  } else {
+    banner.innerHTML = `<div class="dp-status-needs">⚠ Needs configuration before this can send data forward</div>`;
+  }
+  const opt = hasSuggestion(name) && nodeConfigured.hasOwnProperty(name) ? renderData[name].suggestion.options[nodeConfigured[name]] : null;
+  if(opt){
+    const needed = userInputKeys[opt.n8n.type] || [];
+    const vals = nodeParamValues[name] || {};
+    needed.forEach(k=>{
+      const stat = document.getElementById(`pstat-${name}-${k}`);
+      const filled = vals[k] && vals[k].trim() !== '';
+      if(stat){ stat.textContent = filled ? '✓ set' : 'required'; }
+      const input = stat ? stat.parentElement.querySelector('input') : null;
+      if(input){ input.style.borderColor = filled ? 'var(--ok)' : 'var(--border)'; }
+    });
+  }
+  updateNodeDot(name);
+  updateNodeFlagged(name);
+}
+
+function selectPanelSuggestion(name, idx){
+  nodeConfigured[name] = idx;
+  const opt = renderData[name].suggestion.options[idx];
+  nodeParamValues[name] = { ...opt.n8n.params };
+  (userInputKeys[opt.n8n.type] || []).forEach(k => nodeParamValues[name][k] = '');
+  renderDetail(name);
+  updateNodeDot(name);
+  updateNodeFlagged(name);
+  updateNodeLabelSingle(name);
+  const t = document.getElementById('toast');
+  t.textContent = (userInputKeys[opt.n8n.type]||[]).length
+    ? '⚠ ' + opt.label + ' selected — paste in the required values below'
+    : '✓ Node configured — ' + opt.label;
+  t.style.opacity = 1; t.style.transform = 'translateX(-50%) translateY(0)';
+  setTimeout(()=>{ t.style.opacity=0; t.style.transform='translateX(-50%) translateY(20px)'; }, 2400);
+}
+
+function updateNodeDot(name){
+  const c = document.querySelector(`circle[data-dot-for="${CSS.escape(name)}"]`);
+  if(!c) return;
+  if(c.classList.contains('n8n-port')){
+    c.classList.toggle('filled', isComplete(name));
+  } else {
+    c.classList.remove('status-done','status-progress','status-none');
+    c.classList.add(isComplete(name) ? 'status-done' : 'status-progress');
+  }
+}
+function updateNodeFlagged(name){
+  const ag = document.querySelector(`.node-atom[data-name="${CSS.escape(name)}"]`);
+  if(!ag) return;
+  ag.classList.toggle('needs-config', !isComplete(name));
+}
+function updateNodeLabelSingle(name){
+  const ag = document.querySelector(`.node-atom[data-name="${CSS.escape(name)}"]`);
+  if(!ag) return;
+  const t = ag.querySelector('.node-label-text');
+  if(t){
+    if(ag.classList.contains('n8n-tile')){
+      t.innerHTML = '';
+      n8nDisplayLines(name).forEach((line,i)=>{
+        const tsp = document.createElementNS('http://www.w3.org/2000/svg','tspan');
+        tsp.setAttribute('x', 29); tsp.setAttribute('dy', i===0?0:13);
+        tsp.textContent = line;
+        t.appendChild(tsp);
+      });
+    } else {
+      t.textContent = nodeLabelFor(name);
+    }
+  }
+  const icon = ag.querySelector('.n8n-icon');
+  if(icon) icon.textContent = iconFor(name);
+}
+
+let refineIdleTimer = null;
+function expandRefineBar(){
+  const bar = document.getElementById('refine-bar');
+  bar.classList.remove('collapsed');
+  bar.classList.add('expanded');
+  document.getElementById('refine-input').focus();
+  armRefineIdleRetract();
+}
+function collapseRefineBar(){
+  const bar = document.getElementById('refine-bar');
+  bar.classList.remove('expanded');
+  bar.classList.add('collapsed');
+  clearTimeout(refineIdleTimer);
+}
+function armRefineIdleRetract(){
+  clearTimeout(refineIdleTimer);
+  refineIdleTimer = setTimeout(()=>{
+    if(document.getElementById('refine-input').value.trim()==='') collapseRefineBar();
+  }, 6000);
+}
+function submitRefine(){
+  const input = document.getElementById('refine-input');
+  if(input.value.trim()===''){ return; }
+  const t = document.getElementById('toast');
+  t.textContent = '✓ Refinement queued — re-validating affected steps';
+  t.style.opacity = 1; t.style.transform = 'translateX(-50%) translateY(0)';
+  setTimeout(()=>{ t.style.opacity=0; t.style.transform='translateX(-50%) translateY(20px)'; }, 2400);
+  input.value = '';
+  collapseRefineBar();
+}
+(function setupRefineIdleReset(){
+  const input = document.getElementById('refine-input');
+  input.addEventListener('input', armRefineIdleRetract);
+  input.addEventListener('keydown', (e)=>{ if(e.key==='Enter') submitRefine(); });
+  input.addEventListener('blur', ()=>{ if(input.value.trim()==='') setTimeout(collapseRefineBar, 200); });
+})();
+
+let panelIdleTimer = null;
+function armPanelIdleRetract(){
+  clearTimeout(panelIdleTimer);
+  panelIdleTimer = setTimeout(()=>{ document.getElementById('detail-panel').classList.remove('open'); }, 7000);
+}
+(function setupPanelIdleReset(){
+  const panel = document.getElementById('detail-panel');
+  ['mousemove','keydown','input','click','scroll'].forEach(evt=>{
+    panel.addEventListener(evt, ()=>{ if(panel.classList.contains('open')) armPanelIdleRetract(); });
+  });
+})();
+
+function openPanel(title, sub){
+  currentAtom = title;
+  hintDismissed = true;
+  const hint = document.getElementById('canvas-hint');
+  if(hint) hint.style.opacity = 0;
+  document.querySelectorAll('.pulse-hint').forEach(n=>n.classList.remove('pulse-hint'));
+  document.getElementById('dp-title').textContent = currentMode==='n8n' ? n8nDisplayName(title) : titleCase(title);
+  document.getElementById('dp-sub').textContent = sub;
+  renderDetail(title);
+  document.getElementById('detail-panel').classList.add('open');
+  armPanelIdleRetract();
+}
+
+function doExport(){
+  const t = document.getElementById('toast');
+  t.textContent = currentMode==='python'
+    ? '✓ Exported — architeq_rag/ (7 modules, ready to download)'
+    : '✓ Exported — rag_workflow.json (importable into n8n)';
+  t.style.opacity = 1;
+  t.style.transform = 'translateX(-50%) translateY(0)';
+  setTimeout(()=>{ t.style.opacity=0; t.style.transform='translateX(-50%) translateY(20px)'; }, 2600);
+}
+
+// ---- Minimal SVG tree renderer: Layer -> Sub-task -> Atomic step ----
+const tree = {
+  name:'Ingestion', status:'done', x:60, y:20,
+  children:[
+    { name:'Source Acquisition', status:'done', children:[
+      {name:'define_source_scope', status:'done'},
+      {name:'collect_upload_source', status:'done'}
+    ]},
+    { name:'Document Ingestion', status:'progress', children:[
+      {name:'select_upload_source', status:'done'},
+      {name:'validate_file_type', status:'done'},
+      {name:'validate_file_size', status:'progress'},
+      {name:'read_file_bytes', status:'none'},
+      {name:'extract_text_content', status:'none'},
+      {name:'handle_unsupported_format', status:'none'}
+    ]}
+  ]
+};
+
+function drawTree(staged){
+  const svg = document.getElementById('tree-svg');
+  svg.innerHTML = '';
+  let firstAtomEl = null;
+  const ns = 'http://www.w3.org/2000/svg';
+  function rect(x,y,w,h,cls){
+    const g = document.createElementNS(ns,'g'); g.setAttribute('class',cls);
+    const r = document.createElementNS(ns,'rect');
+    r.setAttribute('x',x); r.setAttribute('y',y); r.setAttribute('width',w); r.setAttribute('height',h);
+    r.setAttribute('rx',7);
+    g.appendChild(r);
+    return g;
+  }
+  function label(g,x,y,text){
+    const t = document.createElementNS(ns,'text');
+    t.setAttribute('x',x); t.setAttribute('y',y); t.setAttribute('font-size', g.classList.contains('node-layer')?13:12);
+    t.textContent = text; g.appendChild(t); return t;
+  }
+  function dot(g,cx,cy,status,name){
+    const c = document.createElementNS(ns,'circle');
+    c.setAttribute('cx',cx); c.setAttribute('cy',cy); c.setAttribute('r',3.5);
+    c.setAttribute('class','status-dot status-'+status);
+    if(name) c.setAttribute('data-dot-for', name);
+    g.appendChild(c);
+  }
+  function edge(x1,y1,x2,y2){
+    const p = document.createElementNS(ns,'path');
+    const mx = x1 + 22;
+    p.setAttribute('d', `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`);
+    p.setAttribute('class','edge');
+    svg.appendChild(p);
+  }
+
+  // Layer node
+  const layerW=150, layerH=34;
+  const lg = rect(20,20,layerW,layerH,'node-layer'); svg.appendChild(lg);
+  label(lg, 36, 20+layerH/2+4, tree.name);
+  dot(lg, 20+layerW-14, 20+layerH/2, tree.status);
+
+  let subY = 20;
+  const subX = 220, subW=190, subH=30, gapSub=54;
+  const atomX = 460, atomW=230, atomH=26;
+
+  tree.children.forEach((sub,i)=>{
+    const sy = 10 + i*gapSub*3.6 + 10;
+    const sg = rect(subX, sy, subW, subH, 'node-sub'); svg.appendChild(sg);
+    label(sg, subX+14, sy+subH/2+4, sub.name);
+    dot(sg, subX+subW-14, sy+subH/2, sub.status);
+    edge(20+layerW, 20+layerH/2, subX, sy+subH/2);
+
+    sub.children.forEach((atom,j)=>{
+      const ay = sy - ( (sub.children.length-1)*34/2 ) + j*34 + 40;
+      const ag = rect(atomX, ay, atomW, atomH, 'node-atom');
+      ag.setAttribute('data-name', atom.name);
+      ag.onclick = ()=> { openPanel(atom.name, tree.name+' → '+sub.name); ag.classList.remove('pulse-hint'); document.getElementById('canvas-hint').style.opacity=0; };
+      svg.appendChild(ag);
+      const displayName = nodeLabelFor(atom.name);
+      const lbl = label(ag, atomX+12, ay+atomH/2+4, displayName);
+      lbl.setAttribute('class','node-label-text');
+      const chev = document.createElementNS('http://www.w3.org/2000/svg','text');
+      chev.setAttribute('x', atomX+atomW-26); chev.setAttribute('y', ay+atomH/2+4);
+      chev.setAttribute('font-size',11); chev.setAttribute('fill','var(--text-faint)');
+      chev.textContent = '›'; ag.appendChild(chev);
+      dot(ag, atomX+atomW-12, ay+atomH/2, currentMode==='n8n' ? (isComplete(atom.name)?'done':'progress') : atom.status, atom.name);
+      if(currentMode==='n8n' && !isComplete(atom.name)) ag.classList.add('needs-config');
+      edge(subX+subW, sy+subH/2, atomX, ay+atomH/2);
+      if(firstAtomEl===null){ firstAtomEl = ag; if(!hintDismissed) ag.classList.add('pulse-hint'); }
+    });
+  });
+  if(!hintDismissed){
+    const hint = document.getElementById('canvas-hint');
+    if(hint) hint.style.opacity = 1;
+  }
+}
+
+let hintDismissed = false;
+function nodeLabelFor(name){
+  const d = renderData[name];
+  if(!d) return name;
+  return currentMode==='python' ? name : titleCase(name);
+}
+function relabelCanvasForMode(){
+  document.querySelectorAll('.node-atom').forEach(ag=>{
+    const name = ag.getAttribute('data-name');
+    const t = ag.querySelector('.node-label-text');
+    if(t) t.textContent = nodeLabelFor(name);
+    if(currentMode==='n8n'){
+      updateNodeDot(name);
+      updateNodeFlagged(name);
+    } else {
+      ag.classList.remove('needs-config');
+      const c = document.querySelector(`circle[data-dot-for="${CSS.escape(name)}"]`);
+      if(c){ c.classList.remove('status-done','status-progress','status-none'); c.classList.add('status-'+(atomStatusMap[name]||'none')); }
+    }
+  });
+}
+let atomStatusMap = {};
+tree.children.forEach(sub=> sub.children.forEach(a=> atomStatusMap[a.name]=a.status));
+drawTree();
+</script>
+</body>
+</html>

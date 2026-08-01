@@ -199,6 +199,6 @@ exported with an unedited default name
 | NT7 | Least Privilege on Credentialed Nodes | G9, restated |
 | NT8 | Idempotent Steps Use Safe-Retry Configurations | WD8, restated |
 | NT9 | Positions and Connections Computed Once | WD4, Determinism |
-| NT10 | Node Names Follow Verb + Object — Layer | n8n community naming best practice |
+| NT10 | Node Names Follow Verb + Object; Real Node Type Shown Alongside | n8n community naming best practice; amended by CR11/CR12 |
 
 This file is referenced from `RULES-INDEX.md`. This completes the planned rules corpus: workflow-design, governance, ui-design, dev-process, decomposition, prompting, node-translation.
