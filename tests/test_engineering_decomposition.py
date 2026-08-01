@@ -28,6 +28,7 @@ from backend.intelligence.stages import ReasoningStageError
 from backend.intent import service as intent_service
 from backend.models import (
     Capability,
+    Component,
     DomainChecklist,
     DomainTaskTree,
     ExtractedRequirement,
@@ -1031,6 +1032,53 @@ def test_identify_capabilities_prompt_includes_requirement_ids(monkeypatch):
     component_engine.identify_capabilities("rag", _STAGE2_REQS, "context")
 
     assert "R1" in captured["prompt"] and "R6" in captured["prompt"]
+
+
+# ---- Module 11 -- Stage -1, Functional Decomposition (11c) ----
+
+_STAGE1_CAPABILITY = Capability(label="Document Ingestion", traced_requirements=["R6"], domain="rag")
+
+
+def test_decompose_capability_returns_well_formed_items(monkeypatch):
+    mock_response = {"components": [
+        {"label": "Upload Source"}, {"label": "File Validator"}, {"label": "Text Extractor"},
+    ]}
+    monkeypatch.setattr(component_engine, "_ask_json", lambda **kwargs: mock_response)
+
+    result = component_engine.decompose_capability(_STAGE1_CAPABILITY, "context")
+
+    assert len(result) == 3
+    assert all(isinstance(c, Component) for c in result)
+    assert [c.label for c in result] == ["Upload Source", "File Validator", "Text Extractor"]
+    assert all(c.realizes_capability == "Document Ingestion" for c in result)
+    assert all(c.domain == "rag" for c in result)
+
+
+def test_decompose_capability_drops_items_with_empty_label(monkeypatch):
+    mock_response = {"components": [
+        {"label": "Upload Source"}, {"label": ""}, {"label": "Text Extractor"},
+    ]}
+    monkeypatch.setattr(component_engine, "_ask_json", lambda **kwargs: mock_response)
+
+    result = component_engine.decompose_capability(_STAGE1_CAPABILITY, "context")
+
+    assert len(result) == 2
+    assert [c.label for c in result] == ["Upload Source", "Text Extractor"]
+
+
+def test_decompose_capability_prompt_includes_capability_and_requirement_ids(monkeypatch):
+    captured = {}
+
+    def mock(**kwargs):
+        captured.update(kwargs)
+        return {"components": []}
+
+    monkeypatch.setattr(component_engine, "_ask_json", mock)
+
+    component_engine.decompose_capability(_STAGE1_CAPABILITY, "context")
+
+    assert "Document Ingestion" in captured["prompt"]
+    assert "R6" in captured["prompt"]
 
 
 def test_render_python_endpoint_404_for_unknown_domain(authed_client):

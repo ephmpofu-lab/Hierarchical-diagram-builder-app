@@ -1176,4 +1176,10 @@ class Capability(BaseModel):
     domain: str
 
 
+class Component(BaseModel):
+    label: str
+    realizes_capability: str
+    domain: str
+
+
 Project.model_rebuild()

@@ -9,7 +9,7 @@ Stage -3 (Requirements Engineering) is the only stage implemented so far (sub-pl
 from typing import List
 
 from ..intelligence.stages import _ask_json
-from ..models import Capability, ExtractedRequirement
+from ..models import Capability, Component, ExtractedRequirement
 
 
 def extract_requirements(
@@ -77,3 +77,35 @@ def identify_capabilities(
             continue
         capabilities.append(Capability(label=item.get("label", ""), traced_requirements=traced, domain=domain))
     return capabilities
+
+
+def decompose_capability(capability: Capability, reasoning_context: str) -> List[Component]:
+    """Stage -1 -- decomposes one capability into the components required to realize it
+    (R26, CD2, CD3). Every returned Component is stamped with capability.label directly --
+    CD2's realizes_capability requirement is satisfied by construction, never left to the
+    model to supply or omit. Breadth-first ordering (CD3) is enforced by the future Stage -1
+    orchestrator (11d) calling this once per capability, not by this function in isolation."""
+    traced = ", ".join(capability.traced_requirements)
+    data = _ask_json(
+        system=(
+            "You are decomposing one capability into the components required to realize "
+            "it. A component is a distinct structural part of the system (e.g. the "
+            "capability 'Document Ingestion' decomposes into components like 'Upload "
+            "Source', 'File Validator', 'Text Extractor'). Propose every component needed "
+            "-- do not omit one just because it seems minor, and do not invent components "
+            "unrelated to this capability. "
+            'Respond with strict JSON only: {"components": [{"label": str}]}'
+        ),
+        prompt=(
+            f"Capability: {capability.label}\nTraced requirement ids: {traced}\n\n"
+            f"Reasoning context:\n{reasoning_context}"
+        ),
+        max_tokens=1000,
+    )
+    components = []
+    for item in data.get("components", []):
+        label = (item.get("label") or "").strip()
+        if not label:
+            continue
+        components.append(Component(label=label, realizes_capability=capability.label, domain=capability.domain))
+    return components
