@@ -27,6 +27,7 @@ from backend.decompose import engine as decompose_engine
 from backend.intelligence.stages import ReasoningStageError
 from backend.intent import service as intent_service
 from backend.models import (
+    Capability,
     DomainChecklist,
     DomainTaskTree,
     ExtractedRequirement,
@@ -978,6 +979,58 @@ def test_extract_requirements_prompt_includes_prd_text_and_domain(monkeypatch):
 
     assert "SPECIFIC_PRD_MARKER_TEXT" in captured["prompt"]
     assert "rag" in captured["prompt"]
+
+
+# ---- Module 11 -- Stage -2, Capability Identification (11b) ----
+
+_STAGE2_REQS = [
+    ExtractedRequirement(text="Accepts a free-text intent.", prd_requirement_id="R1", domain="rag"),
+    ExtractedRequirement(text="Validates uploaded file type.", prd_requirement_id="R6", domain="rag"),
+]
+
+
+def test_identify_capabilities_returns_well_formed_items(monkeypatch):
+    mock_response = {"capabilities": [
+        {"label": "Intent Resolution", "traced_requirement_ids": ["R1"]},
+        {"label": "Document Ingestion", "traced_requirement_ids": ["R6"]},
+    ]}
+    monkeypatch.setattr(component_engine, "_ask_json", lambda **kwargs: mock_response)
+
+    result = component_engine.identify_capabilities("rag", _STAGE2_REQS, "context")
+
+    assert len(result) == 2
+    assert all(isinstance(c, Capability) for c in result)
+    assert [c.label for c in result] == ["Intent Resolution", "Document Ingestion"]
+    assert result[0].traced_requirements == ["R1"]
+    assert all(c.domain == "rag" for c in result)
+
+
+def test_identify_capabilities_rejects_empty_and_invented_ids(monkeypatch):
+    mock_response = {"capabilities": [
+        {"label": "Empty Capability", "traced_requirement_ids": []},
+        {"label": "Invented Id Only", "traced_requirement_ids": ["R999"]},
+        {"label": "Real Capability", "traced_requirement_ids": ["R1"]},
+    ]}
+    monkeypatch.setattr(component_engine, "_ask_json", lambda **kwargs: mock_response)
+
+    result = component_engine.identify_capabilities("rag", _STAGE2_REQS, "context")
+
+    assert len(result) == 1
+    assert result[0].label == "Real Capability"
+
+
+def test_identify_capabilities_prompt_includes_requirement_ids(monkeypatch):
+    captured = {}
+
+    def mock(**kwargs):
+        captured.update(kwargs)
+        return {"capabilities": []}
+
+    monkeypatch.setattr(component_engine, "_ask_json", mock)
+
+    component_engine.identify_capabilities("rag", _STAGE2_REQS, "context")
+
+    assert "R1" in captured["prompt"] and "R6" in captured["prompt"]
 
 
 def test_render_python_endpoint_404_for_unknown_domain(authed_client):

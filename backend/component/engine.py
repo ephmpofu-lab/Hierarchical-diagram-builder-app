@@ -9,7 +9,7 @@ Stage -3 (Requirements Engineering) is the only stage implemented so far (sub-pl
 from typing import List
 
 from ..intelligence.stages import _ask_json
-from ..models import ExtractedRequirement
+from ..models import Capability, ExtractedRequirement
 
 
 def extract_requirements(
@@ -44,3 +44,36 @@ def extract_requirements(
             text=item.get("text", ""), prd_requirement_id=prd_requirement_id, domain=domain,
         ))
     return extracted
+
+
+def identify_capabilities(
+    domain: str, requirements: List[ExtractedRequirement], reasoning_context: str
+) -> List[Capability]:
+    """Stage -2 -- groups Stage -3's extracted requirements into discrete capabilities
+    (R25, CD1). A capability whose traced_requirements[] is empty after filtering against
+    the real input requirement ids is rejected outright, not returned with an empty list --
+    this is CD1's own predicate, not a separate Validator pass layered on top."""
+    requirements_list = "\n".join(f"- [{r.prd_requirement_id}] {r.text}" for r in requirements)
+    data = _ask_json(
+        system=(
+            "You are grouping a list of extracted requirements into discrete capabilities "
+            "for one domain. A capability is a coherent grouping of one or more related "
+            "requirements (e.g. requirements about accepting and validating file uploads "
+            "become the capability 'Document Ingestion'). Every capability must list the "
+            "exact requirement ids from the given list that it groups -- never invent a "
+            "requirement id that isn't in the list, and never propose a capability with no "
+            "requirements behind it. "
+            'Respond with strict JSON only: {"capabilities": [{"label": str, '
+            '"traced_requirement_ids": [str]}]}'
+        ),
+        prompt=f"Domain: {domain}\n\nRequirements:\n{requirements_list}\n\nReasoning context:\n{reasoning_context}",
+        max_tokens=1500,
+    )
+    valid_ids = {r.prd_requirement_id for r in requirements}
+    capabilities = []
+    for item in data.get("capabilities", []):
+        traced = [rid for rid in item.get("traced_requirement_ids", []) if rid in valid_ids]
+        if not traced:
+            continue
+        capabilities.append(Capability(label=item.get("label", ""), traced_requirements=traced, domain=domain))
+    return capabilities

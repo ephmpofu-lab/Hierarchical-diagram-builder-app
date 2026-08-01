@@ -1170,4 +1170,10 @@ class ExtractedRequirement(BaseModel):
     domain: str
 
 
+class Capability(BaseModel):
+    label: str
+    traced_requirements: List[str] = Field(default_factory=list)
+    domain: str
+
+
 Project.model_rebuild()
