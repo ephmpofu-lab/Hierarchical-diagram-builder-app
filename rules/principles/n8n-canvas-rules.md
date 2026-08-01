@@ -76,19 +76,21 @@ dependency between the two specific nodes involved
 
 ---
 
-## CR5 — Connections Are Smooth Bézier Curves, Not Hard Right-Angle Elbows
+## CR5 — Connections Use Rounded Orthogonal Routing, Not Sweeping Bézier Arcs
 
-**Statement:** Connections use smooth, curved (Bézier) routing throughout, as the single consistent connection language. Adjacent nodes get near-straight curves; curvature increases for branches, cross-row connections, and distant-node connections — but the connection style itself (curved) never switches to rigid 90-degree elbow routing as a way of handling those cases. Row-transition connections specifically must remain curved, routed through the whitespace between rows, not rendered as hard-cornered paths.
+**Statement:** Connections consist primarily of horizontal and vertical segments, with every direction change softened by one consistent rounded corner radius applied uniformly across the whole canvas — never a large sweeping diagonal or free-form Bézier arc, and never a sharp 90-degree elbow either. Adjacent same-row nodes use a plain straight line (no curve, no corners — the simplest, strongest connection on the canvas). Local branches and cross-row/cross-stage transitions use a routed orthogonal path (exit port → rounded turn → travel through reserved whitespace → rounded turn → entry port).
 
-**Grounding:** Same source — explicitly names smooth Bézier as the required primary style and forbids mixing hard elbows, straight lines, and arbitrary curves within one canvas; curvature is the variable that changes with routing distance, not the underlying connection style. This corrects an earlier implementation choice in this project that used a hard right-angle elbow for row transitions — that choice is superseded by this rule.
+**Grounding:** A dedicated routing-correction specification (superseding an earlier draft of this same rule, which required smooth Bézier curves throughout — that requirement produced large uncontrolled diagonal sweeps whenever a cross-stage connection's source and target columns were far apart, exactly the defect this correction exists to fix). The corrected requirement: horizontal + vertical + rounded corners as the standard connection geometry, one consistent corner-radius system, no diagonals, no sweeping arcs, no sharp elbows.
 
-**Applies to:** SVG Renderer (edge path generation for both same-row and cross-row connections).
+**Applies to:** SVG Renderer (edge path generation for all connection classes: adjacent, branch, row-transition, cross-row, cross-stage, long-distance).
 
 **Predicate:**
 ```
-100% of rendered connections use curved/Bézier paths; zero connections
-use a hard right-angle (elbow) path, regardless of whether they connect
-adjacent nodes, branches, or nodes across a row break
+same-row adjacent edges render as a single straight line segment;
+every other edge renders as an orthogonal waypoint path where every
+interior direction change uses the same corner radius; zero edges use
+a smooth Bézier curve with off-axis control points, and zero edges use
+an unrounded sharp corner
 ```
 
 ---
@@ -246,6 +248,74 @@ rendered silently as-is
 
 ---
 
+## CR15 — Stage Zones Are Allocated First, Non-Overlapping by Construction
+
+**Statement:** Layout computes each top-level stage's vertical zone *before* positioning any node — stacked sequentially with a running cursor, each zone's height derived from its own row count, header, padding, and local branch space. Nodes are positioned only after their stage's zone is fixed. A row never spans two stages; if a stage needs more than one row, both rows still belong entirely to that one stage's zone. Stage-zone overlap must be structurally impossible, not merely checked for and avoided after the fact.
+
+**Grounding:** A dedicated stage-layout correction specification, directly addressing a real defect this project shipped: computing node positions first and deriving stage bounding boxes from wherever nodes happened to land produced overlapping and disconnected stage regions once row wrapping stopped aligning 1:1 with stage membership. The corrected model inverts the computation order: `stage membership → allocate non-overlapping zones → rows within each zone → position nodes`, per that specification's explicit "core implementation principle."
+
+**Applies to:** Node Mapper (layout computation) — this supersedes any layout scheme (including an earlier draft of CR3 in this same file) that computed stage grouping as a bounding box around already-positioned nodes.
+
+**Predicate:**
+```
+for every pair of top-level stage zones, zoneA.bottom <= zoneB.top or
+zoneB.bottom <= zoneA.top (no vertical overlap); every node's row index
+is local to its own stage's zone, never shared with another stage's rows
+```
+
+---
+
+## CR16 — Routed Connections Enter Through the Target's Normal Input Port
+
+**Statement:** When a connection is routed through whitespace (a branch, a row transition, a cross-stage connection), it still approaches and enters its target through that node's normal input port — left side, for standard left-to-right execution — never an arbitrary anchor like the top or bottom of the node chosen only because that happened to be convenient for the routing geometry. The node's visual position on the canvas never changes its underlying input-port semantics.
+
+**Grounding:** Same routing-correction specification — explicit rule that routed connections must "prefer entering through the node's normal LEFT input port" and must not "arbitrarily enter from the top merely because the node is on another row/stage." This corrects an earlier implementation choice in this project that connected cross-stage edges to a target's top edge for routing convenience.
+
+**Applies to:** SVG Renderer (edge termination point selection).
+
+**Predicate:**
+```
+every connection's terminal point coincides with the target node's
+declared input port (left side, for standard nodes); no connection
+terminates at a node's top or bottom edge purely for routing convenience
+```
+
+---
+
+## CR17 — Row/Layout Debug Information Stays Out of the Production Canvas
+
+**Statement:** Information that exists to explain or verify the renderer's own layout decisions — row numbers, node-per-row counts, "(within 9-10 limit)" annotations, routing-lane labels — is a development/debug aid, not user-facing product content. The underlying rules it reports on (the 9-10 node cap, whitespace routing lanes) remain fully enforced internally; only their visible textual explanation is removed from the normal canvas view.
+
+**Grounding:** Same routing-correction specification, explicit: "the user does NOT need to see the renderer's own row calculation," and a companion spatial-hierarchy specification's rule that routing lanes and row-debug labels are explanatory devices for a reference diagram, not required production UI.
+
+**Applies to:** SVG Renderer.
+
+**Predicate:**
+```
+no row-count text, node-per-row-limit text, or routing-lane label
+renders on the canvas in normal (non-debug) mode; the constraints
+themselves remain enforced in layout computation regardless
+```
+
+---
+
+## CR18 — Connection Classification Determines Routing Strategy, Not the Reverse
+
+**Statement:** Before generating a path, every connection is classified into one of a small set of relationship types (adjacent primary, local branch, row transition, cross-row, cross-stage, long-distance), and the routing strategy follows from that classification — never the other way around, where a generic source-to-target formula is applied uniformly and the visual result is accepted regardless of which relationship it actually represents.
+
+**Grounding:** Same routing-correction specification's explicit routing algorithm: classify first, then select strategy, then generate geometry, then check collisions — never skip straight from coordinates to a Bézier formula.
+
+**Applies to:** SVG Renderer (edge path generation), Node Mapper (edge classification, extends WD9's control-flow pattern tagging).
+
+**Predicate:**
+```
+every rendered edge carries an explicit classification tag before path
+generation begins; the geometry function invoked is a direct function
+of that tag, never a single generic formula applied regardless of class
+```
+
+---
+
 ## Summary Table
 
 | ID | Rule | Grounding |
@@ -254,7 +324,7 @@ rendered silently as-is
 | CR2 | Stages Are Visual Groups, Never Execution Gates | n8n execution model |
 | CR3 | Primary Direction Is Left to Right, Never Stage-Forced Vertical | Left-to-right diagramming convention |
 | CR4 | Row Wrap at ~9-10 Nodes, Never Snake Execution | Diagramming readability convention |
-| CR5 | Smooth Bézier Only, Never Hard Elbows | Consistent connection-language convention |
+| CR5 | Rounded Orthogonal Routing, Never Sweeping Bézier | Routing-correction specification |
 | CR6 | Routing Uses Whitespace Lanes, Never Passes Through Nodes | Edge-routing convention |
 | CR7 | Every Connection Traceable Port to Port | Diagram clarity convention |
 | CR8 | Conditional Nodes Show Distinct, Correctly-Ported Outputs | n8n branching model |
@@ -264,5 +334,9 @@ rendered silently as-is
 | CR12 | No Redundant Stage Suffix on Labels | Redundancy-avoidance convention; corrects NT10 |
 | CR13 | No Orphan Nodes; Terminals Are Fine | Extends P5 to canvas level |
 | CR14 | Consecutive Nodes Must Be Genuinely Distinct | Duplication-avoidance convention |
+| CR15 | Stage Zones Allocated First, Non-Overlapping by Construction | Stage-layout correction specification |
+| CR16 | Routed Connections Enter Through Normal Input Port | Routing-correction specification |
+| CR17 | Row/Layout Debug Info Stays Out of Production Canvas | Routing-correction specification |
+| CR18 | Classification Determines Routing Strategy | Routing-correction specification |
 
-This file is referenced from `RULES-INDEX.md`. It sits alongside `node-translation.md` (which governs step-to-node *mapping*) as the file governing step-to-node *rendering*; CR11/CR12 formally supersede the display-name portion of NT10, which is updated accordingly.
+This file is referenced from `RULES-INDEX.md`. It sits alongside `node-translation.md` (which governs step-to-node *mapping*) as the file governing step-to-node *rendering*; CR11/CR12 formally supersede the display-name portion of NT10, which is updated accordingly. CR15 formally supersedes the original layout description under CR3, and CR5 has been corrected once already within this same file (Bézier-only → rounded orthogonal) as the design was tested against real rendering and found wanting — both corrections are kept visible in this file's own text rather than silently overwritten, consistent with this corpus's traceability requirements (G1, G3).

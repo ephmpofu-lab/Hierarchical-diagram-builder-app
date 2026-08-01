@@ -18,7 +18,7 @@ Shared template across every file: **Statement | Grounding | Applies to | Predic
 | `prompting.md` | PR1-PR7 | ARCHITEQ's own internal LLM calls (Intent Parser, grounding simulations) | Anthropic prompt engineering guidance, few-shot/chain-of-thought literature |
 | `node-translation.md` | NT1-NT10 | How a validated atomic step becomes a real n8n node, including its display name | Extends WD9, P4, G9; n8n's actual node schema and naming best practice |
 | `component-decomposition.md` | CD1-CD11 | The structural Component Tree (Python track): requirements to capabilities to components to attributes; also gates that any generated architecture (Python or n8n) carries its own TDD/App-Flow/Design-Brief-equivalent documentation and a Roadmap+Checklist view before freezing | ISO/IEC/IEEE 29148, TOGAF Business Capability Modeling, DeMarco/Yourdon Structured Analysis, DDD (Evans), PMI (WBS), restates DP11/DP12 |
-| `n8n-canvas-rules.md` | CR1-CR14 | How a validated node graph is *rendered* as an n8n canvas: layout, routing, ports, naming — distinct from node-translation.md's step-to-node *mapping* | n8n's node-and-connection execution model; left-to-right diagramming convention |
+| `n8n-canvas-rules.md` | CR1-CR18 | How a validated node graph is *rendered* as an n8n canvas: layout, routing, ports, naming, stage-zone allocation — distinct from node-translation.md's step-to-node *mapping* | n8n's node-and-connection execution model; left-to-right diagramming convention; routing-correction and stage-layout-correction specifications |
 
 ---
 
@@ -42,9 +42,9 @@ Shared template across every file: **Statement | Grounding | Applies to | Predic
 - Prompting: 7
 - Node Translation: 10
 - Component & Requirements Decomposition: 11
-- n8n Canvas Rendering: 14
+- n8n Canvas Rendering: 18
 
-**Total: 94 grounded rules**, each traceable to a named source, each written as a testable predicate.
+**Total: 98 grounded rules**, each traceable to a named source, each written as a testable predicate.
 
 ---
 
