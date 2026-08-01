@@ -1560,6 +1560,67 @@ def test_export_workflow_wraps_mapped_nodes_and_connections():
     assert workflow.connections  # non-empty, a1 -> a2
 
 
+# ---- Module 10 -- Stage-Zone + Row-Wrap Layout (10a-i, CR3/CR4/CR15) ----
+
+def _multi_layer_tree_with_row_wrap() -> DomainTaskTree:
+    # Layer "l1": 12 chained Atomic steps (a2 requires a1, a3 requires a2, ...) -- forces
+    # 2 rows at the 10-per-row cap (CR4) with a fully deterministic topological order.
+    # Layer "l2": 3 Atomic steps, to confirm zone stacking (CR15).
+    l1_steps = [_atomic("a1", "Step 1", parent_id="s1")]
+    for i in range(2, 13):
+        l1_steps.append(_atomic(f"a{i}", f"Step {i}", requires=[f"a{i - 1}"], parent_id="s1"))
+    l2_steps = [
+        _atomic("b1", "B Step 1", parent_id="s2"),
+        _atomic("b2", "B Step 2", requires=["b1"], parent_id="s2"),
+        _atomic("b3", "B Step 3", requires=["b2"], parent_id="s2"),
+    ]
+
+    sub1 = _sub_task("s1", "Sub 1", [n.id for n in l1_steps], parent_id="l1")
+    sub2 = _sub_task("s2", "Sub 2", [n.id for n in l2_steps], parent_id="l2")
+    layer1 = _layer("l1", "Layer One", ["s1"])
+    layer2 = _layer("l2", "Layer Two", ["s2"])
+
+    nodes = {"l1": layer1, "s1": sub1, "l2": layer2, "s2": sub2}
+    for step in l1_steps + l2_steps:
+        nodes[step.id] = step
+    return DomainTaskTree(domain=TEST_DOMAIN, root_ids=["l1", "l2"], nodes=nodes)
+
+
+def test_compute_stage_zones_produces_non_overlapping_zones():
+    tree = _multi_layer_tree_with_row_wrap()
+    zones, _ = node_mapper.compute_stage_zones(tree)
+    assert len(zones) == 2
+    zone1, zone2 = zones
+    assert zone1.y == 0.0
+    assert zone2.y >= zone1.y + zone1.height  # CR15: no vertical overlap
+
+
+def test_compute_stage_zones_row_wraps_at_max_nodes_per_row():
+    tree = _multi_layer_tree_with_row_wrap()
+    zones, positions = node_mapper.compute_stage_zones(tree)
+    zone1 = zones[0]
+    single_row_height = node_mapper._ZONE_HEADER_HEIGHT + node_mapper._ROW_HEIGHT + node_mapper._ZONE_PADDING
+    assert zone1.height > single_row_height  # 12 steps at a 10-per-row cap -> 2 rows
+    assert positions["a10"][1] == positions["a1"][1]  # still row 1 (10th of 10)
+    assert positions["a11"][1] > positions["a1"][1]  # wraps to row 2
+
+
+def test_compute_stage_zones_left_to_right_dependency_order_within_row():
+    tree = _multi_layer_tree_with_row_wrap()
+    _, positions = node_mapper.compute_stage_zones(tree)
+    assert positions["a1"][1] == positions["a2"][1]  # same row
+    assert positions["a2"][0] > positions["a1"][0]  # a2 requires a1 -> sits to its right
+
+
+def test_map_tree_positions_second_layer_below_first():
+    tree = _multi_layer_tree_with_row_wrap()
+    nodes, _ = node_mapper.map_tree(tree)
+    by_step = {n.step_id: n for n in nodes}
+    max_y_layer1 = max(by_step[f"a{i}"].position[1] for i in range(1, 13))
+    min_y_layer2 = min(by_step[bid].position[1] for bid in ("b1", "b2", "b3"))
+    assert min_y_layer2 > max_y_layer1
+
+
 def test_render_n8n_endpoint_404_for_unknown_domain(authed_client):
     response = authed_client.post("/api/decompose/render/n8n", json={"domain": "__definitely_not_a_real_domain__"})
     assert response.status_code == 404

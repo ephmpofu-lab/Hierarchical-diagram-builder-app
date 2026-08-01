@@ -11,16 +11,21 @@ are computed once here, reused identically by the JSON exporter (n8n_exporter.py
 frontend SVG renderer -- never computed twice."""
 
 import json
+import math
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from ..models import DomainTaskTree, N8nNode, TaskTreeNode
+from ..models import DomainTaskTree, N8nNode, N8nStageZone, TaskTreeNode
 from .python_renderer import _topological_order
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _SCHEMA_PATH = _REPO_ROOT / "rules" / "n8n_node_schemas.json"
 
 _HORIZONTAL_SPACING = 280.0
+_ROW_HEIGHT = 160.0  # CR6 -- includes whitespace reserved for cross-row routing lanes
+_ZONE_HEADER_HEIGHT = 60.0
+_ZONE_PADDING = 40.0
+_MAX_NODES_PER_ROW = 10  # CR4's own "~9-10 nodes" cap
 
 
 def load_schemas() -> dict:
@@ -58,10 +63,71 @@ def _build_parameters(step: TaskTreeNode, schema: dict) -> Dict[str, Any]:
     return params
 
 
+def _atomic_steps_by_layer(tree: DomainTaskTree) -> Dict[str, List[TaskTreeNode]]:
+    """Groups the tree's Atomic steps by their owning Layer (via the Atomic step ->
+    Sub-task -> Layer parent chain), preserving the global R10 topological order within
+    each layer's own list."""
+    atomic_steps = [n for n in tree.nodes.values() if n.level == "Atomic step"]
+    global_order = _topological_order(atomic_steps)
+
+    layer_of_atomic: Dict[str, str] = {}
+    for layer_id in tree.root_ids:
+        layer = tree.nodes.get(layer_id)
+        if layer is None:
+            continue
+        for sub_task_id in layer.children:
+            sub_task = tree.nodes.get(sub_task_id)
+            if sub_task is None:
+                continue
+            for atomic_id in sub_task.children:
+                layer_of_atomic[atomic_id] = layer_id
+
+    by_layer: Dict[str, List[TaskTreeNode]] = {layer_id: [] for layer_id in tree.root_ids}
+    for node in global_order:
+        layer_id = layer_of_atomic.get(node.id)
+        if layer_id is not None:
+            by_layer[layer_id].append(node)
+    return by_layer
+
+
+def compute_stage_zones(tree: DomainTaskTree) -> Tuple[List[N8nStageZone], Dict[str, List[float]]]:
+    """CR3/CR4/CR15 -- allocates each Layer's non-overlapping vertical zone first (stacked
+    via a running cursor, never derived from wherever nodes happen to land), then positions
+    that layer's own Atomic steps within it: row-wrapped at _MAX_NODES_PER_ROW (CR4),
+    left to right in dependency order within a row (CR3, subordinate to CR15)."""
+    by_layer = _atomic_steps_by_layer(tree)
+
+    zones: List[N8nStageZone] = []
+    positions: Dict[str, List[float]] = {}
+    cursor_y = 0.0
+    for layer_id in tree.root_ids:
+        layer = tree.nodes.get(layer_id)
+        steps = by_layer.get(layer_id, [])
+        if layer is None or not steps:
+            continue
+
+        num_rows = max(1, math.ceil(len(steps) / _MAX_NODES_PER_ROW))
+        zone_height = _ZONE_HEADER_HEIGHT + num_rows * _ROW_HEIGHT + _ZONE_PADDING
+        zone_width = min(len(steps), _MAX_NODES_PER_ROW) * _HORIZONTAL_SPACING
+        zones.append(N8nStageZone(
+            layer_id=layer_id, label=layer.label, x=0.0, y=cursor_y,
+            width=zone_width, height=zone_height,
+        ))
+
+        for index, step in enumerate(steps):
+            row, col = divmod(index, _MAX_NODES_PER_ROW)
+            positions[step.id] = [col * _HORIZONTAL_SPACING, cursor_y + _ZONE_HEADER_HEIGHT + row * _ROW_HEIGHT]
+
+        cursor_y += zone_height
+
+    return zones, positions
+
+
 def map_tree(tree: DomainTaskTree) -> Tuple[List[N8nNode], Dict[str, Any]]:
     atomic_steps = [n for n in tree.nodes.values() if n.level == "Atomic step"]
     ordered = _topological_order(atomic_steps)
     schemas = load_schemas()
+    _, positions = compute_stage_zones(tree)
 
     id_to_name: Dict[str, str] = {}
     used_names: set = set()
@@ -76,9 +142,12 @@ def map_tree(tree: DomainTaskTree) -> Tuple[List[N8nNode], Dict[str, Any]]:
             suffix += 1
         used_names.add(name)
         id_to_name[step.id] = name
+        # A step whose Layer can't be resolved (shouldn't happen in a well-formed tree)
+        # falls back to the old flat single-row formula rather than crashing.
+        position = positions.get(step.id, [index * _HORIZONTAL_SPACING, 0.0])
         nodes.append(N8nNode(
             step_id=step.id, name=name, type=schema["type"], type_version=schema["type_version"],
-            position=[index * _HORIZONTAL_SPACING, 0.0], parameters=_build_parameters(step, schema),
+            position=position, parameters=_build_parameters(step, schema),
         ))
 
     connections: Dict[str, Any] = {}

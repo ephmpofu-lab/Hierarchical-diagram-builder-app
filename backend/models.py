@@ -931,6 +931,20 @@ class N8nWorkflow(BaseModel):
     connections: Dict[str, Any] = Field(default_factory=dict)
 
 
+class N8nStageZone(BaseModel):
+    """CR15 -- one Layer's non-overlapping vertical zone on the n8n canvas. Rendering-only
+    metadata (CR2: a stage boundary carries no execution meaning) -- deliberately kept
+    separate from N8nWorkflow, which is also the literal payload downloaded as the real,
+    importable workflow.json (R14)."""
+
+    layer_id: str
+    label: str
+    x: float
+    y: float
+    width: float
+    height: float
+
+
 class DiscoveryTurnRequest(BaseModel):
     message: str
 
