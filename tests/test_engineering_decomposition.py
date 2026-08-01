@@ -1621,6 +1621,54 @@ def test_map_tree_positions_second_layer_below_first():
     assert min_y_layer2 > max_y_layer1
 
 
+# ---- Module 10 -- Connection Classification (10a-ii, CR18) ----
+
+def _classification_tree() -> DomainTaskTree:
+    # 3 Layers, each single-row, small step counts -- covers adjacent/local_branch/
+    # cross_stage/long_distance without needing enough steps to force multiple rows within
+    # one zone (row_transition/cross_row are tested directly against _classify_one instead).
+    l1 = [
+        _atomic("a1", "A1", parent_id="s1"),
+        _atomic("a2", "A2", requires=["a1"], parent_id="s1"),  # adjacent (col 0 -> col 1)
+        _atomic("a3", "A3", requires=["a1"], parent_id="s1"),  # local_branch (col 0 -> col 2)
+    ]
+    l2 = [_atomic("b1", "B1", requires=["a3"], parent_id="s2")]  # cross_stage (l1 -> l2)
+    l3 = [_atomic("c1", "C1", requires=["a1"], parent_id="s3")]  # long_distance (l1 -> l3, skips l2)
+
+    sub1 = _sub_task("s1", "Sub 1", [n.id for n in l1], parent_id="l1")
+    sub2 = _sub_task("s2", "Sub 2", [n.id for n in l2], parent_id="l2")
+    sub3 = _sub_task("s3", "Sub 3", [n.id for n in l3], parent_id="l3")
+    layer1 = _layer("l1", "Layer One", ["s1"])
+    layer2 = _layer("l2", "Layer Two", ["s2"])
+    layer3 = _layer("l3", "Layer Three", ["s3"])
+
+    nodes = {"l1": layer1, "s1": sub1, "l2": layer2, "s2": sub2, "l3": layer3, "s3": sub3}
+    for step in l1 + l2 + l3:
+        nodes[step.id] = step
+    return DomainTaskTree(domain=TEST_DOMAIN, root_ids=["l1", "l2", "l3"], nodes=nodes)
+
+
+def test_classify_connections_categorizes_adjacent_branch_cross_stage_long_distance():
+    tree = _classification_tree()
+    classifications = node_mapper.classify_connections(tree)
+    assert classifications[("a1", "a2")] == "adjacent"
+    assert classifications[("a1", "a3")] == "local_branch"
+    assert classifications[("a3", "b1")] == "cross_stage"
+    assert classifications[("a1", "c1")] == "long_distance"
+
+
+def test_classify_one_row_transition_and_cross_row_within_same_zone():
+    positions = {
+        "x1": [0.0, 0.0],
+        "x2": [0.0, node_mapper._ROW_HEIGHT],
+        "x3": [0.0, node_mapper._ROW_HEIGHT * 3],
+    }
+    node_to_zone = {"x1": "l1", "x2": "l1", "x3": "l1"}
+    zone_index = {"l1": 0}
+    assert node_mapper._classify_one("x1", "x2", positions, node_to_zone, zone_index) == "row_transition"
+    assert node_mapper._classify_one("x1", "x3", positions, node_to_zone, zone_index) == "cross_row"
+
+
 def test_render_n8n_endpoint_404_for_unknown_domain(authed_client):
     response = authed_client.post("/api/decompose/render/n8n", json={"domain": "__definitely_not_a_real_domain__"})
     assert response.status_code == 404

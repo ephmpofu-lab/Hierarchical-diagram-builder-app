@@ -123,6 +123,60 @@ def compute_stage_zones(tree: DomainTaskTree) -> Tuple[List[N8nStageZone], Dict[
     return zones, positions
 
 
+def _classify_one(
+    source_id: str,
+    target_id: str,
+    positions: Dict[str, List[float]],
+    node_to_zone: Dict[str, str],
+    zone_index: Dict[str, int],
+) -> str:
+    """CR18's own mechanical predicate (see 10a-ii's plan file for the exact category
+    definitions this codifies -- CR18's text itself doesn't give a numeric boundary between
+    "row transition" and "cross-row," or between "cross-stage" and "long-distance"; this is
+    a concrete, defensible rule for those, not a fuzzy judgment call)."""
+    zone_source = node_to_zone.get(source_id)
+    zone_target = node_to_zone.get(target_id)
+    x_source, y_source = positions[source_id]
+    x_target, y_target = positions[target_id]
+
+    if zone_source == zone_target:
+        if y_source == y_target:
+            col_diff = round((x_target - x_source) / _HORIZONTAL_SPACING)
+            return "adjacent" if col_diff == 1 else "local_branch"
+        row_diff = round((y_target - y_source) / _ROW_HEIGHT)
+        return "row_transition" if row_diff == 1 else "cross_row"
+
+    zi_source = zone_index.get(zone_source)
+    zi_target = zone_index.get(zone_target)
+    if zi_source is not None and zi_target is not None and abs(zi_target - zi_source) == 1:
+        return "cross_stage"
+    return "long_distance"
+
+
+def classify_connections(tree: DomainTaskTree) -> Dict[Tuple[str, str], str]:
+    """CR18 -- classifies every real (dependency_id, dependent_id) connection drawn from
+    each Atomic step's own `requires` list, before any path geometry is generated. Reuses
+    10a-i's compute_stage_zones for positions/zone membership -- never a second, separate
+    layout computation."""
+    zones, positions = compute_stage_zones(tree)
+    zone_index = {zone.layer_id: index for index, zone in enumerate(zones)}
+    by_layer = _atomic_steps_by_layer(tree)
+    node_to_zone: Dict[str, str] = {
+        step.id: layer_id for layer_id, steps in by_layer.items() for step in steps
+    }
+
+    atomic_steps = [n for n in tree.nodes.values() if n.level == "Atomic step"]
+    classifications: Dict[Tuple[str, str], str] = {}
+    for step in atomic_steps:
+        for dep_id in step.requires:
+            if dep_id not in positions or step.id not in positions:
+                continue
+            classifications[(dep_id, step.id)] = _classify_one(
+                dep_id, step.id, positions, node_to_zone, zone_index
+            )
+    return classifications
+
+
 def map_tree(tree: DomainTaskTree) -> Tuple[List[N8nNode], Dict[str, Any]]:
     atomic_steps = [n for n in tree.nodes.values() if n.level == "Atomic step"]
     ordered = _topological_order(atomic_steps)
