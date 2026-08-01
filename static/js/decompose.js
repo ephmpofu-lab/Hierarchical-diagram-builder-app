@@ -42,6 +42,8 @@ let state = {
   mode: null, // "python" | "n8n" | null, canvas-state only
   pythonRender: null, // cached List[RenderedCodeBlock] for the current domain
   n8nRender: null, // cached N8nWorkflow for the current domain
+  pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null }, // Python mode's
+  // folder/file/function browser position (Plan 10c) -- reset whenever domain changes
   selectedNodeId: null, // drives the slide-in detail panel, canvas-state only
   refining: false,
   submitting: false,
@@ -570,18 +572,7 @@ function renderOutputSection() {
   section.className = "decompose-output-section";
 
   if (state.mode === "python") {
-    if (!state.pythonRender) {
-      section.textContent = "Rendering…";
-      return section;
-    }
-    for (const block of state.pythonRender) {
-      const pre = document.createElement("pre");
-      pre.className = "decompose-code-block";
-      const code = document.createElement("code");
-      code.textContent = block.code;
-      pre.appendChild(code);
-      section.appendChild(pre);
-    }
+    section.appendChild(renderPythonBrowser());
     return section;
   }
 
@@ -600,6 +591,351 @@ function renderOutputSection() {
   downloadBtn.addEventListener("click", () => downloadWorkflowJson(state.n8nRender, state.domain));
   section.appendChild(downloadBtn);
   return section;
+}
+
+// ---- Python folder/file/function browser (Plan 10c) ----
+// No backend change needed: state.tree already carries every Atomic step's parent_id
+// chain (Atomic step -> Sub-task -> Layer), and state.pythonRender already carries each
+// step's real generated code, keyed by the same step id. Folder = Layer, file = Sub-task,
+// grouped client-side by joining the two, preserving pythonRender's own topological order.
+
+function pySlug(text) {
+  return (text || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "module";
+}
+function pyFileName(label) {
+  return `${pySlug(label)}.py`;
+}
+function pyFolderName(label) {
+  return `${pySlug(label)}/`;
+}
+function pyFunctionName(block) {
+  const match = /^def\s+([a-zA-Z0-9_]+)\s*\(/.exec(block.code || "");
+  return match ? match[1] : block.label;
+}
+
+function groupPythonRenderByFile(tree, pythonRender) {
+  const packageName = `architeq_${pySlug(state.domain)}/`;
+  const folders = [];
+  const folderIndex = new Map(); // Layer node id -> folder entry
+  const fileIndex = new Map(); // Sub-task node id -> file entry
+  let rootFolder = null;
+  let rootFile = null;
+
+  for (const block of pythonRender) {
+    const atomicNode = tree.nodes[block.step_id];
+    const subTask = atomicNode && atomicNode.parent_id ? tree.nodes[atomicNode.parent_id] : null;
+    const layer = subTask && subTask.parent_id ? tree.nodes[subTask.parent_id] : null;
+
+    if (!subTask || !layer) {
+      // Shouldn't happen given R2's C4 nesting, but never silently drop a block --
+      // same "always account for it" posture as NT3's Code-node fallback.
+      if (!rootFolder) { rootFolder = { label: "(root)", files: [] }; folders.push(rootFolder); }
+      if (!rootFile) { rootFile = { label: "(unresolved)", blocks: [] }; rootFolder.files.push(rootFile); }
+      rootFile.blocks.push(block);
+      continue;
+    }
+
+    let folder = folderIndex.get(layer.id);
+    if (!folder) {
+      folder = { label: layer.label, files: [] };
+      folderIndex.set(layer.id, folder);
+      folders.push(folder);
+    }
+    let file = fileIndex.get(subTask.id);
+    if (!file) {
+      file = { label: subTask.label, blocks: [] };
+      fileIndex.set(subTask.id, file);
+      folder.files.push(file);
+    }
+    file.blocks.push(block);
+  }
+
+  return { packageName, folders };
+}
+
+function renderPythonBrowser() {
+  const wrap = document.createElement("div");
+  wrap.className = "decompose-py-browser";
+
+  if (!state.tree || !state.pythonRender) {
+    wrap.textContent = "Rendering…";
+    return wrap;
+  }
+
+  const grouped = groupPythonRenderByFile(state.tree, state.pythonRender);
+  const pb = state.pyBrowser || { level: 1, folderIdx: null, fileIdx: null, funcId: null };
+
+  wrap.appendChild(renderPyCrumbs(grouped, pb));
+
+  if (pb.folderIdx == null || pb.fileIdx == null) {
+    wrap.appendChild(renderPyLevel1(grouped));
+  } else if (pb.funcId == null) {
+    wrap.appendChild(renderPyLevel2(grouped, pb));
+  } else {
+    wrap.appendChild(renderPyLevel3(grouped, pb));
+  }
+
+  if (pb.fileIdx != null) {
+    wrap.appendChild(renderPythonSidePanel(grouped, pb));
+  }
+
+  return wrap;
+}
+
+function pyCrumbSep() {
+  const sep = document.createElement("span");
+  sep.className = "decompose-py-crumb-sep";
+  sep.textContent = "›";
+  return sep;
+}
+
+function setPyBrowserState(next) {
+  state = { ...state, pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null, ...next } };
+  renderBoard();
+}
+
+function renderPyCrumbs(grouped, pb) {
+  const crumbs = document.createElement("div");
+  crumbs.className = "decompose-py-crumbs";
+
+  const pkgSpan = document.createElement("span");
+  pkgSpan.textContent = grouped.packageName;
+  pkgSpan.addEventListener("click", () => setPyBrowserState({}));
+  crumbs.appendChild(pkgSpan);
+
+  if (pb.folderIdx != null && pb.fileIdx != null) {
+    const file = grouped.folders[pb.folderIdx].files[pb.fileIdx];
+    crumbs.appendChild(pyCrumbSep());
+    const fileSpan = document.createElement("span");
+    fileSpan.textContent = pyFileName(file.label);
+    fileSpan.addEventListener("click", () => setPyBrowserState({ folderIdx: pb.folderIdx, fileIdx: pb.fileIdx }));
+    crumbs.appendChild(fileSpan);
+  }
+  if (pb.funcId != null) {
+    const file = grouped.folders[pb.folderIdx].files[pb.fileIdx];
+    const block = file.blocks.find((b) => b.step_id === pb.funcId);
+    crumbs.appendChild(pyCrumbSep());
+    const funcSpan = document.createElement("span");
+    funcSpan.className = "decompose-py-crumb-current";
+    funcSpan.textContent = block ? `${pyFunctionName(block)}()` : "";
+    crumbs.appendChild(funcSpan);
+  }
+  return crumbs;
+}
+
+function renderPyLevel1(grouped) {
+  const el = document.createElement("div");
+  el.className = "decompose-py-level decompose-py-level-1";
+  grouped.folders.forEach((folder, folderIdx) => {
+    const folderRow = document.createElement("div");
+    folderRow.className = "decompose-py-folder-row";
+    folderRow.textContent = pyFolderName(folder.label);
+    el.appendChild(folderRow);
+
+    const children = document.createElement("div");
+    children.className = "decompose-py-children";
+    folder.files.forEach((file, fileIdx) => {
+      const fileRow = document.createElement("div");
+      fileRow.className = "decompose-py-file-row";
+      const nameSpan = document.createElement("span");
+      nameSpan.textContent = pyFileName(file.label);
+      const countSpan = document.createElement("span");
+      countSpan.className = "decompose-py-file-count";
+      countSpan.textContent = `(${file.blocks.length} function${file.blocks.length === 1 ? "" : "s"})`;
+      const chev = document.createElement("span");
+      chev.className = "decompose-py-chev";
+      chev.textContent = "›";
+      fileRow.appendChild(nameSpan);
+      fileRow.appendChild(countSpan);
+      fileRow.appendChild(chev);
+      fileRow.addEventListener("click", () => setPyBrowserState({ folderIdx, fileIdx }));
+      children.appendChild(fileRow);
+    });
+    el.appendChild(children);
+  });
+  return el;
+}
+
+function renderPyLevel2(grouped, pb) {
+  const el = document.createElement("div");
+  el.className = "decompose-py-level decompose-py-level-2";
+  const file = grouped.folders[pb.folderIdx].files[pb.fileIdx];
+
+  const chain = document.createElement("div");
+  chain.className = "decompose-py-func-chain";
+  file.blocks.forEach((block, i) => {
+    if (i > 0) {
+      const prevNode = state.tree.nodes[file.blocks[i - 1].step_id];
+      const connector = document.createElement("div");
+      connector.className = "decompose-py-func-connector";
+      if (prevNode && prevNode.produces) {
+        const label = document.createElement("span");
+        label.className = "decompose-py-func-portlabel";
+        label.textContent = prevNode.produces;
+        connector.appendChild(label);
+      }
+      chain.appendChild(connector);
+    }
+    const node = state.tree.nodes[block.step_id];
+    const row = document.createElement("div");
+    row.className = "decompose-py-func-row";
+    const nameEl = document.createElement("div");
+    nameEl.className = "decompose-py-func-name";
+    nameEl.textContent = `${pyFunctionName(block)}()`;
+    row.appendChild(nameEl);
+    if (node && node.notes) {
+      const descEl = document.createElement("div");
+      descEl.className = "decompose-py-func-desc";
+      descEl.textContent = node.notes;
+      row.appendChild(descEl);
+    }
+    row.addEventListener("click", () => setPyBrowserState({ folderIdx: pb.folderIdx, fileIdx: pb.fileIdx, funcId: block.step_id }));
+    chain.appendChild(row);
+  });
+  el.appendChild(chain);
+  return el;
+}
+
+function renderPyCodeBlock(code) {
+  const container = document.createElement("div");
+  container.className = "decompose-py-code-block";
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "decompose-py-copy-btn";
+  copyBtn.textContent = "copy";
+  copyBtn.addEventListener("click", () => {
+    navigator.clipboard.writeText(code).then(() => {
+      copyBtn.textContent = "copied ✓";
+      setTimeout(() => { copyBtn.textContent = "copy"; }, 1400);
+    });
+  });
+  const pre = document.createElement("pre");
+  pre.className = "decompose-code-block";
+  const codeEl = document.createElement("code");
+  codeEl.textContent = code;
+  pre.appendChild(codeEl);
+  container.appendChild(copyBtn);
+  container.appendChild(pre);
+  return container;
+}
+
+function renderPyLevel3(grouped, pb) {
+  const el = document.createElement("div");
+  el.className = "decompose-py-level decompose-py-level-3";
+  const file = grouped.folders[pb.folderIdx].files[pb.fileIdx];
+  const block = file.blocks.find((b) => b.step_id === pb.funcId);
+  if (!block) return el;
+  const node = state.tree.nodes[block.step_id];
+
+  el.appendChild(renderPyCodeBlock(block.code));
+
+  if (node) {
+    const meta = document.createElement("div");
+    meta.className = "decompose-py-meta-line";
+    const requiredLabels = (node.requires || []).map((id) => (state.tree.nodes[id] || {}).label || id);
+    const parts = [
+      `requires: ${requiredLabels.length ? requiredLabels.join(", ") : "—"}`,
+      `produces: ${node.produces || "—"}`,
+    ];
+    if (node.rules && node.rules.length) parts.push(`rules: ${node.rules.join("; ")}`);
+    meta.textContent = parts.join("  ·  ");
+    el.appendChild(meta);
+  }
+  return el;
+}
+
+// Import lines are DERIVED from what the generated code actually uses, never asserted
+// upfront -- so nothing appears here that isn't justified by code visible right below it.
+// Today's render_python output is a "# TODO: implement" stub, so this rarely triggers yet;
+// the mechanism is real and starts producing real import lines the moment generated code
+// stops being a stub, not before.
+const PY_IMPORT_TRIGGERS = [
+  { pattern: /unicodedata\./, line: "import unicodedata" },
+  { pattern: /requests\./, line: "import requests" },
+  { pattern: /log\.(warning|error|info)/, line: "import logging\nlog = logging.getLogger(__name__)" },
+  { pattern: /Path\(/, line: "from pathlib import Path" },
+];
+function pyDeriveImports(codeBlocks) {
+  const found = [];
+  for (const code of codeBlocks) {
+    for (const trigger of PY_IMPORT_TRIGGERS) {
+      if (trigger.pattern.test(code) && !found.includes(trigger.line)) found.push(trigger.line);
+    }
+  }
+  return found;
+}
+
+function renderPythonSidePanel(grouped, pb) {
+  const file = grouped.folders[pb.folderIdx].files[pb.fileIdx];
+  const panel = document.createElement("div");
+  panel.className = "decompose-py-side-panel";
+
+  const header = document.createElement("div");
+  header.className = "decompose-py-side-header";
+  const titleWrap = document.createElement("div");
+  const title = document.createElement("div");
+  title.className = "decompose-py-side-title";
+  title.textContent = file.label;
+  const subtitle = document.createElement("div");
+  subtitle.className = "decompose-py-side-subtitle";
+  subtitle.textContent = pyFileName(file.label);
+  const status = document.createElement("div");
+  status.className = "decompose-py-side-status";
+  status.textContent = `complete — ${file.blocks.length} function${file.blocks.length === 1 ? "" : "s"}`;
+  titleWrap.appendChild(title);
+  titleWrap.appendChild(subtitle);
+  titleWrap.appendChild(status);
+  const closeBtn = document.createElement("span");
+  closeBtn.className = "decompose-drawer-close";
+  closeBtn.textContent = "close ×";
+  closeBtn.addEventListener("click", () => setPyBrowserState({ folderIdx: pb.folderIdx, fileIdx: pb.fileIdx }));
+  header.appendChild(titleWrap);
+  header.appendChild(closeBtn);
+  panel.appendChild(header);
+
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "decompose-py-copy-btn";
+  copyBtn.textContent = "copy";
+  const fullCode = file.blocks.map((b) => b.code).join("\n\n");
+  copyBtn.addEventListener("click", () => {
+    navigator.clipboard.writeText(fullCode).then(() => {
+      copyBtn.textContent = "copied ✓";
+      setTimeout(() => { copyBtn.textContent = "copy"; }, 1400);
+    });
+  });
+
+  const pre = document.createElement("pre");
+  pre.className = "decompose-code-block";
+  const codeEl = document.createElement("code");
+  const imports = pyDeriveImports(file.blocks.map((b) => b.code));
+  if (imports.length) {
+    codeEl.appendChild(document.createTextNode(imports.join("\n") + "\n\n\n"));
+  }
+  file.blocks.forEach((b, i) => {
+    const span = document.createElement("span");
+    span.id = `decompose-py-side-fn-${b.step_id}`;
+    span.className = "decompose-py-side-fn-code";
+    span.textContent = b.code + (i < file.blocks.length - 1 ? "\n\n" : "");
+    codeEl.appendChild(span);
+  });
+  pre.appendChild(codeEl);
+
+  const codeContainer = document.createElement("div");
+  codeContainer.className = "decompose-py-code-block";
+  codeContainer.appendChild(copyBtn);
+  codeContainer.appendChild(pre);
+  panel.appendChild(codeContainer);
+
+  if (pb.funcId) {
+    setTimeout(() => {
+      const target = document.getElementById(`decompose-py-side-fn-${pb.funcId}`);
+      if (!target) return;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.classList.add("decompose-py-side-fn-highlight");
+      setTimeout(() => target.classList.remove("decompose-py-side-fn-highlight"), 900);
+    }, 30);
+  }
+
+  return panel;
 }
 
 function renderN8nDiagram(workflow) {
@@ -693,6 +1029,7 @@ async function selectDomain(domain) {
   state = {
     ...state, view: "canvas", domain, tree: null, error: null,
     mode: null, pythonRender: null, n8nRender: null, selectedNodeId: null,
+    pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null },
   };
   renderBoard();
   const res = await fetch(`/api/decompose/domains/${encodeURIComponent(domain)}/tree`);
