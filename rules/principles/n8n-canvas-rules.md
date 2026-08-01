@@ -42,26 +42,21 @@ distortion or an inserted placeholder node
 
 ## CR3 — Primary Execution Direction Is Left to Right, Never Stage-Forced Vertical
 
-**Statement:** The default and primary execution direction is horizontal, left to right. Stages/layers must never force vertical stacking as the layout mechanism (e.g. Stage 1 above Stage 2 above Stage 3). Nodes follow their actual execution dependency order primarily left to right, regardless of which stage each one belongs to.
+**Statement:** The default and primary execution direction is horizontal, left to right. Stages/layers must never force vertical stacking as the layout mechanism (e.g. Stage 1 above Stage 2 above Stage 3). Within a stage's own zone, its nodes follow their actual execution dependency order primarily left to right.
+
+**AMENDED — row/stage relationship corrected by CR15:** This rule's original Predicate stated that "a row may contain nodes from more than one stage, and a stage's nodes may span more than one row." That specific claim is superseded by CR15, which was written after testing this rule's original form produced overlapping and disconnected stage regions in practice. CR15 governs row-to-stage membership; CR3 governs direction-within-a-row only. Do not implement CR3's original cross-stage-row claim — implement CR15 instead. This note is kept in place, rather than silently rewritten, per this corpus's own traceability requirement (G1, G3) — the same treatment NT10 received when CR11/CR12 corrected it.
 
 **Grounding:** Same source — horizontal is the main visual grammar; vertical or curved-away-from-row movement is reserved specifically for branches, alternate routes, and cross-row connections, not for ordinary sequential flow.
 
-**Applies to:** Node Mapper layout computation.
+**Applies to:** Node Mapper layout computation, subordinate to CR15's stage-zone allocation.
 
 **Predicate:**
 ```
-the primary sequence of nodes is laid out left to right in dependency
-order, within whatever row/zone structure CR15 assigns it to
+within any single stage's zone, that stage's nodes are laid out left to
+right in dependency order; row assignment across stages follows CR15
+(each row belongs to exactly one stage's zone), not this rule's
+original (superseded) cross-stage-row claim
 ```
-
-**Superseded in part by CR15:** this rule's original predicate additionally claimed "row
-assignment is never a direct function of layer/stage membership — a row may contain nodes
-from more than one stage, and a stage's nodes may span more than one row." That claim is
-withdrawn, not just softened — CR15 requires the opposite (a row never spans two stages,
-stage zones are non-overlapping by construction) after a real layout defect confirmed the
-original claim was wrong in practice. Left-to-right sequencing (this rule's actual name and
-core claim) still holds; only the row/stage-independence clause is superseded. Same
-treatment NT10 received when CR11/CR12 corrected it.
 
 ---
 
