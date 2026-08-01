@@ -178,14 +178,15 @@ Mapped concretely:
   already sets for workflow behavior, applied here to documentation completeness. Does not
   apply to the Workflow Tree/n8n track at all — n8n output is headless by construction.
 
-**Grounding:** Direct restatement of DP11 at the generated-architecture layer, per the same
-cross-layer-restatement convention this corpus already uses (RULES-INDEX.md's own stated
-policy: one underlying principle, applied consistently at every layer it touches, rather
-than independently invented twice). The six-document grounding sources are DP11's own:
-IEEE 830/1016, Nygard (Architecture Decision Records) for the Tech-Decisions-equivalent
-specifically, Garrett (UX) and Frost (Atomic Design) for the conditional App-Flow/
-Design-Brief-equivalent, Chen (ER Model) for the Backend-Schema-equivalent, PMI (WBS) for
-the Engineering-Plan-equivalent.
+**Grounding:** Direct elaboration of DP11 (ISO/IEC/IEEE 12207) at the generated-architecture
+layer, per the same cross-layer-restatement convention this corpus already uses
+(RULES-INDEX.md's own stated policy: one underlying principle, applied consistently at
+every layer it touches, rather than independently invented twice). DP11's own current text
+already states it "sits above and encompasses" the Component Tree's pre-stages; this rule
+supplies the Component/Workflow-Tree-specific mechanics (the `rationale` field, the
+UI-tagged-component conditionality) that DP11's general statement doesn't itself spell out.
+Nygard (Architecture Decision Records) additionally grounds the Tech-Decisions-equivalent's
+rationale-field requirement specifically.
 
 **Applies to:** The Component Tree freeze step (after Stage 0, before Section 3's
 Reconciliation Rule runs); the Workflow Tree's approve step, for the Tech-Decisions-
@@ -215,7 +216,7 @@ before a Workflow Tree is approved:
 
 ## CD11 — Generated Architecture Also Gets a Roadmap and Checklist
 
-**Statement:** Restates DP12 at the generated-architecture layer, the same way CD10 restates
+**Statement:** Restates DP13 at the generated-architecture layer, the same way CD10 restates
 DP11. Once a domain's tree(s) are frozen, the system renders a human-readable Roadmap +
 Checklist view of that architecture's own build sequence — the tree's layers/components in
 topological build order (R10), each node's current completion status
@@ -225,7 +226,7 @@ requirement: every field it displays already exists per CD9/R10; CD11 requires t
 surfaced as one coherent view, not left as scattered per-node state a user has to assemble
 themselves.
 
-**Grounding:** Restates DP12 (`dev-process.md`) at the generated-architecture layer, per the
+**Grounding:** Restates DP13 (`dev-process.md`) at the generated-architecture layer, per the
 same cross-layer-restatement convention CD10 already established. The checklist portion is
 literally CD9's own 100%-Rule completion tracking (PMI); this rule's job is only to require
 that tracking be exposed as a rendered artifact, not to invent a new tracking mechanism.
@@ -261,6 +262,6 @@ can drift from the tree's actual state
 | CD8 | Components Map to One Code Construct | Restates NT1/SOLID at the Python level |
 | CD9 | Attributes Recurse Until Atomic; Completion Rolls Up | WBS Practice Standard + 100% Rule (PMI) |
 | CD10 | Generated Architecture Carries Its Own Documentation Set Before Freezing | Restates DP11 at the generated-architecture layer |
-| CD11 | Generated Architecture Also Gets a Roadmap and Checklist | Restates DP12 at the generated-architecture layer |
+| CD11 | Generated Architecture Also Gets a Roadmap and Checklist | Restates DP13 at the generated-architecture layer |
 
 This file is referenced from `RULES-INDEX.md`.

@@ -12,13 +12,13 @@ Shared template across every file: **Statement | Grounding | Applies to | Predic
 |---|---|---|---|
 | `workflow-design.md` | WD1-WD10 | How any workflow (Python or n8n) is structured, sequenced, and branched | Workflow Patterns (van der Aalst et al.), Dijkstra, Constantine & Yourdon, BPMN |
 | `governance.md` | G1-G10 | Traceability, accountability, auditability, oversight | NIST AI RMF, ISO/IEC 42001, EU AI Act |
-| `ui-design.md` | UI1-UI10 | The Home/Canvas screen, detail panel, tree diagram | Nielsen heuristics, Fitts's/Hick's Laws, Gestalt principles, WCAG |
-| `dev-process.md` | DP1-DP10 | How ARCHITEQ itself gets built, module by module | Deming (PDCA), Boehm (Spiral Model), Beck (XP/TDD), Poppendieck (Lean), Scrum |
+| `ui-design.md` | UI1-UI12 | The Home/Canvas screen, detail panel, tree diagram, planning-artifact rendering | Nielsen heuristics, Fitts's/Hick's Laws, Gestalt principles, WCAG, Miro/Notion/Figma precedent |
+| `dev-process.md` | DP1-DP13 | How ARCHITEQ itself gets built, module by module; also the six-artifact planning sequence and rules-corpus change discipline | Deming (PDCA), Boehm (Spiral Model), Beck (XP/TDD), Poppendieck (Lean), Scrum, ISO/IEC/IEEE 12207, IEEE 828, Lombardo et al. (Roadmaps) |
 | `decomposition.md` | P1-P8 | The task tree engine (prose companion to the machine-checkable JSON) | SOLID, C4 Model, TDSP, Well-Architected Framework |
 | `prompting.md` | PR1-PR7 | ARCHITEQ's own internal LLM calls (Intent Parser, grounding simulations) | Anthropic prompt engineering guidance, few-shot/chain-of-thought literature |
 | `node-translation.md` | NT1-NT10 | How a validated atomic step becomes a real n8n node, including its display name | Extends WD9, P4, G9; n8n's actual node schema and naming best practice |
-| `component-decomposition.md` | CD1-CD8 | The structural Component Tree (Python track): requirements to capabilities to components to attributes | ISO/IEC/IEEE 29148, TOGAF Business Capability Modeling, DeMarco/Yourdon Structured Analysis, DDD (Evans) |
-| `n8n-canvas-rules.md` | CR1-CR18 | How a validated node graph is *rendered* as an n8n canvas: layout, routing, ports, naming — distinct from node-translation.md's step-to-node *mapping* | n8n's node-and-connection execution model; left-to-right diagramming convention; stage-layout and routing-correction specifications |
+| `component-decomposition.md` | CD1-CD11 | The structural Component Tree (Python track): requirements to capabilities to components to attributes; also gates that any generated architecture (Python or n8n) carries its own TDD/App-Flow/Design-Brief-equivalent documentation and a Roadmap+Checklist view before freezing | ISO/IEC/IEEE 29148, TOGAF Business Capability Modeling, DeMarco/Yourdon Structured Analysis, DDD (Evans), PMI (WBS), elaborates DP11/DP13 |
+| `n8n-canvas-rules.md` | CR1-CR18 | How a validated node graph is *rendered* as an n8n canvas: layout, routing, ports, naming, stage-zone allocation — distinct from node-translation.md's step-to-node *mapping* | n8n's node-and-connection execution model; left-to-right diagramming convention; routing-correction and stage-layout-correction specifications |
 
 ---
 
@@ -37,14 +37,14 @@ Shared template across every file: **Statement | Grounding | Applies to | Predic
 - Workflow Design: 12
 - Governance: 10
 - UI Design: 12
-- Development Process: 12
+- Development Process: 13
 - Decomposition Engine: 8
 - Prompting: 7
 - Node Translation: 10
-- Component & Requirements Decomposition: 9
+- Component & Requirements Decomposition: 11
 - n8n Canvas Rendering: 18
 
-**Total: 98 grounded rules**, each traceable to a named source, each written as a testable predicate.
+**Total: 101 grounded rules**, each traceable to a named source, each written as a testable predicate.
 
 ---
 
@@ -60,5 +60,7 @@ This corpus sits alongside, not instead of:
 - `ARCHITEQ-UI-and-Dev-Loop-Directive.md` — the two-screen structure and dev loop this corpus's `ui-design.md` and `dev-process.md` files ground
 - `PROGRESS.md` — module-level tracking against the PRD
 - `~/.claude/CLAUDE.md` and the project's own `CLAUDE.md` — where the Autonomy Default and Documentation Sync rules (DP8, DP10) are actually recorded and enforced day to day
+- `~/.claude/frameworks/universal-prd-framework.md` — the full six-artifact planning sequence (PRD, TDD, App Flow, Design Brief, Backend Schema, Engineering Plan) `dev-process.md`'s DP11 grounds; project-independent, applies to every project
+- `ARCHITEQ-TDD.md`, `ARCHITEQ-APP-FLOW.md`, `ARCHITEQ-DESIGN-BRIEF.md`, `ARCHITEQ-BACKEND-SCHEMA.md`, `ARCHITEQ-ENGINEERING-PLAN.md` — this project's own instances of DP11's five non-PRD artifacts
 
 If any of the above documents ever conflicts with a rule in this corpus, treat the conflict itself as an Open Question to resolve deliberately — do not silently let one override the other.

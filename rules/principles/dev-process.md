@@ -180,48 +180,63 @@ as implicit permission for full autonomy
 
 ---
 
-## DP11 — Full Pre-Build Documentation Set Precedes Planning
+## DP11 — Six Planning Artifacts Precede Construction, Always in Order
 
-**Statement:** Before Plan through Build through Test through Commit begins on a new project
-or a major new capability (Complex-rated per DP5), six documents exist: PRD, TDD (Tech
-Design Document), App Flow, Design Brief, Backend Schema, and Engineering Plan. A PRD alone
-is necessary but not sufficient — it answers what and why; the other five answer how, in
-what shape, on what data, and in what order.
+**Statement:** Before any construction (code, workflow, or infrastructure) begins, six planning artifacts are produced in this fixed order:
 
-**Grounding:** Generalizes separately-established software engineering documentation
-practice into one ordered set, per `~/.claude/frameworks/universal-prd-framework.md` Section
-2: IEEE 830 (SRS) for the PRD, IEEE 1016 (Software Design Description) and Nygard's
-Architecture Decision Record practice for the TDD, Garrett's "Elements of User Experience"
-(2000) for App Flow, Frost's "Atomic Design" (2016) for the Design Brief, Chen's
-Entity-Relationship Model (1976) for Backend Schema, and WBS practice (PMI) for the
-Engineering Plan.
+1. **PRD** (Product Requirements Document) — what is being built, per the Universal PRD Framework already established.
+2. **Tech Design Document (TDD)** — the technical decisions and their rationale: stack, integrations, architecture overview, key tradeoffs. The "bible" for why, not just what.
+3. **App Flow** — screens, user journeys, onboarding, and interaction paths. *Conditional*: only produced when the project has a genuine UI/frontend layer; a pure backend/data-pipeline domain has no screens to flow.
+4. **Design Brief** — visual system: color palette, typography, component styles. *Conditional*, same test as App Flow.
+5. **Backend Schema** — data model: tables, fields, types, relationships between them.
+6. **Engineering Plan** — the project broken into small, testable tasks with explicit dependencies and a build order.
 
-**Applies to:** Every new project and every major new capability added to an existing
-project (e.g. Module 11's Dual Tree Architecture); does not require redoing documentation
-for work already committed under an earlier, smaller documentation set — that is a
-documentation gap to close (DP8), not grounds to redo finished work.
+Each artifact depends on the one before it and is not started until its predecessor exists. This sequence is universal: it governs ARCHITEQ's own development process *and* it governs what ARCHITEQ produces for a user's project when they describe something they want to build — the same discipline applied at both levels, not two different standards.
+
+**Grounding:** ISO/IEC/IEEE 12207 (Systems and Software Engineering — Software Life Cycle Processes), the international standard separating requirements, architecture, design, and construction into distinct, ordered phases — this six-artifact sequence is that standard's phase separation made concrete and named. The conditional App Flow/Design Brief step reflects the standard's own allowance that not every system has the same process needs; a UI-less data pipeline does not require a UX design phase.
+
+**Applies to:** The Development Loop (this file) for ARCHITEQ's own build; the Decomposition Engine's pre-stages (per `ARCHITEQ-Dual-Tree-Architecture.md`) for what ARCHITEQ generates. This rule sits *above* and *encompasses* those existing pre-stages: the Engineering Plan (artifact 6) is realized by the existing Component Tree / Workflow Tree machinery already specified — this rule does not replace that machinery, it places it correctly as the final stage of a larger sequence that was previously missing its first five stages.
 
 **Predicate:**
 ```
-before a Complex-rated item's Build step begins:
-    PRD exists (Requirements, numbered, testable)
-    TDD exists (tech stack, integrations, architecture overview, key decisions)
-    App Flow exists (screens, journeys, actions, success/error paths)
-    Design Brief exists (palette, type scale, component list)
-    Backend Schema exists (entities/fields/types/relationships, or the equivalent
-        structured data contract for non-relational storage)
-    Engineering Plan exists (requirements broken into small tasks with dependencies,
-        build order, acceptance criteria -- this PRD's own Section 4a/Modules plus
-        .agent/plans/ satisfies this, it does not need a separate duplicate document)
-a project missing one of these for already-in-progress work updates the missing
-document in the same pass that discovers the gap, per DP8, rather than deferring it
+no construction task (a Plan file per DP3) is opened until all
+applicable artifacts (1, 2, 5, 6 always; 3, 4 only if the project has a
+UI layer) exist and are committed; each artifact's content is checked
+for consistency with the artifact before it, not authored independently
 ```
 
 ---
 
-## DP12 — A Roadmap and Checklist Exist Beyond the Current Work Item
+## DP12 — A Rules-File Change Triggers a Cross-Reference Check Before It's Complete
 
-**Statement:** Beyond DP11's six documents and `PROGRESS.md`'s module-level tracking,
+**Statement:** Editing any single file in `rules/principles/` is not finished when that file's own content is correct. Before the change is considered done, run this checklist:
+
+1. **`RULES-INDEX.md` accuracy** — does the file list, rule-ID range, per-file count, and total still match reality? Update if not.
+2. **Cross-reference search** — does any *other* file in the corpus reference the changed rule by ID (e.g. "restates WD8," "extends NT1," "amends NT10")? If the changed rule's meaning shifted, the referencing rule's own text may now be wrong too, even though nobody edited it directly. Check each one; amend if stale, per the same superseding-note convention already established (CR3, NT10, UI11).
+3. **Conflict against what's actually implemented** — if the rule governs something already built (not just specified), does the change match live behavior, or does it now describe something that doesn't exist yet? A rule and an implementation disagreeing is exactly the CR3-vs-CR15 defect this project already found once.
+4. **Delivery lands as an update, not a duplicate** — when the changed file reaches its actual destination (a project repo maintained by someone else, e.g. via Claude Code), confirm it overwrites the existing file at its correct path rather than arriving under a different name and creating a second, competing copy of the same rule set.
+
+None of these four steps is optional because the file's own prose reads correctly in isolation — a rules corpus is a network of cross-references, and a change that looks complete locally can leave the network inconsistent.
+
+**Grounding:** IEEE 828 (Standard for Configuration Management in Systems and Software Engineering) — specifically its requirement that a change to a controlled specification undergo impact analysis against dependent artifacts before the change is accepted, not just a local correctness check on the changed item itself.
+
+**Applies to:** Any edit to a file in `rules/principles/`, whether the edit originates here or is made directly in a project repo.
+
+**Predicate:**
+```
+no rules-file edit is marked complete until: RULES-INDEX.md is verified
+current, every cross-reference to the changed rule ID elsewhere in the
+corpus has been checked and amended if stale, the change has been
+checked against known live implementation behavior where applicable,
+and the delivered file is confirmed to overwrite its correct destination
+path rather than landing as a new, differently-named file
+```
+
+---
+
+## DP13 — A Roadmap and Checklist Exist Beyond the Current Work Item
+
+**Statement:** Beyond DP11's six artifacts and `PROGRESS.md`'s module-level tracking,
 ARCHITEQ's own project maintains a Roadmap (a sequenced, phased view of what comes after the
 current work, not just the current module) and a Checklist (per-item completion status).
 Already established in practice via `ARCHITEQ-ROADMAP.md` and `PROGRESS.md`; formalized here
@@ -259,7 +274,8 @@ once work begins
 | DP8 | Documentation Sync Is Part of Definition of Done | Schwaber & Sutherland, Scrum Guide |
 | DP9 | Human Confirmation Gate for Complex/Irreversible Items | Boehm (DP5) + EU AI Act Art. 14 (G4) |
 | DP10 | Autonomy Level Is Stated, Never Assumed | Generalizes WD10 to the process layer |
-| DP11 | Full Pre-Build Documentation Set Precedes Planning | IEEE 830, IEEE 1016, Nygard (ADRs), Garrett (UX), Frost (Atomic Design), Chen (ER Model), PMI (WBS) |
-| DP12 | A Roadmap and Checklist Exist Beyond the Current Work Item | Lombardo et al., Product Roadmaps Relaunched, 2017; PMI (WBS 100% Rule) |
+| DP11 | Six Planning Artifacts Precede Construction, Always in Order | ISO/IEC/IEEE 12207 |
+| DP12 | A Rules-File Change Triggers a Cross-Reference Check | IEEE 828 (Configuration Management) |
+| DP13 | A Roadmap and Checklist Exist Beyond the Current Work Item | Lombardo et al., Product Roadmaps Relaunched, 2017; PMI (WBS 100% Rule) |
 
 This file is referenced from `RULES-INDEX.md`.

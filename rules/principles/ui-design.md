@@ -175,6 +175,39 @@ keyboard navigation, not mouse/touch only
 
 ---
 
+## UI11 — Navigation Rail Collapses by Default, Expands on Demand
+
+**SUPERSEDED — see note below.** **Statement:** Persistent cross-screen navigation (Home, Recent, Settings) lives in a narrow, icon-only rail by default, expanding to labeled items only on interaction. It never competes with the canvas for primary screen space, and it carries only items that are genuinely needed across every screen — nothing included because a reference pattern happened to have it.
+
+**Amendment:** During implementation, this rail — even in its collapsed icon-only form — repeatedly failed to read as intentional (reported multiple times as "why is this here, why doesn't it retract" despite functioning as designed). Rather than continue patching a UI element that wasn't earning its keep, it was removed entirely from the mockup. The requirements it existed to serve (returning to the empty canvas, revisiting recent work) are satisfied by the existing Home/Canvas merged screen itself, per UI1. This rule is kept in place, marked superseded rather than deleted, per this corpus's traceability requirement (G1, G3) — the same treatment CR3 and NT10 received.
+
+**Grounding:** This is the standard resolution to the tension between UI1 (Collapse Stops — minimize navigational surface) and UI3 (Recognition over Recall — actions should be visible, not memorized): a collapsed icon rail satisfies both, converged on independently by Miro, Notion, and Figma's own sidebar patterns as the standard answer for canvas-based tools specifically. Precedent is Miro's own left rail, used here as a case study the same way Railway's dashboard was used earlier — followed for the collapse behavior, deliberately not followed for content (profile switcher, Starred, Your recordings, Spaces are workspace/collaboration concepts excluded per the PRD's Non-Goals).
+
+**Applies to:** Nothing currently — superseded. Retained for history only.
+
+**Predicate:** Not enforced; see amendment.
+
+---
+
+## UI12 — Planning Artifacts Render as Diagrams by Default, Text on Demand
+
+**Statement:** Each of the six planning artifacts in DP11 (PRD, Tech Design Document, App Flow, Design Brief, Backend Schema, Engineering Plan) has a corresponding diagrammatic view — a central document card with 4-6 satellite cards pulling out its key structural pieces (hub-and-spoke layout) — and this diagram is the *default* view when the artifact is opened in the folder scaffold. The full text document remains available, but is not the first thing shown. This applies with particular weight to the Python Workflow Tree output: folder and function structure is shown diagrammatically first, matching the pattern already built for the Level 1/2/3 Python browser, not as a wall of markdown.
+
+**Grounding:** Direct extension of UI9 (Gestalt Grouping — hierarchy shown through structure, not just labels) and UI4 (Progressive Disclosure) to planning documents specifically, rather than only to the task tree. The specific hub-and-spoke visual pattern (central card, 4-6 satellite cards, dotted connector lines) is a documented reference pattern the person supplied directly for each of the six DP11 artifact types, used here as a case-study precedent the same way Railway and Miro were used for other UI rules.
+
+**Applies to:** Any tool that renders a planning artifact from DP11's sequence — this is a rendering requirement, parallel to how `n8n-canvas-rules.md` governs rendering of the Workflow Tree; a future `planning-artifact-rendering.md` file may be warranted if this grows past a single rule, but is not created until a second rule in this family is actually needed (per this corpus's own standard: don't add a file for one rule).
+
+**Predicate:**
+```
+opening any of the six DP11 artifact types in the folder scaffold
+displays its hub-and-spoke diagram first; the full text document is
+one interaction away, never the default first view; the Python
+Workflow Tree folder/function browser satisfies this rule already for
+the Engineering Plan artifact specifically
+```
+
+---
+
 ## Summary Table
 
 | ID | Rule | Grounding |
@@ -189,5 +222,7 @@ keyboard navigation, not mouse/touch only
 | UI8 | Hick's Law | Hick, 1952; Hyman, 1953 |
 | UI9 | Gestalt Grouping | Wertheimer, Koffka, Köhler |
 | UI10 | Accessibility | WCAG 2.1/2.2 |
+| UI11 | ~~Navigation Rail Collapses by Default~~ (superseded, see note) | Miro/Notion/Figma precedent |
+| UI12 | Planning Artifacts Render as Diagrams by Default | Hub-and-spoke reference pattern; extends UI4, UI9 |
 
 This file is referenced from `RULES-INDEX.md`. Next in the corpus: development process.
