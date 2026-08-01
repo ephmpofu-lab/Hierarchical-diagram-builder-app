@@ -188,3 +188,66 @@ def render_component_tree(
         modules.append(RenderedComponentModule(component_label=comp.label, code=code))
 
     return diagram, modules
+
+
+# ============================================================================
+# Roadmap + Checklist Render (Module 11, R37/CD11) -- one shared, mode-agnostic view reused
+# by both the Python Renderer and the n8n Renderer (CD11's own "Applies to" line): nodes in
+# topological build order, each showing its current [ ]/[-]/[x] status. Derived entirely
+# from existing tree fields at render time, never a separately maintained document.
+# ============================================================================
+
+
+def render_roadmap_checklist(items: "List[Tuple[str, str, int]]") -> str:
+    """The shared, tree-agnostic renderer. Each item is (label, status, depth); renders one
+    markdown checklist line per item, indented 2 spaces per depth level."""
+    return "\n".join(f"{'  ' * depth}- {status} {label}" for label, status, depth in items)
+
+
+def render_workflow_tree_roadmap(tree: DomainTaskTree) -> str:
+    """R37/CD11 for the Workflow Tree -- Layers/Sub-tasks in the tree's own root_ids/children
+    build order (depth 0/1); Atomic steps (depth 2) ordered via the same R10
+    _topological_order this file already computes for render_python, filtered per Sub-task
+    while preserving that global order."""
+    atomic_steps = [n for n in tree.nodes.values() if n.level == "Atomic step"]
+    global_order = [n.id for n in _topological_order(atomic_steps)]
+
+    items: List[Tuple[str, str, int]] = []
+    for layer_id in tree.root_ids:
+        layer = tree.nodes.get(layer_id)
+        if layer is None:
+            continue
+        items.append((layer.label, layer.status, 0))
+        for sub_task_id in layer.children:
+            sub_task = tree.nodes.get(sub_task_id)
+            if sub_task is None:
+                continue
+            items.append((sub_task.label, sub_task.status, 1))
+            ordered_children = sorted(
+                (cid for cid in sub_task.children if cid in tree.nodes),
+                key=lambda cid: global_order.index(cid) if cid in global_order else len(global_order),
+            )
+            for atomic_id in ordered_children:
+                atomic = tree.nodes[atomic_id]
+                items.append((atomic.label, atomic.status, 2))
+
+    return render_roadmap_checklist(items)
+
+
+def render_component_tree_roadmap(
+    capabilities: List[Capability], components: List[Component], attributes: List[Attribute]
+) -> str:
+    """R37/CD11 for the Component Tree -- Capabilities (depth 0), their Components via
+    realizes_capability (depth 1), each Component's Attributes via component_label (depth 2),
+    in the same breadth-first construction order render_component_tree (11f) already walks."""
+    items: List[Tuple[str, str, int]] = []
+    for capability in capabilities:
+        items.append((capability.label, capability.status, 0))
+        cap_components = [c for c in components if c.realizes_capability == capability.label]
+        for component in cap_components:
+            items.append((component.label, component.status, 1))
+            comp_attrs = [a for a in attributes if a.component_label == component.label]
+            for attribute in comp_attrs:
+                items.append((attribute.name, attribute.status, 2))
+
+    return render_roadmap_checklist(items)

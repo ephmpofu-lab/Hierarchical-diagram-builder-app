@@ -41,7 +41,13 @@ from backend.models import (
 )
 from backend.render import node_mapper
 from backend.render.n8n_exporter import export_workflow
-from backend.render.python_renderer import render_component_tree, render_python
+from backend.render.python_renderer import (
+    render_component_tree,
+    render_component_tree_roadmap,
+    render_python,
+    render_roadmap_checklist,
+    render_workflow_tree_roadmap,
+)
 from backend.taxonomy import repository as taxonomy_repo
 from backend.validator import principles
 from backend.validator.service import validate_tree
@@ -1424,6 +1430,75 @@ def test_render_component_tree_unrecognized_type_defaults_to_str():
     )
 
     assert "weird_field: str" in modules[0].code
+
+
+# ---- Module 11 -- Roadmap + Checklist Render (11k, R37/CD11) ----
+
+def test_render_roadmap_checklist_indents_by_depth():
+    items = [
+        ("Ingestion", "[-]", 0),
+        ("Document Ingestion", "[-]", 1),
+        ("Select Upload Source", "[x]", 2),
+    ]
+    rendered = render_roadmap_checklist(items)
+    assert rendered == "\n".join([
+        "- [-] Ingestion",
+        "  - [-] Document Ingestion",
+        "    - [x] Select Upload Source",
+    ])
+
+
+def test_render_workflow_tree_roadmap_nests_by_layer_subtask_atomic_step():
+    tree = DomainTaskTree(domain="rag", version=1, root_ids=["L1", "L2"], nodes={
+        "L1": TaskTreeNode(id="L1", label="Ingestion", level="Layer", children=["S1"], status="[x]"),
+        "S1": TaskTreeNode(id="S1", label="Document Ingestion", level="Sub-task", parent_id="L1", children=["A1", "A2"], status="[x]"),
+        "A1": TaskTreeNode(id="A1", label="Select Upload Source", level="Atomic step", parent_id="S1", status="[x]", produces="source"),
+        "A2": TaskTreeNode(id="A2", label="Validate File Type", level="Atomic step", parent_id="S1", status="[x]", requires=["A1"]),
+        "L2": TaskTreeNode(id="L2", label="Preprocessing", level="Layer", children=["S2"], status="[ ]"),
+        "S2": TaskTreeNode(id="S2", label="Text Processing", level="Sub-task", parent_id="L2", children=["A3"], status="[ ]"),
+        "A3": TaskTreeNode(id="A3", label="Parse Document Text", level="Atomic step", parent_id="S2", status="[ ]"),
+    })
+
+    rendered = render_workflow_tree_roadmap(tree)
+    lines = rendered.split("\n")
+
+    assert lines[0] == "- [x] Ingestion"
+    assert lines[1] == "  - [x] Document Ingestion"
+    # A2 requires A1, so A1 (produces "source") must precede A2 in build order
+    assert lines[2] == "    - [x] Select Upload Source"
+    assert lines[3] == "    - [x] Validate File Type"
+    assert lines[4] == "- [ ] Preprocessing"
+    assert lines[5] == "  - [ ] Text Processing"
+    assert lines[6] == "    - [ ] Parse Document Text"
+
+
+def test_render_component_tree_roadmap_nests_by_capability_component_attribute():
+    capabilities = [
+        Capability(label="Intent Resolution", traced_requirements=["R1"], domain="rag", status="[x]"),
+        Capability(label="Document Ingestion", traced_requirements=["R6"], domain="rag", status="[-]"),
+    ]
+    components = [
+        Component(label="Resolver", realizes_capability="Intent Resolution", domain="rag", status="[x]"),
+        Component(label="Upload Source", realizes_capability="Document Ingestion", domain="rag", status="[x]"),
+        Component(label="File Validator", realizes_capability="Document Ingestion", domain="rag", status="[ ]"),
+    ]
+    attributes = [
+        Attribute(name="Confidence Threshold", type="float", component_label="Resolver", domain="rag", status="[x]"),
+        Attribute(name="Max File Size", type="integer", component_label="Upload Source", domain="rag", status="[x]"),
+        Attribute(name="Timeout", type="integer", component_label="File Validator", domain="rag", status="[ ]"),
+    ]
+
+    rendered = render_component_tree_roadmap(capabilities, components, attributes)
+    lines = rendered.split("\n")
+
+    assert lines[0] == "- [x] Intent Resolution"
+    assert lines[1] == "  - [x] Resolver"
+    assert lines[2] == "    - [x] Confidence Threshold"
+    assert lines[3] == "- [-] Document Ingestion"
+    assert lines[4] == "  - [x] Upload Source"
+    assert lines[5] == "    - [x] Max File Size"
+    assert lines[6] == "  - [ ] File Validator"
+    assert lines[7] == "    - [ ] Timeout"
 
 
 def test_render_python_endpoint_404_for_unknown_domain(authed_client):
