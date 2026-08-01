@@ -925,17 +925,9 @@ class N8nNode(BaseModel):
     parameters: Dict[str, Any] = Field(default_factory=dict)
 
 
-class N8nWorkflow(BaseModel):
-    name: str
-    nodes: List[N8nNode] = Field(default_factory=list)
-    connections: Dict[str, Any] = Field(default_factory=dict)
-
-
 class N8nStageZone(BaseModel):
     """CR15 -- one Layer's non-overlapping vertical zone on the n8n canvas. Rendering-only
-    metadata (CR2: a stage boundary carries no execution meaning) -- deliberately kept
-    separate from N8nWorkflow, which is also the literal payload downloaded as the real,
-    importable workflow.json (R14)."""
+    metadata (CR2: a stage boundary carries no execution meaning)."""
 
     layer_id: str
     label: str
@@ -943,6 +935,28 @@ class N8nStageZone(BaseModel):
     y: float
     width: float
     height: float
+
+
+class N8nConnectionClassification(BaseModel):
+    """CR18 -- the routing-strategy tag for one real connection, computed once by
+    backend/render/node_mapper.py::classify_connections and consumed by the SVG Renderer,
+    never re-derived client-side."""
+
+    source_step_id: str
+    target_step_id: str
+    classification: str  # adjacent | local_branch | row_transition | cross_row |
+    # cross_stage | long_distance
+
+
+class N8nWorkflow(BaseModel):
+    name: str
+    nodes: List[N8nNode] = Field(default_factory=list)
+    connections: Dict[str, Any] = Field(default_factory=dict)
+    stage_zones: List[N8nStageZone] = Field(default_factory=list)  # rendering-only (CR2/
+    # CR15) -- decompose.js::downloadWorkflowJson already whitelists only name/nodes/
+    # connections before building the downloaded workflow.json, so this extra field never
+    # leaks into the real, importable n8n artifact (R14)
+    connection_classifications: List[N8nConnectionClassification] = Field(default_factory=list)  # CR18, rendering-only, same non-leak guarantee
 
 
 class DiscoveryTurnRequest(BaseModel):

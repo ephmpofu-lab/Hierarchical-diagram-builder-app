@@ -1867,6 +1867,26 @@ html[data-inspector-collapsed="true"] .health-footer {
 .decompose-n8n-connection {
   stroke: var(--text-muted);
   stroke-width: 2;
+  fill: none;
+}
+
+.decompose-n8n-stage-zone {
+  fill: var(--surface-2);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.decompose-n8n-stage-zone-label {
+  fill: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.decompose-n8n-port {
+  fill: var(--accent);
+  stroke: var(--surface);
+  stroke-width: 1;
 }
 
 /* n8n hover-payload (R31, sub-plan 11g) */

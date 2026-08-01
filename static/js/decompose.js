@@ -1124,14 +1124,78 @@ function renderPythonSidePanel(grouped, pb) {
   return panel;
 }
 
+// ---- SVG routing rewrite (10a-iii, CR2/CR5/CR6/CR7/CR16) ----
+// roundedPolylinePath is the one shared geometry function every classification's waypoints
+// run through -- CR18's own discipline (classify first, one function per class supplies
+// waypoints only, geometry/rounding is never re-implemented per class).
+
+function _n8nDistance(a, b) {
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+function _n8nPointTowards(from, to, dist) {
+  const total = _n8nDistance(from, to);
+  if (total === 0) return { x: from.x, y: from.y };
+  const t = Math.min(dist, total) / total;
+  return { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
+}
+
+function roundedPolylinePath(points, radius) {
+  if (points.length < 2) return "";
+  if (points.length === 2) {
+    return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+  }
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const next = points[i + 1];
+    const r = Math.min(radius, _n8nDistance(prev, curr) / 2, _n8nDistance(curr, next) / 2);
+    const p1 = _n8nPointTowards(curr, prev, r);
+    const p2 = _n8nPointTowards(curr, next, r);
+    d += ` L ${p1.x} ${p1.y} Q ${curr.x} ${curr.y} ${p2.x} ${p2.y}`;
+  }
+  const last = points[points.length - 1];
+  d += ` L ${last.x} ${last.y}`;
+  return d;
+}
+
+const N8N_CORNER_RADIUS = 12;
+const N8N_LANE_OFFSET = 30; // whitespace lane below a row, for local_branch routing (CR6)
+
+function _n8nBuildWaypoints(classification, outPort, inPort) {
+  switch (classification) {
+    case "adjacent":
+      return [outPort, inPort];
+    case "local_branch": {
+      const laneY = Math.max(outPort.y, inPort.y) + N8N_LANE_OFFSET;
+      return [outPort, { x: outPort.x, y: laneY }, { x: inPort.x, y: laneY }, inPort];
+    }
+    default: {
+      // row_transition | cross_row | cross_stage | long_distance -- a standard elbow;
+      // the path's final waypoint is always inPort, so it always enters the target's
+      // normal left port regardless of class (CR16).
+      const midX = (outPort.x + inPort.x) / 2;
+      return [outPort, { x: midX, y: outPort.y }, { x: midX, y: inPort.y }, inPort];
+    }
+  }
+}
+
 function renderN8nDiagram(workflow) {
   const boxWidth = 180;
   const boxHeight = 50;
   const padding = 40;
-  const maxX = workflow.nodes.reduce((max, n) => Math.max(max, n.position[0]), 0);
+  const zones = workflow.stage_zones || [];
 
-  const totalWidth = maxX + boxWidth + padding * 2;
-  const totalHeight = boxHeight + padding * 2;
+  const maxRight = zones.length
+    ? Math.max(...zones.map((z) => z.x + z.width))
+    : Math.max(boxWidth, ...workflow.nodes.map((n) => n.position[0] + boxWidth));
+  const maxBottom = zones.length
+    ? Math.max(...zones.map((z) => z.y + z.height))
+    : Math.max(boxHeight, ...workflow.nodes.map((n) => n.position[1] + boxHeight));
+
+  const totalWidth = maxRight + padding * 2;
+  const totalHeight = maxBottom + padding * 2;
   const svg = document.createElementNS(SVG_NS, "svg");
   // Explicit pixel size, not width="100%" -- a wide tree (RAG's 32 atomic steps) must
   // scroll horizontally in its own container, never be squashed illegibly small to fit.
@@ -1140,8 +1204,38 @@ function renderN8nDiagram(workflow) {
   svg.setAttribute("viewBox", `0 0 ${totalWidth} ${totalHeight}`);
   svg.classList.add("decompose-n8n-diagram");
 
+  // Stage-zone backgrounds drawn first, behind everything (CR2: visual group only, never
+  // a connection anchor -- no connection below ever originates/terminates at a zone).
+  for (const zone of zones) {
+    const rect = document.createElementNS(SVG_NS, "rect");
+    rect.setAttribute("x", zone.x + padding);
+    rect.setAttribute("y", zone.y + padding);
+    rect.setAttribute("width", zone.width);
+    rect.setAttribute("height", zone.height);
+    rect.setAttribute("rx", "6");
+    rect.setAttribute("class", "decompose-n8n-stage-zone");
+    svg.appendChild(rect);
+
+    const label = document.createElementNS(SVG_NS, "text");
+    label.setAttribute("x", zone.x + padding + 10);
+    label.setAttribute("y", zone.y + padding + 18);
+    label.setAttribute("class", "decompose-n8n-stage-zone-label");
+    label.textContent = zone.label;
+    svg.appendChild(label);
+  }
+
   const nodeByName = {};
   for (const node of workflow.nodes) nodeByName[node.name] = node;
+  const classificationByPair = {};
+  for (const c of workflow.connection_classifications || []) {
+    classificationByPair[`${c.source_step_id} ${c.target_step_id}`] = c.classification;
+  }
+
+  function portOf(node, side) {
+    const x = node.position[0] + padding + (side === "output" ? boxWidth : 0);
+    const y = node.position[1] + padding + boxHeight / 2;
+    return { x, y };
+  }
 
   // Connections drawn first so node boxes sit on top of the lines.
   for (const [sourceName, outputs] of Object.entries(workflow.connections)) {
@@ -1150,37 +1244,54 @@ function renderN8nDiagram(workflow) {
     for (const conn of targets) {
       const target = nodeByName[conn.node];
       if (!source || !target) continue;
-      const line = document.createElementNS(SVG_NS, "line");
-      line.setAttribute("x1", source.position[0] + boxWidth + padding);
-      line.setAttribute("y1", padding + boxHeight / 2);
-      line.setAttribute("x2", target.position[0] + padding);
-      line.setAttribute("y2", padding + boxHeight / 2);
-      line.setAttribute("class", "decompose-n8n-connection");
-      svg.appendChild(line);
+      const classification = classificationByPair[`${source.step_id} ${target.step_id}`] || "adjacent";
+      const waypoints = _n8nBuildWaypoints(classification, portOf(source, "output"), portOf(target, "input"));
+      const path = document.createElementNS(SVG_NS, "path");
+      path.setAttribute("d", roundedPolylinePath(waypoints, N8N_CORNER_RADIUS));
+      path.setAttribute("class", "decompose-n8n-connection");
+      path.setAttribute("data-classification", classification);
+      svg.appendChild(path);
     }
   }
 
   for (const node of workflow.nodes) {
+    const group = document.createElementNS(SVG_NS, "g");
+    group.addEventListener("mouseenter", (evt) => showN8nHoverPayload(evt, node));
+    group.addEventListener("mousemove", (evt) => showN8nHoverPayload(evt, node));
+    group.addEventListener("mouseleave", hideN8nHoverPayload);
+
     const rect = document.createElementNS(SVG_NS, "rect");
     rect.setAttribute("x", node.position[0] + padding);
-    rect.setAttribute("y", padding);
+    rect.setAttribute("y", node.position[1] + padding);
     rect.setAttribute("width", boxWidth);
     rect.setAttribute("height", boxHeight);
     rect.setAttribute("rx", "8");
     rect.setAttribute("class", "decompose-n8n-node-rect");
-    rect.addEventListener("mouseenter", (evt) => showN8nHoverPayload(evt, node));
-    rect.addEventListener("mousemove", (evt) => showN8nHoverPayload(evt, node));
-    rect.addEventListener("mouseleave", hideN8nHoverPayload);
-    svg.appendChild(rect);
+    group.appendChild(rect);
 
     const text = document.createElementNS(SVG_NS, "text");
     text.setAttribute("x", node.position[0] + padding + boxWidth / 2);
-    text.setAttribute("y", padding + boxHeight / 2 + 4);
+    text.setAttribute("y", node.position[1] + padding + boxHeight / 2 + 4);
     text.setAttribute("text-anchor", "middle");
     text.setAttribute("class", "decompose-n8n-node-text");
-    text.setAttribute("pointer-events", "none"); // hover events land on the rect, not this text
+    text.setAttribute("pointer-events", "none"); // hover events land on the group, not this text
     text.textContent = node.name.length > 22 ? `${node.name.slice(0, 20)}…` : node.name;
-    svg.appendChild(text);
+    group.appendChild(text);
+
+    // Visible input/output ports (CR7) -- every connection's endpoint coincides exactly
+    // with one of these, never an approximate edge of the box's bounding rect.
+    for (const side of ["input", "output"]) {
+      const port = portOf(node, side);
+      const circle = document.createElementNS(SVG_NS, "circle");
+      circle.setAttribute("cx", port.x);
+      circle.setAttribute("cy", port.y);
+      circle.setAttribute("r", "4");
+      circle.setAttribute("class", "decompose-n8n-port");
+      circle.setAttribute("pointer-events", "none");
+      group.appendChild(circle);
+    }
+
+    svg.appendChild(group);
   }
   return svg;
 }

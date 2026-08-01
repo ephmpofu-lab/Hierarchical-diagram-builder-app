@@ -1560,6 +1560,21 @@ def test_export_workflow_wraps_mapped_nodes_and_connections():
     assert workflow.connections  # non-empty, a1 -> a2
 
 
+def test_export_workflow_populates_stage_zones_and_classifications():
+    tree = _classification_tree()
+    workflow = export_workflow(tree)
+
+    assert len(workflow.stage_zones) == 3
+    zone_labels = {z.label for z in workflow.stage_zones}
+    assert zone_labels == {"Layer One", "Layer Two", "Layer Three"}
+
+    by_pair = {(c.source_step_id, c.target_step_id): c.classification for c in workflow.connection_classifications}
+    assert by_pair[("a1", "a2")] == "adjacent"
+    assert by_pair[("a1", "a3")] == "local_branch"
+    assert by_pair[("a3", "b1")] == "cross_stage"
+    assert by_pair[("a1", "c1")] == "long_distance"
+
+
 # ---- Module 10 -- Stage-Zone + Row-Wrap Layout (10a-i, CR3/CR4/CR15) ----
 
 def _multi_layer_tree_with_row_wrap() -> DomainTaskTree:
