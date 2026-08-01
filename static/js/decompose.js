@@ -1181,9 +1181,18 @@ function _n8nBuildWaypoints(classification, outPort, inPort) {
   }
 }
 
+function n8nNeedsConfiguration(node) {
+  // A node needs configuration when one of its own real n8n parameters is still sitting at
+  // the schema's own empty placeholder (_build_parameters, node_mapper.py, never overlaid a
+  // real declared Variable.default onto it). Nested/non-string values (Set's assignments,
+  // If's conditions) are structural, not "needs a value" in this same sense, and are left
+  // alone deliberately.
+  return Object.values(node.parameters || {}).some((v) => v === "");
+}
+
 function renderN8nDiagram(workflow) {
   const boxWidth = 180;
-  const boxHeight = 50;
+  const boxHeight = 58;
   const padding = 40;
   const zones = workflow.stage_zones || [];
 
@@ -1275,14 +1284,24 @@ function renderN8nDiagram(workflow) {
     rect.setAttribute("class", "decompose-n8n-node-rect");
     group.appendChild(rect);
 
+    // Two distinct labels (CR11): display name and real n8n type, never merged into one.
     const text = document.createElementNS(SVG_NS, "text");
     text.setAttribute("x", node.position[0] + padding + boxWidth / 2);
-    text.setAttribute("y", node.position[1] + padding + boxHeight / 2 + 4);
+    text.setAttribute("y", node.position[1] + padding + 22);
     text.setAttribute("text-anchor", "middle");
     text.setAttribute("class", "decompose-n8n-node-text");
     text.setAttribute("pointer-events", "none"); // hover events land on the group, not this text
     text.textContent = node.name.length > 22 ? `${node.name.slice(0, 20)}…` : node.name;
     group.appendChild(text);
+
+    const typeText = document.createElementNS(SVG_NS, "text");
+    typeText.setAttribute("x", node.position[0] + padding + boxWidth / 2);
+    typeText.setAttribute("y", node.position[1] + padding + 40);
+    typeText.setAttribute("text-anchor", "middle");
+    typeText.setAttribute("class", "decompose-n8n-node-type-text");
+    typeText.setAttribute("pointer-events", "none");
+    typeText.textContent = node.type;
+    group.appendChild(typeText);
 
     // Visible input/output ports (CR7) -- every connection's endpoint coincides exactly
     // with one of these, never an approximate edge of the box's bounding rect.
@@ -1295,6 +1314,16 @@ function renderN8nDiagram(workflow) {
       circle.setAttribute("class", "decompose-n8n-port");
       circle.setAttribute("pointer-events", "none");
       group.appendChild(circle);
+    }
+
+    if (n8nNeedsConfiguration(node)) {
+      const badge = document.createElementNS(SVG_NS, "circle");
+      badge.setAttribute("cx", node.position[0] + padding + boxWidth - 10);
+      badge.setAttribute("cy", node.position[1] + padding + 10);
+      badge.setAttribute("r", "5");
+      badge.setAttribute("class", "decompose-n8n-needs-config-badge");
+      badge.setAttribute("pointer-events", "none");
+      group.appendChild(badge);
     }
 
     viewport.appendChild(group);
