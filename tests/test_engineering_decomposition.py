@@ -22,12 +22,14 @@ from fastapi.testclient import TestClient
 
 from app import app
 from backend.auth import AuthenticatedUser, require_auth
+from backend.component import engine as component_engine
 from backend.decompose import engine as decompose_engine
 from backend.intelligence.stages import ReasoningStageError
 from backend.intent import service as intent_service
 from backend.models import (
     DomainChecklist,
     DomainTaskTree,
+    ExtractedRequirement,
     IntentResult,
     LayerChecklistEntry,
     TaskTreeNode,
@@ -929,6 +931,53 @@ def test_draft_and_approve_domain_end_to_end(authed_client, monkeypatch):
         tree_path.unlink(missing_ok=True)
         checklist_path.unlink(missing_ok=True)
         grounding_path.unlink(missing_ok=True)
+
+
+# ---- Module 11 (Dual Tree Architecture) -- Stage -3, Requirements Engineering (11a) ----
+
+def test_extract_requirements_returns_well_formed_items(monkeypatch):
+    mock_response = {"requirements": [
+        {"text": "Accepts a free-text intent and resolves it to a domain.", "prd_requirement_id": "R1"},
+        {"text": "Generates a task tree with exactly four levels.", "prd_requirement_id": "R2"},
+        {"text": "Every atomic step passes all five Atomicity Test criteria.", "prd_requirement_id": "R4"},
+    ]}
+    monkeypatch.setattr(component_engine, "_ask_json", lambda **kwargs: mock_response)
+
+    result = component_engine.extract_requirements("rag", "PRD text here", "context")
+
+    assert len(result) == 3
+    assert all(isinstance(r, ExtractedRequirement) for r in result)
+    assert [r.prd_requirement_id for r in result] == ["R1", "R2", "R4"]
+    assert all(r.domain == "rag" for r in result)
+
+
+def test_extract_requirements_drops_items_with_no_prd_requirement_id(monkeypatch):
+    mock_response = {"requirements": [
+        {"text": "Well-formed one.", "prd_requirement_id": "R1"},
+        {"text": "Missing an id.", "prd_requirement_id": ""},
+        {"text": "Well-formed two.", "prd_requirement_id": "R2"},
+    ]}
+    monkeypatch.setattr(component_engine, "_ask_json", lambda **kwargs: mock_response)
+
+    result = component_engine.extract_requirements("rag", "PRD text here", "context")
+
+    assert len(result) == 2
+    assert [r.prd_requirement_id for r in result] == ["R1", "R2"]
+
+
+def test_extract_requirements_prompt_includes_prd_text_and_domain(monkeypatch):
+    captured = {}
+
+    def mock(**kwargs):
+        captured.update(kwargs)
+        return {"requirements": []}
+
+    monkeypatch.setattr(component_engine, "_ask_json", mock)
+
+    component_engine.extract_requirements("rag", "SPECIFIC_PRD_MARKER_TEXT", "context")
+
+    assert "SPECIFIC_PRD_MARKER_TEXT" in captured["prompt"]
+    assert "rag" in captured["prompt"]
 
 
 def test_render_python_endpoint_404_for_unknown_domain(authed_client):

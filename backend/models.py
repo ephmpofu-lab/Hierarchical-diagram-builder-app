@@ -1156,4 +1156,18 @@ class DeploymentReadinessResult(BaseModel):
     explanation: Optional[str] = None  # populated only when explain=true is requested
 
 
+# ============================================================================
+# Dual Tree Architecture (Module 11) -- Component Tree track, distinct from the Workflow
+# Tree's TaskTreeNode family above. Stage -3 (Requirements Engineering) is the first
+# pre-stage, per ARCHITEQ-Dual-Tree-Architecture.md and rules/principles/
+# component-decomposition.md (CD1-CD11).
+# ============================================================================
+
+
+class ExtractedRequirement(BaseModel):
+    text: str
+    prd_requirement_id: str
+    domain: str
+
+
 Project.model_rebuild()
