@@ -319,6 +319,80 @@
   .py-file-func-code{ display:inline; transition:background .3s; }
   #py-config-panel-wrap:not(:empty){ margin-bottom:16px; display:flex; flex-direction:column; gap:10px; }
 
+  /* ---- Planning-artifact hub-and-spoke diagram (DP11 / UI12) ---- */
+  .doc-toggle-row{ text-align:center; margin-bottom:6px; }
+  .view-toggle{
+    display:inline-flex; background:var(--bg-panel); border:1px solid var(--border-soft);
+    border-radius:8px; padding:3px; margin-bottom:26px;
+  }
+  .view-opt{ padding:7px 16px; border-radius:6px; font-size:12.5px; color:var(--text-faint); cursor:pointer; }
+  .view-opt.active{ background:var(--accent-soft); color:var(--accent); }
+  .diagram{
+    position:relative; display:grid;
+    grid-template-columns:1fr 300px 1fr; grid-template-rows:auto auto auto;
+    gap:22px; align-items:center; min-height:560px; max-width:1000px;
+  }
+  .hub{
+    grid-column:2; grid-row:2; background:var(--bg-panel); border:1px solid var(--border);
+    border-radius:14px; padding:26px 22px; text-align:center; position:relative; z-index:2;
+    box-shadow:0 16px 40px rgba(0,0,0,0.4);
+  }
+  .hub-icon{
+    width:46px; height:46px; margin:0 auto 14px; border-radius:11px; background:var(--accent-soft);
+    display:flex; align-items:center; justify-content:center; font-size:19px; color:var(--accent);
+  }
+  .hub-title{ font-size:20px; font-weight:700; letter-spacing:-0.01em; line-height:1.15; }
+  .hub-sub{ font-size:11px; color:var(--text-faint); margin-top:4px; font-family:'JetBrains Mono',monospace; }
+  .hub-desc{ font-size:12.5px; color:var(--text-dim); margin-top:14px; line-height:1.5; text-align:left; }
+  .hub-hr{ border:none; border-top:1px solid var(--border-soft); margin:14px 0; }
+  .spoke{
+    background:var(--bg-panel); border:1px solid var(--border-soft); border-radius:11px;
+    padding:14px 16px; cursor:pointer; transition:border-color .15s, transform .15s;
+    position:relative; z-index:2; width:270px;
+  }
+  .spoke:hover{ border-color:var(--accent-dim); transform:translateY(-1px); }
+  .spoke-head{ display:flex; align-items:center; gap:7px; margin-bottom:7px; }
+  .spoke-icon{ font-size:14px; }
+  .spoke-title{ font-size:11.5px; font-weight:600; letter-spacing:0.02em; text-transform:uppercase; color:var(--text-dim); }
+  .spoke-item{ display:flex; align-items:flex-start; gap:6px; font-size:12px; color:var(--text); padding:2px 0; }
+  .spoke-item .dot{ color:var(--text-faint); }
+  .spoke-more{ font-size:10.5px; color:var(--accent); margin-top:5px; }
+  .pos-tl{ grid-column:1; grid-row:1; justify-self:end; }
+  .pos-tr{ grid-column:3; grid-row:1; justify-self:start; }
+  .pos-ml{ grid-column:1; grid-row:2; justify-self:end; }
+  .pos-mr{ grid-column:3; grid-row:2; justify-self:start; }
+  .pos-bl{ grid-column:1; grid-row:3; justify-self:end; }
+  .pos-br{ grid-column:3; grid-row:3; justify-self:start; }
+  svg.connectors{ position:absolute; inset:0; width:100%; height:100%; z-index:1; pointer-events:none; }
+  .doc-conn{ stroke:var(--border); stroke-width:1.3; stroke-dasharray:4,4; fill:none; }
+  .textview{
+    display:none; background:var(--bg-panel); border:1px solid var(--border-soft); border-radius:11px;
+    padding:24px; font-size:12.5px; line-height:1.7; color:var(--text-dim); font-family:'JetBrains Mono',monospace;
+    max-width:760px;
+  }
+  .textview.active{ display:block; }
+  .py-status-needs{
+    display:flex; align-items:center; gap:8px; padding:12px 16px; max-width:560px;
+    background:rgba(232,184,84,0.1); border:1px solid rgba(232,184,84,0.3); border-radius:9px;
+    font-size:13px; color:var(--warn); line-height:1.5;
+  }
+
+  .detail-overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,0.6); display:none;
+    align-items:center; justify-content:center; z-index:300; padding:40px;
+  }
+  .detail-overlay.open{ display:flex; }
+  .detail-panel{
+    background:var(--bg-panel); border:1px solid var(--border); border-radius:14px;
+    max-width:600px; width:100%; max-height:80vh; overflow-y:auto; padding:26px 28px;
+  }
+  .detail-close{ float:right; color:var(--text-faint); cursor:pointer; font-size:13px; }
+  .detail-title{ font-size:18px; font-weight:700; margin-bottom:4px; clear:both; }
+  .detail-sub{ font-size:11.5px; color:var(--text-faint); margin-bottom:16px; font-family:'JetBrains Mono',monospace; }
+  .detail-item{ font-size:13px; color:var(--text-dim); line-height:1.6; padding:9px 0; border-bottom:1px solid var(--border-soft); }
+  .detail-item:last-child{ border-bottom:none; }
+  .detail-item b{ color:var(--text); font-weight:600; }
+
   .py-suggestion{
     background:var(--accent-soft); border:1px solid var(--accent-dim); border-radius:10px;
     padding:14px 16px; margin-bottom:16px;
@@ -604,6 +678,8 @@
 </div>
 
 <div id="toast" style="position:fixed; bottom:26px; left:50%; transform:translateX(-50%) translateY(20px); background:#17181D; border:1px solid #2A2D33; color:#E7E8EA; padding:12px 18px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .25s, transform .25s; z-index:200; pointer-events:none;"></div>
+
+<div class="detail-overlay" id="detail-overlay" onclick="if(event.target===this) this.classList.remove('open')"></div>
 
 <script>
 let currentMode = 'python';
@@ -973,9 +1049,123 @@ function pyGoLevel(n){
   measurePyBase();
 }
 
+// Planning artifacts (DP11) — diagram-first per UI12. Only the PRD is real;
+// TDD is shown "not generated yet" honestly rather than faked, since
+// nothing in the product currently produces one.
+const docsData = [
+  { id:'prd', file:'PRD.md', title:'PRD', icon:'📋', status:'built', desc:"Given a plain-language intent, ARCHITEQ produces one complete, validated, atomic task breakdown — rendered as Python or an importable n8n workflow, without the user enumerating any step by hand.",
+    spokes:[
+      { icon:'🎯', title:'Problem', items:['Manual decomposition stops too early or drifts between attempts','No single tool renders both Python and n8n from one plan'],
+        detail:['Building a system from scratch requires breaking work down to individual parameters before implementation can start correctly.','People doing this manually either stop decomposing too early, or decompose inconsistently between attempts.','No single tool renders the same plan into both a runnable Python implementation and an importable n8n workflow.'] },
+      { icon:'🏁', title:'Goal', items:['Plain-English intent → complete, validated, atomic plan','Renders as real Python or a real n8n workflow'],
+        detail:['Given a plain-language intent, ARCHITEQ produces one complete, validated, atomic task breakdown, and renders it into either a Python implementation or an importable n8n workflow, without requiring the user to manually enumerate any step.'] },
+      { icon:'✅', title:'Requirements', items:['R1–R10 Intent & Decomposition','R11–R15 Output Rendering','R16–R19 Interface'], more:'+ R20-R23 →',
+        detail:['<b>R1–R10</b> Intent & Decomposition — domain resolution, atomicity, cross-cutting coverage','<b>R11–R15</b> Output Rendering — Python and n8n renderers, shared node/edge data','<b>R16–R19</b> Interface — two-screen structure, canvas states','<b>R20–R21</b> Governance — checklist grounding, C4 nesting','<b>R22–R23</b> Grounding Simulation — caching, refinement'] },
+      { icon:'🚫', title:'Non-Goals', items:["Doesn't execute code or deploy workflows",'No multi-user / team features'],
+        detail:['Does not execute generated Python code or deploy generated n8n workflows.','No output targets beyond Python and n8n in this version.','No multi-user collaboration, permissions, or team features.','No live connection to a running n8n instance — schemas are vendored, not fetched live.'] },
+      { icon:'🔗', title:'Dependencies', items:['Tool A diagram builder (confirmed, existing)','n8n GitHub node repo (confirmed, version pin needed)'],
+        detail:['Tool A hierarchical diagram builder — confirmed existing asset.',"n8n's public GitHub node-definition repository — confirmed available, version pin still needed."] },
+      { icon:'❓', title:'Open Questions', items:['OQ1 — checklist authoring process','OQ3 — n8n schema version pin'],
+        detail:['OQ1 — domain checklist authoring: hand-authored and locked, or app-drafted with one-time approval?','OQ2 — Claude Code autonomy in the Plan step.','OQ3 — which specific tagged n8n release to vendor.','OQ4 — output rendering as page vs. panel (already resolved to panel).'] }
+    ]
+  },
+  { id:'tdd', file:'TDD.md', title:'Tech Design Document', icon:'📐', status:'missing', desc:"Not generated yet — nothing in the product currently produces a Tech Design Document. This is the gap DP11 exists to close: the PRD exists, but stage 2 of the six-artifact sequence has no real output behind it yet." }
+];
+
+function openDocFile(id){
+  const doc = docsData.find(d=>d.id===id);
+  if(!doc) return;
+  pyGoLevel(3);
+  const el = document.getElementById('py-level-3');
+  if(doc.status !== 'built'){
+    el.innerHTML = `<div class="py-status-needs">⚠ ${doc.title} has not been generated for this project yet. Per DP11, this stage cannot be produced until the PRD it depends on is finalized and a generation step exists to create it.</div>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="doc-toggle-row">
+      <div class="view-toggle">
+        <div class="view-opt active" onclick="setDocView('diagram',this)">Diagram</div>
+        <div class="view-opt" onclick="setDocView('text',this)">Full text</div>
+      </div>
+    </div>
+    <div class="diagram" id="doc-diagram">
+      <svg class="connectors" id="doc-svg"></svg>
+      ${doc.spokes.map((s,i)=>`
+        <div class="spoke pos-${['tl','tr','ml','mr','bl','br'][i]}" onclick='openDocDetail(${i})'>
+          <div class="spoke-head"><span class="spoke-icon">${s.icon}</span><span class="spoke-title">${s.title}</span></div>
+          ${s.items.map(it=>`<div class="spoke-item"><span class="dot">·</span>${it}</div>`).join('')}
+          ${s.more ? `<div class="spoke-more">${s.more}</div>` : ''}
+        </div>`).join('')}
+      <div class="hub">
+        <div class="hub-icon">${doc.icon}</div>
+        <div class="hub-title">${doc.title}</div>
+        <div class="hub-sub">${doc.file}</div>
+        <hr class="hub-hr">
+        <div class="hub-desc">${doc.desc}</div>
+      </div>
+    </div>
+    <div class="textview" id="doc-text">Full ${doc.file} text would render here — same content, no diagram, one click away per UI12.</div>`;
+  window._activeDoc = doc;
+  measurePyBase();
+  setTimeout(drawDocConnectors, 30);
+}
+
+function setDocView(view, el){
+  el.parentElement.querySelectorAll('.view-opt').forEach(o=>o.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('doc-diagram').style.display = view==='diagram' ? 'grid' : 'none';
+  document.getElementById('doc-text').classList.toggle('active', view==='text');
+  if(view==='diagram') setTimeout(drawDocConnectors, 30);
+  measurePyBase();
+}
+
+function drawDocConnectors(){
+  const svg = document.getElementById('doc-svg');
+  if(!svg) return;
+  const container = svg.closest('.diagram');
+  const rect = container.getBoundingClientRect();
+  svg.setAttribute('viewBox', `0 0 ${rect.width} ${rect.height}`);
+  svg.innerHTML = '';
+  const hub = container.querySelector('.hub').getBoundingClientRect();
+  const hubCenter = { x: hub.left - rect.left + hub.width/2, y: hub.top - rect.top + hub.height/2 };
+  container.querySelectorAll('.spoke').forEach(spoke=>{
+    const sr = spoke.getBoundingClientRect();
+    const sx = sr.left - rect.left + (sr.left < hub.left ? sr.width : 0);
+    const sy = sr.top - rect.top + sr.height/2;
+    const hx = hubCenter.x + (sx < hubCenter.x ? -hub.width/2 : hub.width/2);
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    const midX = (sx+hx)/2;
+    path.setAttribute('d', `M${sx},${sy} C${midX},${sy} ${midX},${hubCenter.y} ${hx},${hubCenter.y}`);
+    path.setAttribute('class','doc-conn');
+    svg.appendChild(path);
+  });
+}
+
+function openDocDetail(idx){
+  const doc = window._activeDoc; if(!doc) return;
+  const s = doc.spokes[idx];
+  const el = document.getElementById('detail-overlay');
+  el.innerHTML = `<div class="detail-panel">
+    <span class="detail-close" onclick="document.getElementById('detail-overlay').classList.remove('open')">close ×</span>
+    <div class="detail-title">${s.title}</div>
+    <div class="detail-sub">${doc.file}</div>
+    ${s.detail.map(i=>`<div class="detail-item">${i}</div>`).join('')}
+  </div>`;
+  el.classList.add('open');
+}
+
 function renderPyLevel1(){
   const el = document.getElementById('py-level-1');
-  let html = `<div class="py-tree-node"><div class="py-folder-row">📁 ${folderData.name}</div><div class="py-children">`;
+  let html = `<div class="py-tree-node"><div class="py-folder-row">📁 docs/</div><div class="py-children">`;
+  docsData.forEach(doc=>{
+    html += `<div class="py-file-row" onclick="openDocFile('${doc.id}')">
+      <span class="py-file-icon">📄</span> ${doc.file}
+      ${doc.status==='built' ? '' : `<span style="color:var(--warn); font-weight:400; margin-left:6px; font-size:10.5px;">not generated yet</span>`}
+      <span class="chev">›</span>
+    </div>`;
+  });
+  html += `</div></div>
+  <div class="py-tree-node" style="margin-top:6px;"><div class="py-folder-row">📁 ${folderData.name}</div><div class="py-children">`;
   folderData.folders.forEach(folder=>{
     html += `<div class="py-folder-row" style="font-size:12.5px; margin-top:6px;">📁 ${folder.name}</div><div class="py-children">`;
     folder.files.forEach(f=>{
@@ -1315,8 +1505,9 @@ const n8nFlowChain = [
 ];
 const n8nFlowBranch = { from:'validate_file_type', to:'handle_unsupported_format', label:'unsupported format' };
 
-// Naming protocol (NT10): Verb + Object — Layer. Grounded in n8n community practice:
-// start with a verb, name descriptively, include the context/service — never leave a
+// Naming protocol (NT10): Verb + Object, real node type shown as a distinct second
+// label alongside it -- no stage/layer suffix (corrected by CR11/CR12). Grounded in
+// n8n community practice: start with a verb, name descriptively, never leave a
 // generic default name. See rules/principles/node-translation.md NT10.
 const nodeLayer = {
   define_source_scope:'Ingestion', collect_upload_source:'Ingestion', select_upload_source:'Ingestion',
@@ -1555,12 +1746,6 @@ function drawN8nFlow(){
   const nodesLayer = document.createElementNS(ns,'g'); nodesLayer.setAttribute('id','nodes-layer');
   svg.appendChild(stageLayer); svg.appendChild(edgesLayer); svg.appendChild(nodesLayer);
 
-  // Stage backgrounds — now trivial and structurally non-overlapping, since
-  // stageZones was computed as part of layout itself (stacked vertical
-  // bands), not derived after the fact from node positions. Rule 66's
-  // collision check ("if boundingBox(A) intersects boundingBox(B), the
-  // layout is invalid") is satisfied by construction: zones are stacked
-  // sequentially with cursorY, never computed independently per stage.
   const zoneWidth = Math.max(...Object.values(nodePositions).map(p=>p.x)) + tileSize + 60;
   Object.entries(stageZones).forEach(([stageName, zone])=>{
     const rect = document.createElementNS(ns,'rect');
@@ -1580,16 +1765,9 @@ function drawN8nFlow(){
     label.textContent = 'STAGE — ' + stageName.toUpperCase();
     stageLayer.appendChild(label);
   });
-  // Row-count debug info removed from production canvas (rules 17-18) — the
-  // 9-10 node cap remains enforced internally in computeDefaultPositions,
-  // it's just no longer rendered as visible text on the canvas itself.
 
-  const cornerR = 14; // one consistent corner radius, everywhere (rule 30 / doc2 rule "consistent corner radius")
+  const cornerR = 14;
 
-  // Rounds each interior vertex of an orthogonal waypoint path into a smooth
-  // quarter-turn using a quadratic curve, all at the same radius — this is
-  // the "rounded orthogonal routing" the spec requires in place of large
-  // sweeping Bézier arcs or sharp 90° elbows.
   function roundedPath(points){
     if(points.length < 2) return '';
     let d = `M${points[0].x},${points[0].y}`;
@@ -1608,26 +1786,18 @@ function drawN8nFlow(){
     return d;
   }
 
-  // Same-row adjacent nodes: a plain straight line — the simplest, strongest
-  // connection on the canvas, never curved unnecessarily (rule 3).
   function adjacentPath(x1,y1,x2,y2){
     return `M${x1},${y1} L${x2},${y2}`;
   }
 
   // Local branch: NOT a separate routing case. CR16 applies uniformly, no
   // branch exception -- a real n8n connection always enters a node's actual
-  // left input port; there's no such thing as a "top port" to route into.
-  // A branch is routed exactly like a cross-stage connection (exit the
-  // source's real output port, travel through a lane, enter the target's
-  // real left input port) just over a much shorter vertical distance, since
-  // the branch target sits close beneath its source. See crossPath below --
-  // branch routing calls it directly rather than duplicating the pattern.
+  // left input port; there's no such thing as a "top port." A branch is
+  // routed exactly like a cross-stage connection (exit the source's real
+  // output port, travel through a lane, enter the target's real left input
+  // port), just over a much shorter vertical distance -- crossPath is
+  // called directly for this route, not a separate top-entry function.
 
-  // Cross-stage / cross-row: exit the source's RIGHT port, drop into the
-  // routing lane (the whitespace between stages/rows), travel horizontally
-  // through the lane, then approach the target's normal LEFT input port —
-  // never its top. This is the corrected routing; entering via the top
-  // regardless of actual port semantics was the earlier defect.
   function crossPath(a, b, laneY){
     const sx = a.x+tileSize, sy = a.y+tileSize/2;
     const tx = b.x, ty = b.y+tileSize/2;
@@ -1666,9 +1836,6 @@ function drawN8nFlow(){
     p.setAttribute('d', d); p.setAttribute('class','edge'); p.setAttribute('data-edge', fromName+'>'+toName);
     p.style.stroke = `var(${color})`;
     p.style.strokeWidth = kind==='primary' ? '1.6' : '1.2';
-    // dash = routing behavior (displaced by layout), never "not executable";
-    // color/weight = semantic role. A dashed row/stage transition is still
-    // the exact same execution connection as an adjacent one (rule 22/28).
     p.setAttribute('stroke-dasharray', route==='elbow' ? '6,4' : '0');
     p.setAttribute('marker-end', `url(#${marker})`);
     edgesLayer.appendChild(p);
@@ -1683,8 +1850,6 @@ function drawN8nFlow(){
       edgesLayer.appendChild(dot);
     }
 
-    // connection data labels (the field name passed) are secondary
-    // information — muted by default, per the corrected rule
     const fromData = renderData[fromName];
     const portName = fromData && fromData.produces && fromData.produces[0];
     if(portName && kind==='primary'){
@@ -1721,7 +1886,7 @@ function drawN8nFlow(){
       color: '--accent',
       marker:'arrowhead', animate:true,
       route: sameRow ? 'curve' : 'elbow',
-      kind: 'primary' // every main-chain edge is primary, whether or not it crosses a row
+      kind: 'primary'
     });
   }
   n8nEdgeList.push({from:n8nFlowBranch.from, to:n8nFlowBranch.to, color:'--warn', marker:'arrowhead-warn', animate:false, label:n8nFlowBranch.label, route:'branch', kind:'branch'});
@@ -1737,9 +1902,6 @@ function drawN8nFlow(){
     r.setAttribute('width',tileSize); r.setAttribute('height',tileSize); r.setAttribute('rx',12);
     g.appendChild(r);
 
-    // Compact layer indicator — replaces the old row-based background band,
-    // since rows no longer align with layers (CR3). Grouping shown per-node,
-    // never repeated as text on the label itself (CR12).
     const layerDot = document.createElementNS(ns,'circle');
     layerDot.setAttribute('cx', 8); layerDot.setAttribute('cy', 8); layerDot.setAttribute('r', 3.5);
     layerDot.setAttribute('fill', `var(${layerColor[nodeLayer[name]] || '--text-faint'})`);
@@ -1757,7 +1919,7 @@ function drawN8nFlow(){
     lines.forEach((line,i)=>{
       const tsp = document.createElementNS(ns,'tspan');
       tsp.setAttribute('x', tileSize/2); tsp.setAttribute('dy', i===0 ? 0 : 13);
-      if(i===2) tsp.setAttribute('fill','var(--warn)'); // the separate warning line, never the type line
+      if(i===2) tsp.setAttribute('fill','var(--warn)');
       tsp.textContent = line;
       lbl.appendChild(tsp);
     });
@@ -1776,7 +1938,6 @@ function drawN8nFlow(){
 
     g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
 
-    // click vs drag disambiguation, and drag updates position while keeping connections intact
     let dragging=false, startX=0, startY=0, moved=false, origX=pos.x, origY=pos.y;
     g.addEventListener('mousedown', (e)=>{
       dragging=true; moved=false; startX=e.clientX; startY=e.clientY;
@@ -1836,8 +1997,8 @@ function toggleComplete(el){
 }
 function closePanel(){ document.getElementById('detail-panel').classList.remove('open'); currentAtom=null; clearTimeout(panelIdleTimer); }
 
-let nodeConfigured = {}; // name -> selected suggestion index, once chosen
-let nodeParamValues = {}; // name -> {paramKey: liveValue}, editable by the person
+let nodeConfigured = {};
+let nodeParamValues = {};
 
 function hasSuggestion(name){
   const d = renderData[name];
@@ -1857,14 +2018,10 @@ function getActiveN8n(name){
   if(!d) return null;
   if(hasSuggestion(name)){
     if(nodeConfigured.hasOwnProperty(name)) return d.suggestion.options[nodeConfigured[name]].n8n;
-    return null; // not configured yet
+    return null;
   }
   return d.n8n;
 }
-// For DISPLAY: always resolve to a real node type (default option if not yet
-// confirmed), so the type label is never blank or replaced by warning text.
-// isComplete() / getActiveN8n() remain the source of truth for whether the
-// node is actually functionally ready — this is display-only (rule 49).
 function getTentativeN8n(name){
   const active = getActiveN8n(name);
   if(active) return active;
@@ -1888,8 +2045,6 @@ const requiredParamKeys = {
   'HTTP Request':['url','credential'],
   'Notion':['resource','credential']
 };
-// Which required params the PERSON must actually type or paste in, rather than
-// values the system already determined. These start empty on purpose.
 const userInputKeys = {
   'Google Drive':['folderId','credential'],
   'Notion':['credential'],
@@ -1908,7 +2063,6 @@ function renderDetail(name){
   const d = renderData[name];
   if(!d) return;
 
-  // status banner
   const banner = document.getElementById('dp-status-banner');
   if(isComplete(name)){
     banner.innerHTML = `<div class="dp-status-ready">✓ Ready — all required parameters set</div>`;
@@ -1916,7 +2070,6 @@ function renderDetail(name){
     banner.innerHTML = `<div class="dp-status-needs">⚠ Needs configuration before this can send data forward</div>`;
   }
 
-  // suggestion (only shown while unconfigured)
   const sugSection = document.getElementById('dp-suggestion-section');
   if(hasSuggestion(name) && !nodeConfigured.hasOwnProperty(name)){
     sugSection.style.display = 'block';
@@ -1938,7 +2091,6 @@ function renderDetail(name){
     sugSection.style.display = 'none';
   }
 
-  // parameters
   const paramsEl = document.getElementById('dp-params');
   const n = getActiveN8n(name);
   if(!n){
@@ -2133,7 +2285,6 @@ function doExport(){
   setTimeout(()=>{ t.style.opacity=0; t.style.transform='translateX(-50%) translateY(20px)'; }, 2600);
 }
 
-// ---- Minimal SVG tree renderer: Layer -> Sub-task -> Atomic step ----
 const tree = {
   name:'Ingestion', status:'done', x:60, y:20,
   children:[
@@ -2185,7 +2336,6 @@ function drawTree(staged){
     svg.appendChild(p);
   }
 
-  // Layer node
   const layerW=150, layerH=34;
   const lg = rect(20,20,layerW,layerH,'node-layer'); svg.appendChild(lg);
   label(lg, 36, 20+layerH/2+4, tree.name);

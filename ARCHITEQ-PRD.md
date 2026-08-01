@@ -57,7 +57,7 @@ Given a plain-language intent ("I want to develop a ___"), ARCHITEQ produces one
 - **R21.** No layer or nesting level is added to a tree beyond what the C4-derived structure (Layer, Sub-task, Atomic step, Variable) defines, regardless of domain. `Amended` by `ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md`: these are category names, not a fixed depth ceiling. A node recurses to any depth within its category until it independently passes the Atomicity Test (P1) or Attribute-leaf test (CD4); a node left unsplit purely because a level-count target was reached, while still failing that test, is a Validator violation.
 
 ### Component Tree (Dual Tree Architecture)
-Per `ARCHITEQ-Dual-Tree-Architecture.md`, grounded in `rules/principles/component-decomposition.md` (CD1-CD10). The Component Tree is a second, structural projection of the same domain data the Workflow Tree (R1-R10) already produces — not a replacement for it.
+Per `ARCHITEQ-Dual-Tree-Architecture.md`, grounded in `rules/principles/component-decomposition.md` (CD1-CD11). The Component Tree is a second, structural projection of the same domain data the Workflow Tree (R1-R10) already produces — not a replacement for it.
 - **R24.** Given the project's PRD, the system extracts a requirements list relevant to the resolved domain, each item traceable to a specific PRD requirement ID (Stage -3, Requirements Engineering).
 - **R25.** The system groups extracted requirements into discrete capabilities; every capability carries a `traced_requirements[]` field and is rejected if empty (Stage -2, Capability Identification; CD1).
 - **R26.** The system decomposes each capability into the components required to realize it, breadth-first across all components of a capability before any one component's attributes are enumerated; every component carries a `realizes_capability` field and is rejected if unset (Stage -1, Functional Decomposition; CD2, CD3).
@@ -83,6 +83,18 @@ Per `rules/principles/component-decomposition.md` CD11.
   Derived entirely from existing tree fields at render time, never a separately authored or
   maintained document.
 
+### Planning Artifacts
+Per `~/.claude/frameworks/universal-prd-framework.md` Section 2 (DP11) and `rules/principles/ui-design.md` UI12.
+- **R38.** The system renders a `docs/` folder in the folder scaffold listing all six of
+  DP11's planning artifacts. Opening an artifact whose content already exists renders it as
+  a hub-and-spoke diagram by default (one central card, up to 6 satellite cards), sourced
+  from that artifact's real content, never placeholder or fabricated text.
+- **R39.** Each rendered planning-artifact diagram has a text-view toggle showing the full
+  underlying document; the full text is one interaction away, never the default first view.
+- **R40.** An artifact with no real generator behind it yet (see OQ6) renders an explicit
+  "not generated yet" state naming the specific blocking dependency, rather than fabricated
+  or placeholder content — extends WD2 (No Silent Failure) to planning artifacts.
+
 ## 4a. Modules
 
 Requirements are grouped into modules so Plan/Build/Test/Commit cycles and `PROGRESS.md` can track status at a buildable grain, not just as one long requirement list. Module order follows the dependency order in `ARCHITEQ-Build-Directive.md` Section 6 — each module is buildable once the ones before it are committed.
@@ -99,6 +111,7 @@ Requirements are grouped into modules so Plan/Build/Test/Commit cycles and `PROG
 - **Module 10: UI Shell (Home/Canvas, Detail Panel, Persistent Input)** — R16, R17, R18, R19
 - **Module 5a: Grounding Simulation (Stage 2.5)** — R22, R23. Depends on Module 5. Omitted from the original module list when R22/R23 were added; listed here to close that gap.
 - **Module 11: Dual Tree Architecture (Component Tree)** — R24 to R37. Depends on Modules 1 to 10 (reconciles against the Workflow Tree per R29). Rated Complex; built as a sequence of sub-plans per `~/.claude/CLAUDE.md`'s Development Loop, not as one item.
+- **Module 12: Planning Artifact Diagram Engine** — R38 to R40. Depends on the PRD (this document) existing as real content to render (already true). Partially buildable now: the `docs/` folder, hub-and-spoke diagram rendering, and R40's honest-unavailable state are real, unblocked work; actually generating TDD/App Flow/Design Brief/Backend Schema content is blocked on OQ6.
 
 Each module is the unit `PROGRESS.md` tracks. A module is `[x]` complete only when every requirement listed under it has passed Test and been Committed.
 
@@ -135,3 +148,4 @@ Each module is the unit `PROGRESS.md` tracks. A module is `[x]` complete only wh
 3. **n8n schema version pin.** `Superseded`, not resolved as originally framed. No tagged release is vendored; see the Constraints and Dependencies sections above for what actually shipped (`rules/n8n_node_schemas.json`, hand-curated) and why a full pinned release turned out not to be mechanically feasible with this stack.
 4. **Output rendering as page vs. panel, confirmed.** The UI directive already resolved this to "panel, not page" (R16 to R19 reflect that), but it is listed here as a reminder that this was a judgment call made under the collapse-stops principle, not an explicit prior user decision, in case it needs revisiting once the canvas is actually in front of the user.
 5. **Component Tree PRD scope, not yet reflected upstream.** `ARCHITEQ-Dual-Tree-Architecture.md` and `ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md` were adopted as addenda before this PRD had a Module 11. `Resolved` in this revision: R24-R34 and Module 11 added above; the Component Tree is confirmed real, grounded, active scope per `RULES-INDEX.md` and `rules/principles/component-decomposition.md`, not something the original Module 1-10 list superseded.
+6. **No real generator exists for 4 of DP11's 6 planning artifacts.** Only the PRD (Universal PRD Framework) and Engineering Plan (Decomposition Engine, Section 4a plus `.agent/plans/`) have real content-generating machinery behind them today. TDD, App Flow, Design Brief, and Backend Schema have no generator — for this project specifically, their content was hand-authored directly (`ARCHITEQ-TDD.md` etc.), not produced by any part of ARCHITEQ itself. Blocks: R38 can only render these as R40's honest "not generated yet" state until this is resolved. Not resolved here — deliberately left open rather than guessed at, since it's a real, undecided scope question (is a generator for these four artifacts even in scope for ARCHITEQ to build, or are they permanently hand-authored inputs the same way the PRD's own Problem/Goal sections are human-written before Stage -3 ever runs on them?).

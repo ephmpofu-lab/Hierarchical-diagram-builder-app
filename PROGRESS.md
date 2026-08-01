@@ -47,6 +47,9 @@ A module moves to `[x]` only when every requirement listed under it in the PRD h
 ### Module 11: Dual Tree Architecture (Component Tree)
 `[ ]` — R24 to R37. See `ARCHITEQ-Dual-Tree-Architecture.md` and `ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md`. Grounded and confirmed in scope by `RULES-INDEX.md` and `rules/principles/component-decomposition.md` (CD1-CD11). CD10 (R32/R33) requires that any architecture ARCHITEQ generates -- Python or n8n -- carries its own TDD/App-Flow/Design-Brief-equivalent documentation before freezing, elaborating DP11's own unified six-artifact sequence; CD11 (R37) additionally requires a Roadmap+Checklist render for that same generated architecture, restating DP13 at the output layer, not just at ARCHITEQ's own build process. 10c (Python folder/file/function browser, part of Module 10's UI rebuild) already satisfies UI12's requirement for the Engineering Plan artifact specifically. Not started.
 
+### Module 12: Planning Artifact Diagram Engine
+`[ ]` — R38 to R40. Renders DP11's six planning artifacts as a `docs/` folder, hub-and-spoke diagram by default per UI12, text view one interaction away. Partially blocked: OQ6 (no real generator exists yet for TDD/App Flow/Design Brief/Backend Schema) means R38 renders those four as R40's honest "not generated yet" state for now; the PRD (real generator: Universal PRD Framework) and Engineering Plan (real generator: Decomposition Engine, already Module 12's sibling requirement satisfied via 10c) render for real today. Not started.
+
 ## Open Blockers
 Carried from `ARCHITEQ-PRD.md` Section 8.
 
