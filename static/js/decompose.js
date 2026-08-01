@@ -46,6 +46,9 @@ let state = {
   // mode's folder/file/function browser position (Plan 10c) + docs/ artifact (Plan 12a) --
   // reset whenever domain changes
   selectedNodeId: null, // drives the slide-in detail panel, canvas-state only
+  n8nNodeConfig: {}, // step_id -> {paramName: value}, client-side/session-scoped only
+  // (10b-iii) -- confirmed configuration values, merged into effective parameters at
+  // badge/download time, never persisted server-side; reset whenever domain changes
   refining: false,
   submitting: false,
   error: null,
@@ -175,7 +178,7 @@ async function submitRefine(instruction) {
     // render caches / open detail panel since the tree itself just changed underneath them.
     state = {
       ...state, refining: false, tree: result.tree,
-      pythonRender: null, n8nRender: null, mode: null, selectedNodeId: null,
+      pythonRender: null, n8nRender: null, mode: null, selectedNodeId: null, n8nNodeConfig: {},
     };
   } finally {
     renderBoard();
@@ -544,8 +547,9 @@ function renderNodeDetailPanel() {
   } else if (state.mode === "n8n" && state.n8nRender) {
     const mapped = state.n8nRender.nodes.find((n) => n.step_id === node.id);
     if (mapped) {
-      const snippet = JSON.stringify({ type: mapped.type, parameters: mapped.parameters }, null, 2);
+      const snippet = JSON.stringify({ type: mapped.type, parameters: n8nEffectiveParameters(mapped) }, null, 2);
       drawer.appendChild(renderDrawerSnippet("n8n node", snippet));
+      drawer.appendChild(renderN8nConfigureSection(mapped));
     }
   }
 
@@ -565,6 +569,89 @@ function renderDrawerSnippet(label, code) {
   const container = document.createElement("div");
   container.appendChild(heading);
   container.appendChild(pre);
+  return container;
+}
+
+// ---- Configuration mechanism (10b-iii): chip selection -> confirm -> collapse ----
+
+function renderN8nConfigureSection(mapped) {
+  const container = document.createElement("div");
+  const effective = n8nEffectiveParameters(mapped);
+  const emptyKeys = Object.keys(mapped.parameters || {}).filter((key) => effective[key] === "");
+  if (emptyKeys.length === 0) return container; // already fully configured -- nothing to show
+
+  const heading = document.createElement("div");
+  heading.className = "reasoning-section-label";
+  heading.textContent = "Configure";
+  container.appendChild(heading);
+
+  const draft = {}; // local working copy for this open drawer, keyed by param name
+  let saveBtn;
+
+  function updateSaveState() {
+    const allFilled = emptyKeys.every((key) => (draft[key] || "").trim().length > 0);
+    saveBtn.disabled = !allFilled;
+  }
+
+  for (const key of emptyKeys) {
+    draft[key] = "";
+    const row = document.createElement("div");
+    row.className = "decompose-n8n-config-row";
+
+    const label = document.createElement("div");
+    label.className = "decompose-n8n-config-label";
+    label.textContent = key;
+    row.appendChild(label);
+
+    const options = (mapped.parameter_options || {})[key];
+    if (options && options.length > 0) {
+      const chipWrap = document.createElement("div");
+      chipWrap.className = "decompose-n8n-config-chips";
+      for (const opt of options) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "decompose-n8n-config-chip";
+        chip.textContent = opt;
+        chip.addEventListener("click", () => {
+          draft[key] = opt;
+          for (const c of chipWrap.children) c.classList.remove("selected");
+          chip.classList.add("selected");
+          updateSaveState();
+        });
+        chipWrap.appendChild(chip);
+      }
+      row.appendChild(chipWrap);
+    } else {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "decompose-n8n-config-input";
+      input.placeholder = `Enter ${key}…`;
+      input.addEventListener("input", () => {
+        draft[key] = input.value;
+        updateSaveState();
+      });
+      row.appendChild(input);
+    }
+
+    container.appendChild(row);
+  }
+
+  saveBtn = document.createElement("button");
+  saveBtn.className = "btn btn-small decompose-n8n-config-save";
+  saveBtn.textContent = "Save configuration";
+  saveBtn.disabled = true;
+  saveBtn.addEventListener("click", () => {
+    state = {
+      ...state,
+      n8nNodeConfig: {
+        ...state.n8nNodeConfig,
+        [mapped.step_id]: { ...state.n8nNodeConfig[mapped.step_id], ...draft },
+      },
+    };
+    renderBoard();
+  });
+  container.appendChild(saveBtn);
+
   return container;
 }
 
@@ -1181,13 +1268,21 @@ function _n8nBuildWaypoints(classification, outPort, inPort) {
   }
 }
 
+function n8nEffectiveParameters(node) {
+  // 10b-iii -- merges any client-side/session-scoped confirmed config (state.n8nNodeConfig)
+  // over the node's own real parameters. Never persisted server-side; lost on reload,
+  // matching this app's standing "stateless per-request execution" scope decision.
+  const confirmed = state.n8nNodeConfig[node.step_id];
+  return confirmed ? { ...node.parameters, ...confirmed } : node.parameters;
+}
+
 function n8nNeedsConfiguration(node) {
   // A node needs configuration when one of its own real n8n parameters is still sitting at
   // the schema's own empty placeholder (_build_parameters, node_mapper.py, never overlaid a
-  // real declared Variable.default onto it). Nested/non-string values (Set's assignments,
-  // If's conditions) are structural, not "needs a value" in this same sense, and are left
-  // alone deliberately.
-  return Object.values(node.parameters || {}).some((v) => v === "");
+  // real declared Variable.default onto it), and no confirmed config has filled it in yet.
+  // Nested/non-string values (Set's assignments, If's conditions) are structural, not
+  // "needs a value" in this same sense, and are left alone deliberately.
+  return Object.values(n8nEffectiveParameters(node) || {}).some((v) => v === "");
 }
 
 function renderN8nDiagram(workflow) {
@@ -1484,7 +1579,10 @@ function hideN8nHoverPayload() {
 }
 
 function downloadWorkflowJson(workflow, domain) {
-  const exportable = { name: workflow.name, nodes: workflow.nodes, connections: workflow.connections };
+  // 10b-iii: any confirmed configuration is a real effect on the exported file, not
+  // cosmetic -- merged in here, the one place the download actually gets built.
+  const nodesWithConfig = workflow.nodes.map((n) => ({ ...n, parameters: n8nEffectiveParameters(n) }));
+  const exportable = { name: workflow.name, nodes: nodesWithConfig, connections: workflow.connections };
   const blob = new Blob([JSON.stringify(exportable, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -1516,7 +1614,7 @@ async function selectMode(mode) {
 async function selectDomain(domain) {
   state = {
     ...state, view: "canvas", domain, tree: null, error: null,
-    mode: null, pythonRender: null, n8nRender: null, selectedNodeId: null,
+    mode: null, pythonRender: null, n8nRender: null, selectedNodeId: null, n8nNodeConfig: {},
     pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null, docId: null },
   };
   renderBoard();

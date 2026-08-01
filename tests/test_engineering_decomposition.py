@@ -1553,6 +1553,22 @@ def test_map_tree_disambiguates_duplicate_labels():
     assert len(names) == len(set(names))  # every name still unique on the canvas
 
 
+def test_map_tree_carries_real_parameter_options_for_http_request():
+    tree = _valid_tree()
+    tree.nodes["a1"].label = "Call retrieval API"  # matches HTTP Request
+    nodes, _ = node_mapper.map_tree(tree)
+    node = next(n for n in nodes if n.step_id == "a1")
+    assert node.parameter_options["method"] == ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+
+
+def test_map_tree_parameter_options_empty_for_schema_with_none_declared():
+    tree = _valid_tree()
+    tree.nodes["a2"].label = "Store chunks in database"  # matches Postgres, no parameter_options
+    nodes, _ = node_mapper.map_tree(tree)
+    node = next(n for n in nodes if n.step_id == "a2")
+    assert node.parameter_options == {}
+
+
 def test_export_workflow_wraps_mapped_nodes_and_connections():
     workflow = export_workflow(_valid_tree())
     assert workflow.name == TEST_DOMAIN

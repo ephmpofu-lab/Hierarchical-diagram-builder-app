@@ -75,4 +75,4 @@ Once this lands, **Module 10a (Canvas Foundation) is fully complete** (10a-i thr
   hand); synthetic middle-mouse drag (500,400) -> (560,440) confirmed the translate shifted
   by exactly the drag delta (60, 40) on top of the zoom's translate; zero JS console errors;
   screenshot confirms the diagram visibly shifted/scaled.
-- [ ] Committed
+- [x] Committed

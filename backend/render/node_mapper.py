@@ -202,6 +202,7 @@ def map_tree(tree: DomainTaskTree) -> Tuple[List[N8nNode], Dict[str, Any]]:
         nodes.append(N8nNode(
             step_id=step.id, name=name, type=schema["type"], type_version=schema["type_version"],
             position=position, parameters=_build_parameters(step, schema),
+            parameter_options=schema.get("parameter_options", {}),
         ))
 
     connections: Dict[str, Any] = {}

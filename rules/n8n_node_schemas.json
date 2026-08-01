@@ -6,7 +6,9 @@
       "type_version": 4.2,
       "display_name": "HTTP Request",
       "match_keywords": ["api", "request", "call", "fetch", "http", "endpoint", "invoke"],
-      "default_parameters": {"method": "GET", "url": ""}
+      "default_parameters": {"method": "GET", "url": ""},
+      "parameter_options": {"method": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]},
+      "_verified_options": "n8n's HTTP Request node Method dropdown -- well-established, spot-check against a running instance before import per this file's own top-level disclaimer"
     },
     {
       "type": "n8n-nodes-base.set",
@@ -34,7 +36,9 @@
       "type_version": 2.1,
       "display_name": "Webhook",
       "match_keywords": ["receive", "webhook", "trigger", "listen", "incoming", "intake"],
-      "default_parameters": {"httpMethod": "POST", "path": ""}
+      "default_parameters": {"httpMethod": "POST", "path": ""},
+      "parameter_options": {"httpMethod": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"]},
+      "_verified_options": "n8n's Webhook node Method dropdown -- well-established, spot-check against a running instance before import per this file's own top-level disclaimer"
     },
     {
       "type": "n8n-nodes-base.postgres",

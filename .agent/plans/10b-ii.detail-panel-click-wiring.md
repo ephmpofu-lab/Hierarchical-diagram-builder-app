@@ -45,4 +45,4 @@ One commit: "Wire n8n canvas node clicks to the existing slide-in detail panel (
   group` class added for `cursor: pointer` styling.
 - [x] Tested — standalone Playwright harness: clicking a node's group transitions
   `state.selectedNodeId` from `null` to that node's real `step_id`, zero JS errors.
-- [ ] Committed
+- [x] Committed

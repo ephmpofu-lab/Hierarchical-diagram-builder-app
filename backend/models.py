@@ -923,6 +923,10 @@ class N8nNode(BaseModel):
     type_version: float
     position: List[float] = Field(default_factory=lambda: [0.0, 0.0])
     parameters: Dict[str, Any] = Field(default_factory=dict)
+    parameter_options: Dict[str, List[str]] = Field(default_factory=dict)  # 10b-iii --
+    # real, doc-verified option lists for parameters that have one (rules/
+    # n8n_node_schemas.json's own `parameter_options`), copied verbatim from the matched
+    # schema; empty for a parameter/schema with no known finite option set -- never invented
 
 
 class N8nStageZone(BaseModel):
