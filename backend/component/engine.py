@@ -260,3 +260,53 @@ def check_tree_reconciliation(attributes: List[Attribute], tree: DomainTaskTree)
         if canon not in attr_canon:
             violations.append(f"Workflow Tree variable '{original}' has no corresponding Component attribute")
     return violations
+
+
+# ============================================================================
+# Completion Tracking (R34-R36, CD9 -- the 100% Rule). A shared rollup predicate applied to
+# two structurally different trees: the Workflow Tree already has a real DomainTaskTree
+# object to walk; the Component Tree only has flat lists linked by label strings so far (no
+# unified tree object exists yet -- a future orchestrator would need to build one before
+# this could be simplified to one shared walker).
+# ============================================================================
+
+
+def _rollup_status(child_statuses: List[str]) -> str:
+    """CD9's own predicate: all children "[x]" -> "[x]"; all children "[ ]" -> "[ ]";
+    otherwise "[-]". A non-leaf with no children (shouldn't happen in a real tree) defaults
+    to "[ ]" rather than crashing."""
+    if not child_statuses:
+        return "[ ]"
+    if all(s == "[x]" for s in child_statuses):
+        return "[x]"
+    if all(s == "[ ]" for s in child_statuses):
+        return "[ ]"
+    return "[-]"
+
+
+def compute_workflow_tree_rollup(tree: DomainTaskTree) -> None:
+    """R34-R36/CD9 for the Workflow Tree -- mutates tree.nodes[*].status in place. Atomic
+    step status is user-set and left untouched; Sub-task and Layer status are always
+    derived from their children, processed bottom-up (Sub-task before Layer, since a
+    Layer's rollup depends on its Sub-tasks' already-computed status)."""
+    for level in ("Sub-task", "Layer"):
+        for node in tree.nodes.values():
+            if node.level != level:
+                continue
+            child_statuses = [tree.nodes[cid].status for cid in node.children if cid in tree.nodes]
+            node.status = _rollup_status(child_statuses)
+
+
+def compute_component_tree_rollup(
+    capabilities: List[Capability], components: List[Component], attributes: List[Attribute]
+) -> None:
+    """R34-R36/CD9 for the Component Tree -- mutates status on `components` and
+    `capabilities` in place, using the same label-string linkage render_component_tree
+    (11f) already established. Attribute status is user-set and left untouched (the true
+    leaf)."""
+    for component in components:
+        attrs = [a for a in attributes if a.component_label == component.label]
+        component.status = _rollup_status([a.status for a in attrs])
+    for capability in capabilities:
+        comps = [c for c in components if c.realizes_capability == capability.label]
+        capability.status = _rollup_status([c.status for c in comps])

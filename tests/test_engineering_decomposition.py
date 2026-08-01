@@ -1177,6 +1177,64 @@ def test_check_no_shared_attributes_passes_with_no_overlap():
     assert component_engine.check_no_shared_attributes(attrs) == []
 
 
+# ---- Module 11 -- Completion Tracking (11i, R34-R36/CD9) ----
+
+def test_rollup_status_all_combinations():
+    assert component_engine._rollup_status(["[x]", "[x]"]) == "[x]"
+    assert component_engine._rollup_status(["[ ]", "[ ]"]) == "[ ]"
+    assert component_engine._rollup_status(["[x]", "[ ]"]) == "[-]"
+    assert component_engine._rollup_status(["[x]", "[-]"]) == "[-]"
+    assert component_engine._rollup_status([]) == "[ ]"
+
+
+def test_compute_workflow_tree_rollup_bottom_up():
+    tree = DomainTaskTree(domain="rag", version=1, root_ids=["L1", "L2"], nodes={
+        "L1": TaskTreeNode(id="L1", label="Ingestion", level="Layer", children=["S1"]),
+        "S1": TaskTreeNode(id="S1", label="Document Ingestion", level="Sub-task", parent_id="L1", children=["A1", "A2"]),
+        "A1": TaskTreeNode(id="A1", label="Select Upload Source", level="Atomic step", parent_id="S1", status="[x]"),
+        "A2": TaskTreeNode(id="A2", label="Validate File Type", level="Atomic step", parent_id="S1", status="[x]"),
+        "L2": TaskTreeNode(id="L2", label="Preprocessing", level="Layer", children=["S2"]),
+        "S2": TaskTreeNode(id="S2", label="Text Processing", level="Sub-task", parent_id="L2", children=["A3", "A4"]),
+        "A3": TaskTreeNode(id="A3", label="Parse Document Text", level="Atomic step", parent_id="S2", status="[x]"),
+        "A4": TaskTreeNode(id="A4", label="Normalize Document Text", level="Atomic step", parent_id="S2", status="[ ]"),
+    })
+
+    component_engine.compute_workflow_tree_rollup(tree)
+
+    assert tree.nodes["S1"].status == "[x]"  # both A1, A2 are [x]
+    assert tree.nodes["L1"].status == "[x]"  # its only Sub-task (S1) is [x]
+    assert tree.nodes["S2"].status == "[-]"  # A3 [x], A4 [ ] -- mixed
+    assert tree.nodes["L2"].status == "[-]"  # rolls up from S2's own [-]
+
+
+def test_compute_component_tree_rollup():
+    capabilities = [
+        Capability(label="Intent Resolution", traced_requirements=["R1"], domain="rag"),
+        Capability(label="Document Ingestion", traced_requirements=["R6"], domain="rag"),
+    ]
+    components = [
+        Component(label="Resolver", realizes_capability="Intent Resolution", domain="rag"),
+        Component(label="Upload Source", realizes_capability="Document Ingestion", domain="rag"),
+        Component(label="File Validator", realizes_capability="Document Ingestion", domain="rag"),
+    ]
+    attributes = [
+        Attribute(name="Confidence Threshold", type="float", component_label="Resolver", domain="rag", status="[x]"),
+        Attribute(name="Max File Size", type="integer", component_label="Upload Source", domain="rag", status="[x]"),
+        Attribute(name="Timeout", type="integer", component_label="File Validator", domain="rag", status="[ ]"),
+    ]
+
+    component_engine.compute_component_tree_rollup(capabilities, components, attributes)
+
+    by_label = {c.label: c.status for c in components}
+    assert by_label["Resolver"] == "[x]"
+    assert by_label["Upload Source"] == "[x]"
+    assert by_label["File Validator"] == "[ ]"
+
+    cap_by_label = {c.label: c.status for c in capabilities}
+    assert cap_by_label["Intent Resolution"] == "[x]"  # its only component is [x]
+    assert cap_by_label["Document Ingestion"] == "[-]"  # one [x] component, one [ ] component
+
+
 # ---- Module 11 -- Tree Reconciliation (11e, R29/CD6) ----
 
 def _reconciliation_tree():

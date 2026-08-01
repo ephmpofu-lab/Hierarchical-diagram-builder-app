@@ -807,6 +807,10 @@ class TaskTreeNode(BaseModel):
     # rule onto a genuinely rule-free step would be inventing content; only checked at the
     # prompt level (Stage 3 asks for real constraints where they genuinely exist)
     notes: str = ""
+    status: str = "[ ]"  # R34-R36/CD9, the 100% Rule -- "[ ]" | "[-]" | "[x]". User-settable
+    # only on Atomic step (leaf) nodes; Sub-task/Layer status is always derived from
+    # children by compute_workflow_tree_rollup (backend/component/engine.py), never
+    # directly writable
 
 
 class DomainTaskTree(BaseModel):
@@ -1174,12 +1178,14 @@ class Capability(BaseModel):
     label: str
     traced_requirements: List[str] = Field(default_factory=list)
     domain: str
+    status: str = "[ ]"  # R34-R36/CD9 -- always derived from its Components, never user-set
 
 
 class Component(BaseModel):
     label: str
     realizes_capability: str
     domain: str
+    status: str = "[ ]"  # R34-R36/CD9 -- always derived from its Attributes, never user-set
 
 
 class Attribute(BaseModel):
@@ -1187,6 +1193,8 @@ class Attribute(BaseModel):
     type: str
     component_label: str
     domain: str
+    status: str = "[ ]"  # R34-R36/CD9 -- the true leaf; the only one of these four models
+    # where status is user-settable
 
 
 class RenderedComponentModule(BaseModel):
