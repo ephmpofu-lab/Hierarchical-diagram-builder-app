@@ -1147,6 +1147,27 @@ def test_check_no_shared_attributes_flags_overlap():
     assert "Upload Source" in violations[0] and "File Validator" in violations[0]
 
 
+def test_check_attribute_leaf_passes_when_all_names_are_leaves():
+    attrs = [
+        Attribute(name="Max File Size", type="integer", component_label="Upload Source", domain="rag"),
+        Attribute(name="Accepted Formats", type="list", component_label="Upload Source", domain="rag"),
+    ]
+
+    assert component_engine.check_attribute_leaf(attrs) == []
+
+
+def test_check_attribute_leaf_flags_still_compound_name():
+    attrs = [
+        Attribute(name="Max File Size", type="integer", component_label="Upload Source", domain="rag"),
+        Attribute(name="Batch Size and Overlap", type="integer", component_label="Chunker", domain="rag"),
+    ]
+
+    violations = component_engine.check_attribute_leaf(attrs)
+
+    assert len(violations) == 1
+    assert "Batch Size and Overlap" in violations[0] and "Chunker" in violations[0]
+
+
 def test_check_no_shared_attributes_passes_with_no_overlap():
     attrs = [
         Attribute(name="Max File Size", type="integer", component_label="Upload Source", domain="rag"),

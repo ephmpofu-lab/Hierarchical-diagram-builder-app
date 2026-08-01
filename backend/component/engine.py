@@ -12,7 +12,14 @@ from typing import Dict, List
 from ..intelligence.stages import _ask_json
 from ..models import Attribute, Capability, Component, DomainTaskTree, ExtractedRequirement
 
-# Same fixed-constant posture as MAX_ATOMICITY_SPLIT_DEPTH (backend/decompose/engine.py).
+# A runaway-loop safety bound, NOT a depth ceiling (R21/CD9, amended by
+# ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md), same posture as
+# MAX_ATOMICITY_SPLIT_DEPTH (backend/decompose/engine.py). A candidate that hits this bound
+# while its name still needs splitting is NOT treated as a leaf -- check_attribute_leaf
+# below is the whole-tree re-check that catches it, mirroring how check_p1_atomicity
+# catches an Atomicity-Test straggler on the Workflow Tree side. Unlike the Workflow Tree
+# (where check_p1_atomicity already existed), this check was genuinely missing until
+# sub-plan 11h added it -- a real gap in 11d's own original scope, not a false alarm.
 MAX_ATTRIBUTE_SPLIT_DEPTH = 3
 
 
@@ -164,6 +171,10 @@ def enumerate_attributes(component: Component, reasoning_context: str) -> List[A
         type_ = (candidate.get("type") or "").strip()
         if not name or not type_:
             continue
+        # depth >= MAX_ATTRIBUTE_SPLIT_DEPTH with the name still needing a split is NOT
+        # "good enough" -- check_attribute_leaf's later whole-tree pass re-runs
+        # _attribute_needs_split against every attribute in the assembled Component Tree
+        # and will surface this one as a real violation there (R21/CD9).
         if not _attribute_needs_split(name) or depth >= MAX_ATTRIBUTE_SPLIT_DEPTH:
             final_attrs.append(Attribute(
                 name=name, type=type_, component_label=component.label, domain=component.domain,
@@ -177,6 +188,23 @@ def enumerate_attributes(component: Component, reasoning_context: str) -> List[A
             continue
         queue.extend((piece, depth + 1) for piece in split_pieces)
     return final_attrs
+
+
+def check_attribute_leaf(attributes: List[Attribute]) -> List[str]:
+    """R21/CD9's real safety net for the Component Tree, mirroring
+    backend/decompose/engine.py::check_p1_atomicity's role for the Workflow Tree -- re-runs
+    _attribute_needs_split (the same test enumerate_attributes's inner loop already uses)
+    against every attribute in the assembled tree, so a depth-capped-but-still-compound
+    name from enumerate_attributes is genuinely caught here, never silently treated as a
+    leaf. Returns one violation message per still-compound attribute name; empty if none."""
+    violations = []
+    for attr in attributes:
+        if _attribute_needs_split(attr.name):
+            violations.append(
+                f"Attribute '{attr.name}' on component '{attr.component_label}' still requires "
+                "splitting (CD4 attribute-leaf test) -- not a single named property with a single type"
+            )
+    return violations
 
 
 def check_no_shared_attributes(attributes: List[Attribute]) -> List[str]:

@@ -26,6 +26,14 @@ from ..validator.service import validate_tree
 # Small fixed constants, not adaptive -- same posture as MAX_GOVERNANCE_LOOPS
 # (intelligence/pipeline.py) and MAX_DISCOVERY_TURNS (discovery/service.py).
 MAX_DECOMPOSITION_RETRIES = 3
+# A runaway-loop safety bound, NOT a depth ceiling (R21/CD9, amended by
+# ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md -- depth is determined by atomicity,
+# never by a fixed level count). A candidate that hits this bound while still failing the
+# Atomicity Test is NOT treated as atomic; check_p1_atomicity's later whole-tree pass
+# (validate_tree, part of propose_tree's own outer MAX_DECOMPOSITION_RETRIES loop) re-runs
+# the identical check_atomicity_for_node function against every atomic step in the
+# assembled tree, so a depth-capped-but-still-failing node is genuinely re-caught there,
+# not silently accepted -- confirmed by tracing this during sub-plan 11h, not assumed.
 MAX_ATOMICITY_SPLIT_DEPTH = 3
 
 
@@ -285,6 +293,11 @@ def _generate_and_test_atomic_steps(
             notes=candidate.get("notes", ""),
         )
         violations = check_atomicity_for_node(temp_node, n8n_schemas)
+        # depth >= MAX_ATOMICITY_SPLIT_DEPTH with violations still present is NOT "good
+        # enough" -- it's the safety-bound case R21/CD9 requires be caught, not silently
+        # passed. It still reaches `accepted` here (the loop must terminate), but
+        # check_p1_atomicity's later whole-tree pass re-runs this exact same check against
+        # the assembled tree and will surface it as a real violation there.
         if not violations or depth >= MAX_ATOMICITY_SPLIT_DEPTH:
             accepted.append(candidate)
             continue
