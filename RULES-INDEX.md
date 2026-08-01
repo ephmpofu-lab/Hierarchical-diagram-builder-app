@@ -13,11 +13,11 @@ Shared template across every file: **Statement | Grounding | Applies to | Predic
 | `workflow-design.md` | WD1-WD10 | How any workflow (Python or n8n) is structured, sequenced, and branched | Workflow Patterns (van der Aalst et al.), Dijkstra, Constantine & Yourdon, BPMN |
 | `governance.md` | G1-G10 | Traceability, accountability, auditability, oversight | NIST AI RMF, ISO/IEC 42001, EU AI Act |
 | `ui-design.md` | UI1-UI10 | The Home/Canvas screen, detail panel, tree diagram | Nielsen heuristics, Fitts's/Hick's Laws, Gestalt principles, WCAG |
-| `dev-process.md` | DP1-DP10 | How ARCHITEQ itself gets built, module by module | Deming (PDCA), Boehm (Spiral Model), Beck (XP/TDD), Poppendieck (Lean), Scrum |
+| `dev-process.md` | DP1-DP11 | How ARCHITEQ itself gets built, module by module | Deming (PDCA), Boehm (Spiral Model), Beck (XP/TDD), Poppendieck (Lean), Scrum, IEEE 830/1016 |
 | `decomposition.md` | P1-P8 | The task tree engine (prose companion to the machine-checkable JSON) | SOLID, C4 Model, TDSP, Well-Architected Framework |
 | `prompting.md` | PR1-PR7 | ARCHITEQ's own internal LLM calls (Intent Parser, grounding simulations) | Anthropic prompt engineering guidance, few-shot/chain-of-thought literature |
 | `node-translation.md` | NT1-NT9 | How a validated atomic step becomes a real n8n node | Extends WD9, P4, G9; n8n's actual node schema |
-| `component-decomposition.md` | CD1-CD8 | The structural Component Tree (Python track): requirements to capabilities to components to attributes | ISO/IEC/IEEE 29148, TOGAF Business Capability Modeling, DeMarco/Yourdon Structured Analysis, DDD (Evans) |
+| `component-decomposition.md` | CD1-CD9 | The structural Component Tree (Python track): requirements to capabilities to components to attributes | ISO/IEC/IEEE 29148, TOGAF Business Capability Modeling, DeMarco/Yourdon Structured Analysis, DDD (Evans), PMI (WBS) |
 
 ---
 
@@ -36,13 +36,13 @@ Shared template across every file: **Statement | Grounding | Applies to | Predic
 - Workflow Design: 12
 - Governance: 10
 - UI Design: 10
-- Development Process: 10
+- Development Process: 11
 - Decomposition Engine: 8
 - Prompting: 7
 - Node Translation: 9
 - Component & Requirements Decomposition: 9
 
-**Total: 75 grounded rules**, each traceable to a named source, each written as a testable predicate.
+**Total: 76 grounded rules**, each traceable to a named source, each written as a testable predicate.
 
 ---
 
@@ -58,5 +58,7 @@ This corpus sits alongside, not instead of:
 - `ARCHITEQ-UI-and-Dev-Loop-Directive.md` — the two-screen structure and dev loop this corpus's `ui-design.md` and `dev-process.md` files ground
 - `PROGRESS.md` — module-level tracking against the PRD
 - `~/.claude/CLAUDE.md` and the project's own `CLAUDE.md` — where the Autonomy Default and Documentation Sync rules (DP8, DP10) are actually recorded and enforced day to day
+- `~/.claude/frameworks/universal-prd-framework.md` — the full six-document pre-build set (PRD, TDD, App Flow, Design Brief, Backend Schema, Engineering Plan) `dev-process.md`'s DP11 grounds; project-independent, applies to every project
+- `ARCHITEQ-TDD.md`, `ARCHITEQ-APP-FLOW.md`, `ARCHITEQ-DESIGN-BRIEF.md`, `ARCHITEQ-BACKEND-SCHEMA.md`, `ARCHITEQ-ENGINEERING-PLAN.md` — this project's own instances of DP11's five non-PRD documents
 
 If any of the above documents ever conflicts with a rule in this corpus, treat the conflict itself as an Open Question to resolve deliberately — do not silently let one override the other.

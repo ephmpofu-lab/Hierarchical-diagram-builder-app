@@ -15,6 +15,8 @@ Dr. Ephraim Mpofu, AI Solutions Architect and freelance consultant. Work spans b
 ## PRD Framework
 Every project starts from a PRD before planning begins. Structure: Problem Statement, Goal, Non-Goals, Requirements (numbered, atomic, testable), Constraints, Dependencies, Success Criteria, Open Questions. Full framework lives at `~/.claude/frameworks/universal-prd-framework.md` — read it before writing any PRD.
 
+Before Planning begins on a new project or a Complex-rated new capability, five more documents exist alongside the PRD (DP11, `rules/principles/dev-process.md`): TDD, App Flow, Design Brief, Backend Schema, Engineering Plan. For this project: `ARCHITEQ-PRD.md`, `ARCHITEQ-TDD.md`, `ARCHITEQ-APP-FLOW.md`, `ARCHITEQ-DESIGN-BRIEF.md`, `ARCHITEQ-BACKEND-SCHEMA.md`, `ARCHITEQ-ENGINEERING-PLAN.md`.
+
 Rules that always apply:
 - No solutioning outside the Requirements section.
 - Every requirement gets an ID (R1, R2...) and must be phrased so a pass/fail test can be written against it directly.

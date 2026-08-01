@@ -54,7 +54,24 @@ Given a plain-language intent ("I want to develop a ___"), ARCHITEQ produces one
 
 ### Governance
 - **R20.** Every domain checklist file declares a `derived_from` field naming the reference framework and mapping rationale used to justify its layer list.
-- **R21.** No layer or nesting level is added to a tree beyond what the C4-derived structure (Layer, Sub-task, Atomic step, Variable) defines, regardless of domain.
+- **R21.** No layer or nesting level is added to a tree beyond what the C4-derived structure (Layer, Sub-task, Atomic step, Variable) defines, regardless of domain. `Amended` by `ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md`: these are category names, not a fixed depth ceiling. A node recurses to any depth within its category until it independently passes the Atomicity Test (P1) or Attribute-leaf test (CD4); a node left unsplit purely because a level-count target was reached, while still failing that test, is a Validator violation.
+
+### Component Tree (Dual Tree Architecture)
+Per `ARCHITEQ-Dual-Tree-Architecture.md`, grounded in `rules/principles/component-decomposition.md` (CD1-CD9). The Component Tree is a second, structural projection of the same domain data the Workflow Tree (R1-R10) already produces — not a replacement for it.
+- **R24.** Given the project's PRD, the system extracts a requirements list relevant to the resolved domain, each item traceable to a specific PRD requirement ID (Stage -3, Requirements Engineering).
+- **R25.** The system groups extracted requirements into discrete capabilities; every capability carries a `traced_requirements[]` field and is rejected if empty (Stage -2, Capability Identification; CD1).
+- **R26.** The system decomposes each capability into the components required to realize it, breadth-first across all components of a capability before any one component's attributes are enumerated; every component carries a `realizes_capability` field and is rejected if unset (Stage -1, Functional Decomposition; CD2, CD3).
+- **R27.** The system enumerates each component's configuration attributes down to single-name, single-type leaves; a leaf requiring "and" to describe its meaning is rejected and must be split (Stage 0, Component Attribute Enumeration; CD4).
+- **R28.** No two components in a Component Tree claim the same attribute or responsibility (CD5).
+- **R29.** Before either tree is considered frozen, every Component Tree attribute resolves to exactly one Workflow Tree variable and vice versa; a tree with an attribute or variable that has no counterpart in the other is rejected (CD6, the Reconciliation Rule).
+- **R30.** The Python Renderer renders the Component Tree as a literal branching diagram (ASCII-style connectors), retaining the Requirements Engineering/Capability Identification/Functional Decomposition branches as visible provenance, not only the Component/Attribute leaves (CD7). Every Component maps to exactly one Python module or class; every Attribute maps to exactly one field on that construct (CD8).
+- **R31.** The n8n Renderer's node graph supports hover-reveal: hovering any node shows its `requires`/`produces`/`rules` data contract and any intermediate objects passing through it, sourced directly from those fields, never a separately invented description.
+
+### Completion Tracking
+Per `ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md`.
+- **R32.** Every node in either tree, at any depth, carries a completion status (`[ ]`/`[-]`/`[x]`), user-settable only on leaf nodes.
+- **R33.** A non-leaf node's completion status is always computed from its children (all `[x]` to children to `[x]`; all `[ ]` to children to `[ ]`; otherwise `[-]`) and is never directly writable by a user action (CD9, the 100% Rule).
+- **R34.** `PROGRESS.md`'s module-level status is generated from tree node statuses, never edited directly and independently of them.
 
 ## 4a. Modules
 
@@ -70,13 +87,15 @@ Requirements are grouped into modules so Plan/Build/Test/Commit cycles and `PROG
 - **Module 8: n8n Node Mapper & Renderer** — R13, R14
 - **Module 9: Visual Diagram Renderer** — R15
 - **Module 10: UI Shell (Home/Canvas, Detail Panel, Persistent Input)** — R16, R17, R18, R19
+- **Module 5a: Grounding Simulation (Stage 2.5)** — R22, R23. Depends on Module 5. Omitted from the original module list when R22/R23 were added; listed here to close that gap.
+- **Module 11: Dual Tree Architecture (Component Tree)** — R24 to R34. Depends on Modules 1 to 10 (reconciles against the Workflow Tree per R29). Rated Complex; built as a sequence of sub-plans per `~/.claude/CLAUDE.md`'s Development Loop, not as one item.
 
 Each module is the unit `PROGRESS.md` tracks. A module is `[x]` complete only when every requirement listed under it has passed Test and been Committed.
 
 ## 5. Constraints
 
 - Backend built in Python (FastAPI), frontend in vanilla JS/SVG, per existing project direction.
-- n8n node schemas are sourced from n8n's vendored GitHub node definitions, pinned to a specific tagged release, stored as static JSON. No live-instance schema fetching.
+- n8n node schemas are a small, hand-curated set of common core nodes (`rules/n8n_node_schemas.json`), each checked against n8n's published documentation, with the Code node as mandatory fallback for anything unmatched. `Corrected` from the original "pinned tagged release, fully vendored from GitHub" framing: confirmed mid-build that n8n has no live schema-fetch endpoint and no downloadable full-catalog JSON (the catalog exists only as TypeScript source), so a fully vendored pinned release isn't mechanically feasible without TypeScript-parsing tooling this stack doesn't have. No live-instance schema fetching, either way.
 - Decomposition Principles (P1 to P8), reference architecture mappings (TDSP, C4, Well-Architected, SOLID), and domain checklists are all stored as versioned JSON files, not regenerated at runtime.
 - UI must follow the collapsed-screen structure in `ARCHITEQ-UI-and-Dev-Loop-Directive.md` Part 1. No additional pages without first checking whether the workflow can be a state or panel instead.
 - Development must follow the PRD → Plan → Build → Test → Commit loop in `ARCHITEQ-UI-and-Dev-Loop-Directive.md` Part 2, one build-priority item at a time.
@@ -88,7 +107,8 @@ Each module is the unit `PROGRESS.md` tracks. A module is `[x]` complete only wh
 - Depends on `ARCHITEQ-Decomposition-Engine-Spec.md` for the exact build algorithm, Atomicity Test, and reference architecture mappings.
 - Depends on `ARCHITEQ-UI-and-Dev-Loop-Directive.md` for screen structure and dev process.
 - Depends on the existing Tool A hierarchical diagram builder (Python FastAPI backend, vanilla JS/SVG frontend, from the SKAIDO Architect project) for the SVG rendering component in R15. `Confirmed` as an existing asset, not to be rebuilt from scratch.
-- Depends on n8n's public GitHub node-definition repository remaining accessible and structured similarly to its current form. `Confirmed` as available per prior research in this project; version pin needs to be selected before R13 can be built.
+- Depends on `rules/n8n_node_schemas.json`, a hand-curated node schema set maintained in this repo, for R13. `Corrected`: no dependency on n8n's live API or a downloadable GitHub catalog exists, per the Constraints section above.
+- Depends on the project's own PRD (this document) as the Stage -3 (Requirements Engineering) input for Module 11's Component Tree.
 
 ## 7. Success Criteria
 
@@ -100,7 +120,8 @@ Each module is the unit `PROGRESS.md` tracks. A module is `[x]` complete only wh
 
 ## 8. Open Questions
 
-1. **Domain checklist authoring process.** Should new domain checklists beyond the RAG example be hand-authored and locked by the user, or should the app propose a first-draft checklist for one-time user approval before it becomes usable? Blocks: finalizing R1's behavior when an unresolved domain is entered. `Partially resolved`: whichever authoring process is chosen, the grounding simulation (R22) runs as part of authoring a new checklist, once, before that domain becomes usable for real requests.
-2. **Claude Code autonomy in the Plan step.** Should Claude Code pause and present each Plan step for approval before Building, or run Plan through Commit autonomously per build-priority item and only surface the result at Commit? Blocks: nothing in this PRD's requirements directly, but affects how the dev loop in section 5's constraints is executed day to day.
-3. **n8n schema version pin.** Which specific tagged release of n8n's node-definition repo should be vendored for R13? Blocks: R13, R14 cannot be built until this is chosen.
+1. **Domain checklist authoring process.** `Resolved`: the app drafts a first-draft checklist, the user approves it once before the domain becomes usable — same propose-then-approve shape used elsewhere in this system. The grounding simulation (R22) runs as part of this same authoring step, once, before the domain becomes usable for real requests.
+2. **Claude Code autonomy in the Plan step.** `Resolved`, per `~/.claude/CLAUDE.md`'s Autonomy Default: Plan through Test runs autonomously per requirement (or sub-piece), surfaced at Commit for review. A Complex-rated item pauses after Plan to confirm its sub-plan breakdown before Build begins (DP9).
+3. **n8n schema version pin.** `Superseded`, not resolved as originally framed. No tagged release is vendored; see the Constraints and Dependencies sections above for what actually shipped (`rules/n8n_node_schemas.json`, hand-curated) and why a full pinned release turned out not to be mechanically feasible with this stack.
 4. **Output rendering as page vs. panel, confirmed.** The UI directive already resolved this to "panel, not page" (R16 to R19 reflect that), but it is listed here as a reminder that this was a judgment call made under the collapse-stops principle, not an explicit prior user decision, in case it needs revisiting once the canvas is actually in front of the user.
+5. **Component Tree PRD scope, not yet reflected upstream.** `ARCHITEQ-Dual-Tree-Architecture.md` and `ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md` were adopted as addenda before this PRD had a Module 11. `Resolved` in this revision: R24-R34 and Module 11 added above; the Component Tree is confirmed real, grounded, active scope per `RULES-INDEX.md` and `rules/principles/component-decomposition.md`, not something the original Module 1-10 list superseded.

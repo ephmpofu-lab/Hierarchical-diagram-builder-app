@@ -180,6 +180,45 @@ as implicit permission for full autonomy
 
 ---
 
+## DP11 — Full Pre-Build Documentation Set Precedes Planning
+
+**Statement:** Before Plan through Build through Test through Commit begins on a new project
+or a major new capability (Complex-rated per DP5), six documents exist: PRD, TDD (Tech
+Design Document), App Flow, Design Brief, Backend Schema, and Engineering Plan. A PRD alone
+is necessary but not sufficient — it answers what and why; the other five answer how, in
+what shape, on what data, and in what order.
+
+**Grounding:** Generalizes separately-established software engineering documentation
+practice into one ordered set, per `~/.claude/frameworks/universal-prd-framework.md` Section
+2: IEEE 830 (SRS) for the PRD, IEEE 1016 (Software Design Description) and Nygard's
+Architecture Decision Record practice for the TDD, Garrett's "Elements of User Experience"
+(2000) for App Flow, Frost's "Atomic Design" (2016) for the Design Brief, Chen's
+Entity-Relationship Model (1976) for Backend Schema, and WBS practice (PMI) for the
+Engineering Plan.
+
+**Applies to:** Every new project and every major new capability added to an existing
+project (e.g. Module 11's Dual Tree Architecture); does not require redoing documentation
+for work already committed under an earlier, smaller documentation set — that is a
+documentation gap to close (DP8), not grounds to redo finished work.
+
+**Predicate:**
+```
+before a Complex-rated item's Build step begins:
+    PRD exists (Requirements, numbered, testable)
+    TDD exists (tech stack, integrations, architecture overview, key decisions)
+    App Flow exists (screens, journeys, actions, success/error paths)
+    Design Brief exists (palette, type scale, component list)
+    Backend Schema exists (entities/fields/types/relationships, or the equivalent
+        structured data contract for non-relational storage)
+    Engineering Plan exists (requirements broken into small tasks with dependencies,
+        build order, acceptance criteria -- this PRD's own Section 4a/Modules plus
+        .agent/plans/ satisfies this, it does not need a separate duplicate document)
+a project missing one of these for already-in-progress work updates the missing
+document in the same pass that discovers the gap, per DP8, rather than deferring it
+```
+
+---
+
 ## Summary Table
 
 | ID | Rule | Grounding |
@@ -194,5 +233,6 @@ as implicit permission for full autonomy
 | DP8 | Documentation Sync Is Part of Definition of Done | Schwaber & Sutherland, Scrum Guide |
 | DP9 | Human Confirmation Gate for Complex/Irreversible Items | Boehm (DP5) + EU AI Act Art. 14 (G4) |
 | DP10 | Autonomy Level Is Stated, Never Assumed | Generalizes WD10 to the process layer |
+| DP11 | Full Pre-Build Documentation Set Precedes Planning | IEEE 830, IEEE 1016, Nygard (ADRs), Garrett (UX), Frost (Atomic Design), Chen (ER Model), PMI (WBS) |
 
-This file is referenced from `RULES-INDEX.md`. Next in the corpus: the decomposition engine's prose companion (making the existing P1-P8/machine-checkable predicates readable alongside their grounding, in one place).
+This file is referenced from `RULES-INDEX.md`.

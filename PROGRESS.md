@@ -12,38 +12,45 @@ A module moves to `[x]` only when every requirement listed under it in the PRD h
 ## Modules
 
 ### Module 1: Domain Resolution & Task Tree Schema
-`[ ]` — R1, R2
+`[x]` — R1, R2
 
 ### Module 2: Decomposition Principles & Rules Engine (P1 to P8)
-`[ ]` — R4, R5, R6, R7, R21
+`[x]` — R4, R5, R6, R7, R21
 
 ### Module 3: Domain Checklists & Reference Architecture Mapping
-`[ ]` — R3, R20
+`[x]` — R3, R20
 
 ### Module 4: Validator
-`[ ]` — R9
+`[x]` — R9
 
 ### Module 5: Decomposition Engine (build order, Stages 0 to 4)
-`[ ]` — implements R1 to R9 end to end, depends on Modules 1 to 4
+`[x]` — implements R1 to R9 end to end, depends on Modules 1 to 4
+
+### Module 5a: Grounding Simulation (Stage 2.5)
+`[x]` — R22, R23. Not present in `ARCHITEQ-PRD.md` Section 4a's original module list; added here since R22/R23 exist as requirements but were never assigned a module. PRD Section 4a should be updated to match (tracked as a documentation gap, not a blocker).
 
 ### Module 6: Execution Ordering (topological sort)
-`[ ]` — R10
+`[x]` — R10
 
 ### Module 7: Python Renderer
-`[ ]` — R11, R12
+`[x]` — R11, R12
 
 ### Module 8: n8n Node Mapper & Renderer
-`[ ]` — R13, R14
+`[x]` — R13, R14
 
 ### Module 9: Visual Diagram Renderer
-`[ ]` — R15
+`[x]` — R15
 
 ### Module 10: UI Shell (Home/Canvas, Detail Panel, Persistent Input)
-`[ ]` — R16, R17, R18, R19
+`[x]` — R16, R17, R18, R19
+
+### Module 11: Dual Tree Architecture (Component Tree)
+`[ ]` — new requirements not yet numbered in `ARCHITEQ-PRD.md`; see `ARCHITEQ-Dual-Tree-Architecture.md` and `ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md`. Grounded and confirmed in scope by `RULES-INDEX.md` and `rules/principles/component-decomposition.md` (CD1-CD9). Not started.
 
 ## Open Blockers
-Carried from `ARCHITEQ-PRD.md` Section 8. A module cannot start if it depends on one of these being resolved first.
+Carried from `ARCHITEQ-PRD.md` Section 8.
 
-- OQ3 (n8n schema version pin) blocks Module 8.
-- OQ1 (domain checklist authoring process) blocks Module 3 for any domain beyond the RAG example.
-- OQ2 (Claude Code Plan-step autonomy) does not block a specific module but should be resolved before Module 1 starts, since it governs how every module afterward is executed.
+- OQ1 (domain checklist authoring process) — resolved: app drafts, user approves. No longer blocks Module 3.
+- OQ2 (Claude Code Plan-step autonomy) — resolved: per `~/.claude/CLAUDE.md` Autonomy Default, Plan through Test runs autonomously per requirement (surfaced at Commit), except Complex-rated items, which pause after Plan for sub-plan confirmation before Build (DP9).
+- OQ3 (n8n schema version pin) — superseded, not resolved as originally framed. Confirmed via research mid-build that n8n has no live schema endpoint and no downloadable full-catalog JSON (the catalog is TypeScript source). What actually shipped: `rules/n8n_node_schemas.json`, a small hand-curated set of common core nodes (HTTP Request, Set, If, Merge, Webhook, Postgres), each checked against n8n's published docs, with the Code node as mandatory fallback. `ARCHITEQ-PRD.md`'s Constraints/Dependencies sections still describe the original "pinned tagged release, fully vendored" framing and need correction to match — tracked as a documentation gap, being fixed alongside this update.
+- Module 11 (Dual Tree Architecture) has no blockers; Requirements Engineering (Stage -3) input is the real PRD, already in hand.
