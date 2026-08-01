@@ -1168,6 +1168,9 @@ function renderN8nDiagram(workflow) {
     rect.setAttribute("height", boxHeight);
     rect.setAttribute("rx", "8");
     rect.setAttribute("class", "decompose-n8n-node-rect");
+    rect.addEventListener("mouseenter", (evt) => showN8nHoverPayload(evt, node));
+    rect.addEventListener("mousemove", (evt) => showN8nHoverPayload(evt, node));
+    rect.addEventListener("mouseleave", hideN8nHoverPayload);
     svg.appendChild(rect);
 
     const text = document.createElementNS(SVG_NS, "text");
@@ -1175,10 +1178,94 @@ function renderN8nDiagram(workflow) {
     text.setAttribute("y", padding + boxHeight / 2 + 4);
     text.setAttribute("text-anchor", "middle");
     text.setAttribute("class", "decompose-n8n-node-text");
+    text.setAttribute("pointer-events", "none"); // hover events land on the rect, not this text
     text.textContent = node.name.length > 22 ? `${node.name.slice(0, 20)}…` : node.name;
     svg.appendChild(text);
   }
   return svg;
+}
+
+// ---- n8n hover-payload (R31, sub-plan 11g) ----
+// Flagged for whoever builds 10a's canvas-foundation rebuild: this hover behavior must be
+// carried forward into the new node-tile rendering, not dropped, when renderN8nDiagram's
+// internals get replaced by stage-zone layout + rounded-orthogonal routing.
+
+function getOrCreateN8nTooltip() {
+  let tooltip = document.getElementById("decomposeN8nTooltip");
+  if (!tooltip) {
+    tooltip = document.createElement("div");
+    tooltip.id = "decomposeN8nTooltip";
+    tooltip.className = "decompose-n8n-tooltip";
+    document.body.appendChild(tooltip);
+  }
+  return tooltip;
+}
+
+function showN8nHoverPayload(evt, n8nNode) {
+  const node = state.tree && state.tree.nodes[n8nNode.step_id];
+  if (!node) return;
+  const tooltip = getOrCreateN8nTooltip();
+
+  const requiredLabels = (node.requires || []).map((id) => (state.tree.nodes[id] || {}).label || id);
+
+  tooltip.innerHTML = "";
+  const title = document.createElement("div");
+  title.className = "decompose-n8n-tooltip-title";
+  title.textContent = node.label;
+  tooltip.appendChild(title);
+
+  const rows = [
+    ["consumes", node.consumes || "—"],
+    ["produces", node.produces || "—"],
+    ["requires", requiredLabels.length ? requiredLabels.join(", ") : "—"],
+  ];
+  for (const [label, value] of rows) {
+    const row = document.createElement("div");
+    row.className = "decompose-n8n-tooltip-row";
+    const labelEl = document.createElement("span");
+    labelEl.className = "decompose-n8n-tooltip-label";
+    labelEl.textContent = label;
+    const valueEl = document.createElement("span");
+    valueEl.textContent = value;
+    row.appendChild(labelEl);
+    row.appendChild(valueEl);
+    tooltip.appendChild(row);
+  }
+
+  if (node.rules && node.rules.length) {
+    const rulesRow = document.createElement("div");
+    rulesRow.className = "decompose-n8n-tooltip-row";
+    const labelEl = document.createElement("span");
+    labelEl.className = "decompose-n8n-tooltip-label";
+    labelEl.textContent = "rules";
+    const valueEl = document.createElement("span");
+    valueEl.textContent = node.rules.join("; ");
+    rulesRow.appendChild(labelEl);
+    rulesRow.appendChild(valueEl);
+    tooltip.appendChild(rulesRow);
+  }
+
+  if (node.variables && node.variables.length) {
+    const varsLabel = document.createElement("div");
+    varsLabel.className = "decompose-n8n-tooltip-label";
+    varsLabel.textContent = "intermediate objects (variables)";
+    tooltip.appendChild(varsLabel);
+    for (const v of node.variables) {
+      const varRow = document.createElement("div");
+      varRow.className = "decompose-n8n-tooltip-row";
+      varRow.textContent = v.default != null ? `${v.name} = ${v.default}` : v.name;
+      tooltip.appendChild(varRow);
+    }
+  }
+
+  tooltip.style.left = `${evt.clientX + 14}px`;
+  tooltip.style.top = `${evt.clientY + 12}px`;
+  tooltip.style.opacity = "1";
+}
+
+function hideN8nHoverPayload() {
+  const tooltip = document.getElementById("decomposeN8nTooltip");
+  if (tooltip) tooltip.style.opacity = "0";
 }
 
 function downloadWorkflowJson(workflow, domain) {
