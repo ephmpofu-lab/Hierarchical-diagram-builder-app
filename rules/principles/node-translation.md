@@ -24,16 +24,16 @@ no node in the mapped output corresponds to more than one atomic_step
 
 ## NT2 — Real Schema Source Only
 
-**Statement:** Node types and their parameter schemas come from n8n's actual vendored node definitions, pinned to a specific release, never invented or approximated by the model.
+**Statement:** Node types and their parameter schemas come from a real, checked n8n schema source, never invented or approximated by the model.
 
-**Grounding:** Already established as a build decision (vendored GitHub JSON over the unofficial internal endpoint or live-instance dependency); restated here as a rule because it is the precondition for R14 (importable without manual correction) actually holding — a hallucinated schema field produces a workflow JSON that looks valid but fails on import.
+**Grounding:** `Corrected` from an earlier "vendored GitHub JSON, pinned to a release" framing: confirmed during Module 8's build that n8n has no live schema-fetch endpoint and no downloadable full-catalog JSON (the real catalog is TypeScript source, not JSON). What actually satisfies this rule: `rules/n8n_node_schemas.json`, a small, hand-curated set of common core nodes, each checked by hand against n8n's published docs, with the Code node as mandatory fallback (NT3) for anything unmatched — restated here as a rule because it is the precondition for R14 (importable without manual correction) actually holding; a hallucinated schema field produces a workflow JSON that looks valid but fails on import.
 
 **Applies to:** Node Mapper, JSON Exporter.
 
 **Predicate:**
 ```
 every mapped node's type and parameter set is checked against the
-vendored schema file (rules/reference_architectures/n8n_node_schemas.json);
+hand-curated schema file (rules/n8n_node_schemas.json);
 a node type or parameter not present in that file is rejected, not guessed
 ```
 
@@ -166,12 +166,32 @@ independent layout
 
 ---
 
+## NT10 — Node Names Follow Verb + Object; Real Node Type Shown Alongside
+
+**Statement:** Every rendered n8n node carries a human-readable display name, never a generic default (`Set1`, `IF2`). The name follows the pattern `[Verb] [Object]`, derived directly from the atomic step's name. It does not repeat the stage/layer name as a suffix — a node already sitting inside a visible stage grouping doesn't need that context restated on every label. Alongside the display name, the node's real n8n node type (e.g. `IF`, `Set`, `HTTP Request`) is shown as a distinct second label, never merged into or substituted for the display name, and never an invented approximation of a real n8n node name.
+
+**Grounding:** Convergent n8n community best practice for the verb-first display name (node names should start with a verb, describe the action and data involved). The removal of the layer suffix and the requirement to show the real node type alongside the display name are corrections from `rules/principles/n8n-canvas-rules.md` CR11 and CR12, grounded in n8n's own explicit conceptual separation of custom display name from actual node type, and its rule against redundant stage suffixes now that stage context is conveyed visually by grouping rather than by label text.
+
+**Applies to:** Node Mapper (Build Directive Section 4.8), SVG Renderer, JSON Exporter (display names are written into the exported workflow file, not left as defaults there either).
+
+**Predicate:**
+```
+every exported or rendered node has a display_name matching the pattern
+"{Verb} {Object}" (no layer suffix), derived from the atomic step's name
+(already Verb+Object per the Atomicity Test, P1); the same node also
+renders its real node_type as a distinct second label, matched exactly
+against the vendored n8n node schema file, never invented; no node is
+exported with an unedited default name
+```
+
+---
+
 ## Summary Table
 
 | ID | Rule | Grounding |
 |----|------|-----------|
 | NT1 | One Atomic Step, One Node | SOLID / SRP (P1 restated) |
-| NT2 | Real Schema Source Only | Build decision: vendored n8n GitHub JSON |
+| NT2 | Real Schema Source Only | Hand-curated `rules/n8n_node_schemas.json`, checked against n8n docs |
 | NT3 | Fallback to Code Node Is Mandatory | WD2, No Silent Failure |
 | NT4 | Control-Flow Patterns Map to Named Nodes | Workflow Patterns (van der Aalst et al., 2003), extends WD9 |
 | NT5 | Dependencies Become Ports | WD5, Explicit Dependencies |
@@ -179,5 +199,6 @@ independent layout
 | NT7 | Least Privilege on Credentialed Nodes | G9, restated |
 | NT8 | Idempotent Steps Use Safe-Retry Configurations | WD8, restated |
 | NT9 | Positions and Connections Computed Once | WD4, Determinism |
+| NT10 | Node Names Follow Verb + Object — Layer | n8n community naming best practice |
 
 This file is referenced from `RULES-INDEX.md`. This completes the planned rules corpus: workflow-design, governance, ui-design, dev-process, decomposition, prompting, node-translation.

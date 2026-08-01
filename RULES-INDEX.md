@@ -16,8 +16,9 @@ Shared template across every file: **Statement | Grounding | Applies to | Predic
 | `dev-process.md` | DP1-DP11 | How ARCHITEQ itself gets built, module by module | Deming (PDCA), Boehm (Spiral Model), Beck (XP/TDD), Poppendieck (Lean), Scrum, IEEE 830/1016 |
 | `decomposition.md` | P1-P8 | The task tree engine (prose companion to the machine-checkable JSON) | SOLID, C4 Model, TDSP, Well-Architected Framework |
 | `prompting.md` | PR1-PR7 | ARCHITEQ's own internal LLM calls (Intent Parser, grounding simulations) | Anthropic prompt engineering guidance, few-shot/chain-of-thought literature |
-| `node-translation.md` | NT1-NT9 | How a validated atomic step becomes a real n8n node | Extends WD9, P4, G9; n8n's actual node schema |
+| `node-translation.md` | NT1-NT10 | How a validated atomic step becomes a real n8n node, including its display name | Extends WD9, P4, G9; n8n's actual node schema and naming best practice |
 | `component-decomposition.md` | CD1-CD9 | The structural Component Tree (Python track): requirements to capabilities to components to attributes | ISO/IEC/IEEE 29148, TOGAF Business Capability Modeling, DeMarco/Yourdon Structured Analysis, DDD (Evans), PMI (WBS) |
+| `n8n-canvas-rules.md` | CR1-CR14 | How a validated node graph is *rendered* as an n8n canvas: layout, routing, ports, naming — distinct from node-translation.md's step-to-node *mapping* | n8n's node-and-connection execution model; left-to-right diagramming convention |
 
 ---
 
@@ -39,10 +40,11 @@ Shared template across every file: **Statement | Grounding | Applies to | Predic
 - Development Process: 11
 - Decomposition Engine: 8
 - Prompting: 7
-- Node Translation: 9
+- Node Translation: 10
 - Component & Requirements Decomposition: 9
+- n8n Canvas Rendering: 14
 
-**Total: 76 grounded rules**, each traceable to a named source, each written as a testable predicate.
+**Total: 91 grounded rules**, each traceable to a named source, each written as a testable predicate.
 
 ---
 
