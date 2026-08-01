@@ -17,7 +17,7 @@ Shared template across every file: **Statement | Grounding | Applies to | Predic
 | `decomposition.md` | P1-P8 | The task tree engine (prose companion to the machine-checkable JSON) | SOLID, C4 Model, TDSP, Well-Architected Framework |
 | `prompting.md` | PR1-PR7 | ARCHITEQ's own internal LLM calls (Intent Parser, grounding simulations) | Anthropic prompt engineering guidance, few-shot/chain-of-thought literature |
 | `node-translation.md` | NT1-NT10 | How a validated atomic step becomes a real n8n node, including its display name | Extends WD9, P4, G9; n8n's actual node schema and naming best practice |
-| `component-decomposition.md` | CD1-CD9 | The structural Component Tree (Python track): requirements to capabilities to components to attributes | ISO/IEC/IEEE 29148, TOGAF Business Capability Modeling, DeMarco/Yourdon Structured Analysis, DDD (Evans), PMI (WBS) |
+| `component-decomposition.md` | CD1-CD10 | The structural Component Tree (Python track): requirements to capabilities to components to attributes; also gates that any generated architecture (Python or n8n) carries its own TDD/App-Flow/Design-Brief-equivalent documentation before freezing | ISO/IEC/IEEE 29148, TOGAF Business Capability Modeling, DeMarco/Yourdon Structured Analysis, DDD (Evans), PMI (WBS), restates DP11 |
 | `n8n-canvas-rules.md` | CR1-CR14 | How a validated node graph is *rendered* as an n8n canvas: layout, routing, ports, naming — distinct from node-translation.md's step-to-node *mapping* | n8n's node-and-connection execution model; left-to-right diagramming convention |
 
 ---

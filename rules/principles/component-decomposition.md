@@ -149,6 +149,70 @@ construct
 
 ---
 
+## CD10 — Generated Architecture Carries Its Own Documentation Set Before Freezing
+
+**Statement:** ARCHITEQ's own six-document discipline (DP11, `dev-process.md`) does not only
+govern how ARCHITEQ itself gets built — it also governs what ARCHITEQ produces when a user
+asks it to architect something else. A Component Tree is not considered frozen until it
+carries the equivalent of all six documents for the system it describes. Unlike DP11, these
+are not six documents written before Build begins — Stages -3 through 0 largely *are* the
+build. This rule is a completion gate, evaluated at freeze time, the same enforcement shape
+CD1-CD3 already use for stage ordering, not a precondition evaluated before Stage -3 starts.
+
+Mapped concretely:
+- **Requirements-Engineering-equivalent** — already satisfied by Stage -3 (CD1).
+- **Backend-Schema-equivalent** — already satisfied by Stage 0 Attribute Enumeration (CD4).
+- **Engineering-Plan-equivalent** — already satisfied by the Workflow Tree's `requires`/
+  `produces` topological order (R10); cross-referenced here, not duplicated.
+- **Tech-Decisions-equivalent** — NOT yet satisfied by any existing stage. Every Component
+  (Python track) whose realization involved a genuine implementation choice (e.g. which
+  vector database, which LLM API, which storage pattern) must carry a one-line rationale
+  for that choice. On the Workflow Tree side, this applies only to an Atomic step whose
+  node-mapping was a genuine judgment call, not a deterministic single-match (most
+  n8n mappings are already deterministic per NT2/Atomicity criterion 5 and need no
+  separate rationale).
+- **App-Flow-equivalent and Design-Brief-equivalent** — NOT yet satisfied by any existing
+  stage, and conditional: required only when the Component Tree contains at least one
+  UI-tagged component. When no UI component exists, both are explicitly recorded as "not
+  applicable," never silently absent — the same "explicit over implicit" standard WD10
+  already sets for workflow behavior, applied here to documentation completeness. Does not
+  apply to the Workflow Tree/n8n track at all — n8n output is headless by construction.
+
+**Grounding:** Direct restatement of DP11 at the generated-architecture layer, per the same
+cross-layer-restatement convention this corpus already uses (RULES-INDEX.md's own stated
+policy: one underlying principle, applied consistently at every layer it touches, rather
+than independently invented twice). The six-document grounding sources are DP11's own:
+IEEE 830/1016, Nygard (Architecture Decision Records) for the Tech-Decisions-equivalent
+specifically, Garrett (UX) and Frost (Atomic Design) for the conditional App-Flow/
+Design-Brief-equivalent, Chen (ER Model) for the Backend-Schema-equivalent, PMI (WBS) for
+the Engineering-Plan-equivalent.
+
+**Applies to:** The Component Tree freeze step (after Stage 0, before Section 3's
+Reconciliation Rule runs); the Workflow Tree's approve step, for the Tech-Decisions-
+equivalent and Engineering-Plan-equivalent subset only.
+
+**Predicate:**
+```
+before a Component Tree is frozen:
+    Requirements-Engineering-equivalent present (CD1) -- already enforced
+    Backend-Schema-equivalent present (CD4) -- already enforced
+    every Component whose realization required a genuine implementation
+        choice carries a non-empty rationale field
+    IF the tree contains at least one UI-tagged component:
+        an App-Flow-equivalent and a Design-Brief-equivalent are present
+    ELSE:
+        both are explicitly recorded as "not applicable"
+    a tree with a UI-tagged component but no App-Flow/Design-Brief
+        content, and no "not applicable" is possible, is rejected
+
+before a Workflow Tree is approved:
+    every Atomic step whose node-mapping was a genuine (non-deterministic)
+        choice carries a non-empty rationale field
+    Engineering-Plan-equivalent present (R10) -- already enforced
+```
+
+---
+
 ## Summary Table
 
 | ID | Rule | Grounding |
@@ -162,5 +226,6 @@ construct
 | CD7 | Provenance Is Kept Visible | Restates G1 at the rendered-artifact level |
 | CD8 | Components Map to One Code Construct | Restates NT1/SOLID at the Python level |
 | CD9 | Attributes Recurse Until Atomic; Completion Rolls Up | WBS Practice Standard + 100% Rule (PMI) |
+| CD10 | Generated Architecture Carries Its Own Documentation Set Before Freezing | Restates DP11 at the generated-architecture layer |
 
-This file is referenced from `RULES-INDEX.md`. It brings the corpus to 8 files, 72 rules.
+This file is referenced from `RULES-INDEX.md`.

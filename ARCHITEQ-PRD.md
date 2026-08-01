@@ -57,7 +57,7 @@ Given a plain-language intent ("I want to develop a ___"), ARCHITEQ produces one
 - **R21.** No layer or nesting level is added to a tree beyond what the C4-derived structure (Layer, Sub-task, Atomic step, Variable) defines, regardless of domain. `Amended` by `ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md`: these are category names, not a fixed depth ceiling. A node recurses to any depth within its category until it independently passes the Atomicity Test (P1) or Attribute-leaf test (CD4); a node left unsplit purely because a level-count target was reached, while still failing that test, is a Validator violation.
 
 ### Component Tree (Dual Tree Architecture)
-Per `ARCHITEQ-Dual-Tree-Architecture.md`, grounded in `rules/principles/component-decomposition.md` (CD1-CD9). The Component Tree is a second, structural projection of the same domain data the Workflow Tree (R1-R10) already produces — not a replacement for it.
+Per `ARCHITEQ-Dual-Tree-Architecture.md`, grounded in `rules/principles/component-decomposition.md` (CD1-CD10). The Component Tree is a second, structural projection of the same domain data the Workflow Tree (R1-R10) already produces — not a replacement for it.
 - **R24.** Given the project's PRD, the system extracts a requirements list relevant to the resolved domain, each item traceable to a specific PRD requirement ID (Stage -3, Requirements Engineering).
 - **R25.** The system groups extracted requirements into discrete capabilities; every capability carries a `traced_requirements[]` field and is rejected if empty (Stage -2, Capability Identification; CD1).
 - **R26.** The system decomposes each capability into the components required to realize it, breadth-first across all components of a capability before any one component's attributes are enumerated; every component carries a `realizes_capability` field and is rejected if unset (Stage -1, Functional Decomposition; CD2, CD3).
@@ -66,12 +66,14 @@ Per `ARCHITEQ-Dual-Tree-Architecture.md`, grounded in `rules/principles/componen
 - **R29.** Before either tree is considered frozen, every Component Tree attribute resolves to exactly one Workflow Tree variable and vice versa; a tree with an attribute or variable that has no counterpart in the other is rejected (CD6, the Reconciliation Rule).
 - **R30.** The Python Renderer renders the Component Tree as a literal branching diagram (ASCII-style connectors), retaining the Requirements Engineering/Capability Identification/Functional Decomposition branches as visible provenance, not only the Component/Attribute leaves (CD7). Every Component maps to exactly one Python module or class; every Attribute maps to exactly one field on that construct (CD8).
 - **R31.** The n8n Renderer's node graph supports hover-reveal: hovering any node shows its `requires`/`produces`/`rules` data contract and any intermediate objects passing through it, sourced directly from those fields, never a separately invented description.
+- **R32.** Every Component whose realization required a genuine implementation choice (not a deterministic single match) carries a one-line rationale for that choice; a Component Tree with an unrationalized genuine choice is rejected at freeze time (CD10, Tech-Decisions-equivalent). The same applies to a Workflow Tree Atomic step whose node-mapping was a genuine, non-deterministic choice.
+- **R33.** If a Component Tree contains at least one UI-tagged component, it carries an App-Flow-equivalent and a Design-Brief-equivalent before freezing; if it contains none, both are explicitly recorded as "not applicable," never silently absent (CD10).
 
 ### Completion Tracking
 Per `ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md`.
-- **R32.** Every node in either tree, at any depth, carries a completion status (`[ ]`/`[-]`/`[x]`), user-settable only on leaf nodes.
-- **R33.** A non-leaf node's completion status is always computed from its children (all `[x]` to children to `[x]`; all `[ ]` to children to `[ ]`; otherwise `[-]`) and is never directly writable by a user action (CD9, the 100% Rule).
-- **R34.** `PROGRESS.md`'s module-level status is generated from tree node statuses, never edited directly and independently of them.
+- **R34.** Every node in either tree, at any depth, carries a completion status (`[ ]`/`[-]`/`[x]`), user-settable only on leaf nodes.
+- **R35.** A non-leaf node's completion status is always computed from its children (all `[x]` to children to `[x]`; all `[ ]` to children to `[ ]`; otherwise `[-]`) and is never directly writable by a user action (CD9, the 100% Rule).
+- **R36.** `PROGRESS.md`'s module-level status is generated from tree node statuses, never edited directly and independently of them.
 
 ## 4a. Modules
 
@@ -88,7 +90,7 @@ Requirements are grouped into modules so Plan/Build/Test/Commit cycles and `PROG
 - **Module 9: Visual Diagram Renderer** — R15
 - **Module 10: UI Shell (Home/Canvas, Detail Panel, Persistent Input)** — R16, R17, R18, R19
 - **Module 5a: Grounding Simulation (Stage 2.5)** — R22, R23. Depends on Module 5. Omitted from the original module list when R22/R23 were added; listed here to close that gap.
-- **Module 11: Dual Tree Architecture (Component Tree)** — R24 to R34. Depends on Modules 1 to 10 (reconciles against the Workflow Tree per R29). Rated Complex; built as a sequence of sub-plans per `~/.claude/CLAUDE.md`'s Development Loop, not as one item.
+- **Module 11: Dual Tree Architecture (Component Tree)** — R24 to R36. Depends on Modules 1 to 10 (reconciles against the Workflow Tree per R29). Rated Complex; built as a sequence of sub-plans per `~/.claude/CLAUDE.md`'s Development Loop, not as one item.
 
 Each module is the unit `PROGRESS.md` tracks. A module is `[x]` complete only when every requirement listed under it has passed Test and been Committed.
 

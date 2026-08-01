@@ -97,12 +97,17 @@ regroup). **Storage:** `rules/domain_checklists/{domain}.grounding.json`.
 ## 6. Component Tree (Module 11, in progress)
 
 Not yet built. Planned shape, per `ARCHITEQ-Dual-Tree-Architecture.md` and `ARCHITEQ-PRD.md`
-R24-R31: `ComponentTreeNode` mirroring `TaskTreeNode`'s flat id-keyed structure, `level` one
+R24-R33: `ComponentTreeNode` mirroring `TaskTreeNode`'s flat id-keyed structure, `level` one
 of `"Capability" | "Component" | "Attribute Group" | "Attribute"`, plus
 `traced_requirements: list[str]` (Capability level, CD1), `realizes_capability: str`
-(Component level, CD2). `ExtractedRequirement` (sub-plan 11a, `text`/`prd_requirement_id`/
-`domain`) is the first piece of this model family, not yet committed. This section is
-updated as Module 11's sub-plans land, per DP8.
+(Component level, CD2), `is_ui: bool` (Component level, marks a UI-bearing component and
+gates R33/CD10's conditional App-Flow/Design-Brief requirement), `rationale: Optional[str]`
+(Component level, R32/CD10 — required non-empty only when that component's realization was
+a genuine, non-deterministic implementation choice). `ExtractedRequirement` (sub-plan 11a,
+`text`/`prd_requirement_id`/`domain`) is the first piece of this model family, not yet
+committed. `TaskTreeNode` (Workflow Tree) also gains `rationale: Optional[str]` per R32 for
+the same reason, checked only when an Atomic step's node-mapping was a genuine choice. This
+section is updated as Module 11's sub-plans land, per DP8.
 
 ## 7. Auth (not owned by this app)
 

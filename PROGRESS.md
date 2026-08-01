@@ -45,7 +45,7 @@ A module moves to `[x]` only when every requirement listed under it in the PRD h
 `[x]` — R16, R17, R18, R19
 
 ### Module 11: Dual Tree Architecture (Component Tree)
-`[ ]` — new requirements not yet numbered in `ARCHITEQ-PRD.md`; see `ARCHITEQ-Dual-Tree-Architecture.md` and `ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md`. Grounded and confirmed in scope by `RULES-INDEX.md` and `rules/principles/component-decomposition.md` (CD1-CD9). Not started.
+`[ ]` — R24 to R36. See `ARCHITEQ-Dual-Tree-Architecture.md` and `ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md`. Grounded and confirmed in scope by `RULES-INDEX.md` and `rules/principles/component-decomposition.md` (CD1-CD10). CD10 (R32/R33) additionally requires that any architecture ARCHITEQ generates -- Python or n8n -- carries its own TDD/App-Flow/Design-Brief-equivalent documentation before freezing, restating DP11 at the output layer, not just at ARCHITEQ's own build process. Not started.
 
 ## Open Blockers
 Carried from `ARCHITEQ-PRD.md` Section 8.
