@@ -40,7 +40,7 @@ from backend.models import (
 )
 from backend.render import node_mapper
 from backend.render.n8n_exporter import export_workflow
-from backend.render.python_renderer import render_python
+from backend.render.python_renderer import render_component_tree, render_python
 from backend.taxonomy import repository as taxonomy_repo
 from backend.validator import principles
 from backend.validator.service import validate_tree
@@ -1202,6 +1202,75 @@ def test_check_tree_reconciliation_flags_unmatched_variable():
 
     assert len(violations) == 1
     assert "overlap" in violations[0] and "no corresponding Component attribute" in violations[0]
+
+
+# ---- Module 11 -- Python Renderer for the Component Tree (11f, R30/CD7/CD8) ----
+
+_RENDER_REQS = [
+    ExtractedRequirement(text="Accepts a free-text intent.", prd_requirement_id="R1", domain="rag"),
+    ExtractedRequirement(text="Validates uploaded file type.", prd_requirement_id="R6", domain="rag"),
+]
+_RENDER_CAPS = [
+    Capability(label="Intent Resolution", traced_requirements=["R1"], domain="rag"),
+    Capability(label="Document Ingestion", traced_requirements=["R6"], domain="rag"),
+]
+_RENDER_COMPONENTS = [
+    Component(label="Upload Source", realizes_capability="Document Ingestion", domain="rag"),
+    Component(label="File Validator", realizes_capability="Document Ingestion", domain="rag"),
+]
+_RENDER_ATTRS = [
+    Attribute(name="Max File Size", type="integer", component_label="Upload Source", domain="rag"),
+    Attribute(name="Accepted Formats", type="list", component_label="Upload Source", domain="rag"),
+    Attribute(name="Timeout", type="integer", component_label="File Validator", domain="rag"),
+]
+
+
+def test_render_component_tree_diagram_shows_all_provenance_branches():
+    diagram, _ = render_component_tree("rag", _RENDER_REQS, _RENDER_CAPS, _RENDER_COMPONENTS, _RENDER_ATTRS)
+
+    assert "Requirements Engineering" in diagram
+    assert "Capability Identification" in diagram
+    assert "Functional Decomposition" in diagram
+    for req in _RENDER_REQS:
+        assert req.prd_requirement_id in diagram and req.text in diagram
+    for cap in _RENDER_CAPS:
+        assert cap.label in diagram
+    for comp in _RENDER_COMPONENTS:
+        assert comp.label in diagram
+    for attr in _RENDER_ATTRS:
+        assert attr.name in diagram
+
+
+def test_render_component_tree_produces_one_module_per_component_with_own_attributes():
+    _, modules = render_component_tree("rag", _RENDER_REQS, _RENDER_CAPS, _RENDER_COMPONENTS, _RENDER_ATTRS)
+
+    assert len(modules) == 2
+    by_label = {m.component_label: m.code for m in modules}
+    assert "class UploadSource" in by_label["Upload Source"]
+    assert "max_file_size: int" in by_label["Upload Source"]
+    assert "accepted_formats: list" in by_label["Upload Source"]
+    assert "timeout" not in by_label["Upload Source"]  # not File Validator's own attribute
+    assert "class FileValidator" in by_label["File Validator"]
+    assert "timeout: int" in by_label["File Validator"]
+
+
+def test_render_component_tree_component_with_no_attributes_gets_pass_body():
+    lonely_component = [Component(label="Empty Thing", realizes_capability="Intent Resolution", domain="rag")]
+
+    _, modules = render_component_tree("rag", _RENDER_REQS, _RENDER_CAPS, lonely_component, [])
+
+    assert len(modules) == 1
+    assert "pass" in modules[0].code
+
+
+def test_render_component_tree_unrecognized_type_defaults_to_str():
+    weird_attr = [Attribute(name="Weird Field", type="frobnicator", component_label="Upload Source", domain="rag")]
+
+    _, modules = render_component_tree(
+        "rag", _RENDER_REQS, _RENDER_CAPS, [_RENDER_COMPONENTS[0]], weird_attr,
+    )
+
+    assert "weird_field: str" in modules[0].code
 
 
 def test_render_python_endpoint_404_for_unknown_domain(authed_client):

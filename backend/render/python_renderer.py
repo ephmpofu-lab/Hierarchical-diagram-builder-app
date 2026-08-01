@@ -2,9 +2,19 @@
 sequenced by the requires/produces dependency graph (P4). Atomic-step variables become
 function arguments, never hardcoded values."""
 
-from typing import List
+import re
+from typing import List, Tuple
 
-from ..models import DomainTaskTree, RenderedCodeBlock, TaskTreeNode
+from ..models import (
+    Attribute,
+    Capability,
+    Component,
+    DomainTaskTree,
+    ExtractedRequirement,
+    RenderedCodeBlock,
+    RenderedComponentModule,
+    TaskTreeNode,
+)
 
 
 def _format_default(value: str) -> str:
@@ -87,3 +97,94 @@ def render_python(tree: DomainTaskTree) -> List[RenderedCodeBlock]:
             lines.append("    ...  # TODO: implement")
         blocks.append(RenderedCodeBlock(step_id=node.id, label=node.label, code="\n".join(lines)))
     return blocks
+
+
+# ============================================================================
+# Component Tree rendering (Module 11, CD7/CD8, R30) -- a second entry point in this same
+# file, not a separate module: R30's own text names "The Python Renderer" as one shared
+# concern across both trees, the same way R11's mode selection is one choice covering both.
+# ============================================================================
+
+_PY_TYPE_MAP = {
+    "integer": "int", "int": "int", "string": "str", "str": "str",
+    "boolean": "bool", "bool": "bool", "list": "list", "float": "float",
+    "number": "float", "dict": "dict",
+}
+
+
+def _python_type(type_name: str) -> str:
+    # Unrecognized types default to str -- never invented further than that.
+    return _PY_TYPE_MAP.get((type_name or "").strip().lower(), "str")
+
+
+def _py_field_name(name: str) -> str:
+    slug = "".join(c if c.isalnum() else "_" for c in name.lower())
+    while "__" in slug:
+        slug = slug.replace("__", "_")
+    return slug.strip("_") or "field"
+
+
+def _py_class_name(label: str) -> str:
+    words = [w for w in re.split(r"[^a-zA-Z0-9]+", label) if w]
+    return "".join(w.capitalize() for w in words) or "Component"
+
+
+def render_component_tree(
+    domain: str,
+    requirements: List[ExtractedRequirement],
+    capabilities: List[Capability],
+    components: List[Component],
+    attributes: List[Attribute],
+) -> "Tuple[str, List[RenderedComponentModule]]":
+    """CD7/CD8, R30 -- renders the Component Tree as a literal ASCII branching diagram
+    retaining Requirements Engineering/Capability Identification/Functional Decomposition
+    as visible provenance branches (CD7), plus one Python class per Component with one
+    field per Attribute (CD8). Components and Attributes nest under Functional
+    Decomposition, grouped by the Capability that realizes them -- that's where they're
+    semantically produced; Requirements Engineering and Capability Identification are shown
+    as flat provenance lists, not re-nested trees of their own."""
+    lines = [domain]
+
+    lines.append("├── Requirements Engineering")
+    for i, req in enumerate(requirements):
+        connector = "└──" if i == len(requirements) - 1 else "├──"
+        lines.append(f"│   {connector} {req.prd_requirement_id}: {req.text}")
+
+    lines.append("├── Capability Identification")
+    for i, cap in enumerate(capabilities):
+        connector = "└──" if i == len(capabilities) - 1 else "├──"
+        traces = ", ".join(cap.traced_requirements)
+        lines.append(f"│   {connector} {cap.label} (traces: {traces})")
+
+    lines.append("└── Functional Decomposition")
+    for ci, cap in enumerate(capabilities):
+        cap_last = ci == len(capabilities) - 1
+        cap_connector = "└──" if cap_last else "├──"
+        lines.append(f"    {cap_connector} {cap.label}")
+        cap_prefix = "        " if cap_last else "    │   "
+        cap_components = [c for c in components if c.realizes_capability == cap.label]
+        for coi, comp in enumerate(cap_components):
+            comp_last = coi == len(cap_components) - 1
+            comp_connector = "└──" if comp_last else "├──"
+            lines.append(f"{cap_prefix}{comp_connector} {comp.label}")
+            attr_prefix = f"{cap_prefix}    " if comp_last else f"{cap_prefix}│   "
+            comp_attrs = [a for a in attributes if a.component_label == comp.label]
+            for ai, attr in enumerate(comp_attrs):
+                attr_last = ai == len(comp_attrs) - 1
+                attr_connector = "└──" if attr_last else "├──"
+                lines.append(f"{attr_prefix}{attr_connector} {attr.name}: {attr.type}")
+
+    diagram = "\n".join(lines)
+
+    modules = []
+    for comp in components:
+        comp_attrs = [a for a in attributes if a.component_label == comp.label]
+        class_name = _py_class_name(comp.label)
+        if comp_attrs:
+            field_lines = [f"    {_py_field_name(a.name)}: {_python_type(a.type)}" for a in comp_attrs]
+        else:
+            field_lines = ["    pass"]
+        code = f'class {class_name}:\n    """{comp.label}"""\n' + "\n".join(field_lines)
+        modules.append(RenderedComponentModule(component_label=comp.label, code=code))
+
+    return diagram, modules

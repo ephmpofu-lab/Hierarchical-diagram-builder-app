@@ -1189,4 +1189,9 @@ class Attribute(BaseModel):
     domain: str
 
 
+class RenderedComponentModule(BaseModel):
+    component_label: str
+    code: str
+
+
 Project.model_rebuild()
