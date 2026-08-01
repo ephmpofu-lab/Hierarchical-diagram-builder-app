@@ -1274,6 +1274,11 @@ function renderN8nDiagram(workflow) {
     group.addEventListener("mouseenter", (evt) => showN8nHoverPayload(evt, node));
     group.addEventListener("mousemove", (evt) => showN8nHoverPayload(evt, node));
     group.addEventListener("mouseleave", hideN8nHoverPayload);
+    group.addEventListener("click", () => {
+      state = { ...state, selectedNodeId: node.step_id };
+      renderBoard();
+    });
+    group.classList.add("decompose-n8n-node-group");
 
     const rect = document.createElementNS(SVG_NS, "rect");
     rect.setAttribute("x", node.position[0] + padding);
