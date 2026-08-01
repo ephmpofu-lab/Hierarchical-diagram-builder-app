@@ -139,4 +139,4 @@ orthogonal routing (CR2/CR5/CR6/CR7/CR16, sub-plan 10a-iii)."
   correctly-classified paths, zero JS errors; screenshot visually confirms non-overlapping
   zones, straight adjacent line, and correctly rounded local_branch/cross_stage/
   long_distance routes all entering their targets' left ports.
-- [ ] Committed
+- [x] Committed

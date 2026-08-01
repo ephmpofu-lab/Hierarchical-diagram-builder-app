@@ -1196,13 +1196,19 @@ function renderN8nDiagram(workflow) {
 
   const totalWidth = maxRight + padding * 2;
   const totalHeight = maxBottom + padding * 2;
+  // The viewport is capped, not the full content extent -- a wide/tall tree (RAG's 32
+  // atomic steps) is explored by dragging and scrolling the wheel (10a-iv), not by a
+  // native scrollbar sized to the whole tree.
+  const viewportWidth = Math.min(totalWidth, 1100);
+  const viewportHeight = Math.min(totalHeight, 640);
   const svg = document.createElementNS(SVG_NS, "svg");
-  // Explicit pixel size, not width="100%" -- a wide tree (RAG's 32 atomic steps) must
-  // scroll horizontally in its own container, never be squashed illegibly small to fit.
-  svg.setAttribute("width", totalWidth);
-  svg.setAttribute("height", totalHeight);
-  svg.setAttribute("viewBox", `0 0 ${totalWidth} ${totalHeight}`);
+  svg.setAttribute("width", viewportWidth);
+  svg.setAttribute("height", viewportHeight);
+  svg.setAttribute("viewBox", `0 0 ${viewportWidth} ${viewportHeight}`);
   svg.classList.add("decompose-n8n-diagram");
+
+  const viewport = document.createElementNS(SVG_NS, "g");
+  viewport.classList.add("decompose-n8n-viewport");
 
   // Stage-zone backgrounds drawn first, behind everything (CR2: visual group only, never
   // a connection anchor -- no connection below ever originates/terminates at a zone).
@@ -1214,14 +1220,14 @@ function renderN8nDiagram(workflow) {
     rect.setAttribute("height", zone.height);
     rect.setAttribute("rx", "6");
     rect.setAttribute("class", "decompose-n8n-stage-zone");
-    svg.appendChild(rect);
+    viewport.appendChild(rect);
 
     const label = document.createElementNS(SVG_NS, "text");
     label.setAttribute("x", zone.x + padding + 10);
     label.setAttribute("y", zone.y + padding + 18);
     label.setAttribute("class", "decompose-n8n-stage-zone-label");
     label.textContent = zone.label;
-    svg.appendChild(label);
+    viewport.appendChild(label);
   }
 
   const nodeByName = {};
@@ -1250,7 +1256,7 @@ function renderN8nDiagram(workflow) {
       path.setAttribute("d", roundedPolylinePath(waypoints, N8N_CORNER_RADIUS));
       path.setAttribute("class", "decompose-n8n-connection");
       path.setAttribute("data-classification", classification);
-      svg.appendChild(path);
+      viewport.appendChild(path);
     }
   }
 
@@ -1291,9 +1297,73 @@ function renderN8nDiagram(workflow) {
       group.appendChild(circle);
     }
 
-    svg.appendChild(group);
+    viewport.appendChild(group);
   }
+
+  svg.appendChild(viewport);
+  attachN8nPanZoom(svg, viewport);
   return svg;
+}
+
+// ---- Pan (middle-mouse drag) + zoom (cursor-centered scroll-wheel), 10a-iv ----
+
+const N8N_MIN_SCALE = 0.2;
+const N8N_MAX_SCALE = 3;
+
+function attachN8nPanZoom(svg, viewport) {
+  let scale = 1;
+  let tx = 0;
+  let ty = 0;
+  let dragging = false;
+  let dragStart = null;
+
+  function applyTransform() {
+    viewport.setAttribute("transform", `translate(${tx} ${ty}) scale(${scale})`);
+  }
+
+  svg.addEventListener("mousedown", (evt) => {
+    if (evt.button !== 1) return; // middle mouse only -- left click stays free for later
+    evt.preventDefault(); // suppresses the browser's native middle-click autoscroll icon
+    dragging = true;
+    dragStart = { x: evt.clientX, y: evt.clientY, tx0: tx, ty0: ty };
+  });
+
+  svg.addEventListener("mousemove", (evt) => {
+    if (!dragging || !dragStart) return;
+    tx = dragStart.tx0 + (evt.clientX - dragStart.x);
+    ty = dragStart.ty0 + (evt.clientY - dragStart.y);
+    applyTransform();
+  });
+
+  function stopDrag() {
+    dragging = false;
+    dragStart = null;
+  }
+  svg.addEventListener("mouseup", stopDrag);
+  svg.addEventListener("mouseleave", stopDrag);
+
+  svg.addEventListener(
+    "wheel",
+    (evt) => {
+      evt.preventDefault();
+      const rect = svg.getBoundingClientRect();
+      const mouseX = evt.clientX - rect.left;
+      const mouseY = evt.clientY - rect.top;
+      const zoomFactor = evt.deltaY < 0 ? 1.1 : 1 / 1.1;
+      const newScale = Math.min(N8N_MAX_SCALE, Math.max(N8N_MIN_SCALE, scale * zoomFactor));
+      // Zoom-to-point: convert the cursor to current world-space coordinates, then solve
+      // for the translate that keeps that same world point stationary under the cursor
+      // at the new scale -- never a "zoom to center" that would drift the diagram away
+      // from where the user is actually looking.
+      const worldX = (mouseX - tx) / scale;
+      const worldY = (mouseY - ty) / scale;
+      tx = mouseX - worldX * newScale;
+      ty = mouseY - worldY * newScale;
+      scale = newScale;
+      applyTransform();
+    },
+    { passive: false }
+  );
 }
 
 // ---- n8n hover-payload (R31, sub-plan 11g) ----

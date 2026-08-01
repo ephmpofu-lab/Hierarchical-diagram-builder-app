@@ -1843,7 +1843,10 @@ html[data-inspector-collapsed="true"] .health-footer {
 }
 
 .decompose-n8n-diagram-wrap {
-  overflow-x: auto;
+  /* 10a-iv: the SVG itself is now the pannable/zoomable surface (middle-mouse drag,
+     cursor-centered scroll-wheel), replacing the native horizontal scrollbar this wrap
+     used to rely on for a wide tree. */
+  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
@@ -1851,6 +1854,7 @@ html[data-inspector-collapsed="true"] .health-footer {
 
 .decompose-n8n-diagram {
   display: block;
+  cursor: grab;
 }
 
 .decompose-n8n-node-rect {

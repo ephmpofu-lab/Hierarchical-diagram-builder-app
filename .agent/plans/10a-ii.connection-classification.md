@@ -66,4 +66,4 @@ One commit: "Add connection classification to the Node Mapper (CR18, sub-plan 10
 
 - [x] Built — `_classify_one`, `classify_connections` in `backend/render/node_mapper.py`.
 - [x] Tested — 2 new tests (4 categories via a real 3-Layer tree fixture; row_transition/cross_row via direct `_classify_one` calls against hand-built position data), both passing.
-- [ ] Committed
+- [x] Committed
