@@ -42,8 +42,9 @@ let state = {
   mode: null, // "python" | "n8n" | null, canvas-state only
   pythonRender: null, // cached List[RenderedCodeBlock] for the current domain
   n8nRender: null, // cached N8nWorkflow for the current domain
-  pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null }, // Python mode's
-  // folder/file/function browser position (Plan 10c) -- reset whenever domain changes
+  pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null, docId: null }, // Python
+  // mode's folder/file/function browser position (Plan 10c) + docs/ artifact (Plan 12a) --
+  // reset whenever domain changes
   selectedNodeId: null, // drives the slide-in detail panel, canvas-state only
   refining: false,
   submitting: false,
@@ -667,7 +668,9 @@ function renderPythonBrowser() {
 
   wrap.appendChild(renderPyCrumbs(grouped, pb));
 
-  if (pb.folderIdx == null || pb.fileIdx == null) {
+  if (pb.docId != null) {
+    wrap.appendChild(renderDocArtifact(grouped, pb.docId));
+  } else if (pb.folderIdx == null || pb.fileIdx == null) {
     wrap.appendChild(renderPyLevel1(grouped));
   } else if (pb.funcId == null) {
     wrap.appendChild(renderPyLevel2(grouped, pb));
@@ -690,8 +693,151 @@ function pyCrumbSep() {
 }
 
 function setPyBrowserState(next) {
-  state = { ...state, pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null, ...next } };
+  state = { ...state, pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null, docId: null, ...next } };
   renderBoard();
+}
+
+// ---- docs/ folder: current domain's own planning artifacts (Plan 12a) ----
+// Not ARCHITEQ's own self-documentation -- these are the RAG-project-equivalent's PRD,
+// TDD, etc., sitting next to that domain's own architeq_{domain}/ code folder. Per the
+// resolved scope, only the Engineering-Plan-equivalent has a real per-domain generator
+// today (Modules 5-8, already rendered by the browser above); the other five show R40's
+// honest "not generated yet" state until their own generators exist.
+const DOC_ARTIFACTS = [
+  { id: "prd", file: "PRD.md" },
+  { id: "tdd", file: "TDD.md" },
+  { id: "app_flow", file: "AppFlow.md" },
+  { id: "design_brief", file: "DesignBrief.md" },
+  { id: "backend_schema", file: "BackendSchema.md" },
+  { id: "engineering_plan", file: "EngineeringPlan.md" },
+];
+
+function docArtifactStatus(artifactId) {
+  if (artifactId === "engineering_plan") {
+    return { status: "built" };
+  }
+  if (artifactId === "prd") {
+    return {
+      status: "missing",
+      blockedReason: "Depends on Module 11's Stage -3 (Requirements Engineering), not yet built.",
+    };
+  }
+  return {
+    status: "missing",
+    blockedReason: "No generator scoped for this artifact yet (see ARCHITEQ-PRD.md OQ6).",
+  };
+}
+
+function renderHubAndSpoke(hub, spokes) {
+  if (spokes.length > 6) {
+    throw new Error(`renderHubAndSpoke supports at most 6 spokes; got ${spokes.length}`);
+  }
+  const container = document.createElement("div");
+  container.className = "decompose-hub-diagram";
+
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("class", "decompose-hub-connectors");
+  container.appendChild(svg);
+
+  const positions = ["pos-tl", "pos-tr", "pos-ml", "pos-mr", "pos-bl", "pos-br"];
+  const spokeEls = [];
+  spokes.forEach((spoke, i) => {
+    const spokeEl = document.createElement("div");
+    spokeEl.className = `decompose-spoke ${positions[i]}`;
+    const titleEl = document.createElement("div");
+    titleEl.className = "decompose-spoke-title";
+    titleEl.textContent = spoke.title;
+    spokeEl.appendChild(titleEl);
+    (spoke.items || []).forEach((item) => {
+      const itemEl = document.createElement("div");
+      itemEl.className = "decompose-spoke-item";
+      itemEl.textContent = item;
+      spokeEl.appendChild(itemEl);
+    });
+    if (spoke.onClick) {
+      spokeEl.classList.add("decompose-spoke-clickable");
+      spokeEl.addEventListener("click", spoke.onClick);
+    }
+    container.appendChild(spokeEl);
+    spokeEls.push(spokeEl);
+  });
+
+  const hubEl = document.createElement("div");
+  hubEl.className = "decompose-hub";
+  const hubTitle = document.createElement("div");
+  hubTitle.className = "decompose-hub-title";
+  hubTitle.textContent = hub.title;
+  const hubSubtitle = document.createElement("div");
+  hubSubtitle.className = "decompose-hub-subtitle";
+  hubSubtitle.textContent = hub.subtitle;
+  const hubDesc = document.createElement("div");
+  hubDesc.className = "decompose-hub-desc";
+  hubDesc.textContent = hub.desc;
+  hubEl.appendChild(hubTitle);
+  hubEl.appendChild(hubSubtitle);
+  hubEl.appendChild(hubDesc);
+  container.appendChild(hubEl);
+
+  const drawConnectors = () => {
+    const rect = container.getBoundingClientRect();
+    svg.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
+    svg.innerHTML = "";
+    const hubRect = hubEl.getBoundingClientRect();
+    const hubCenter = {
+      x: hubRect.left - rect.left + hubRect.width / 2,
+      y: hubRect.top - rect.top + hubRect.height / 2,
+    };
+    spokeEls.forEach((spokeEl) => {
+      const sr = spokeEl.getBoundingClientRect();
+      const onLeft = sr.left < hubRect.left;
+      const sx = sr.left - rect.left + (onLeft ? sr.width : 0);
+      const sy = sr.top - rect.top + sr.height / 2;
+      const hx = hubCenter.x + (onLeft ? -hubRect.width / 2 : hubRect.width / 2);
+      const midX = (sx + hx) / 2;
+      const path = document.createElementNS(SVG_NS, "path");
+      path.setAttribute("d", `M${sx},${sy} C${midX},${sy} ${midX},${hubCenter.y} ${hx},${hubCenter.y}`);
+      path.setAttribute("class", "decompose-hub-conn");
+      svg.appendChild(path);
+    });
+  };
+  setTimeout(drawConnectors, 30);
+  window.addEventListener("resize", drawConnectors);
+
+  return container;
+}
+
+function renderDocArtifact(grouped, docId) {
+  const el = document.createElement("div");
+  el.className = "decompose-py-level decompose-py-level-3";
+  const doc = DOC_ARTIFACTS.find((d) => d.id === docId);
+  const status = docArtifactStatus(docId);
+
+  if (status.status === "missing") {
+    const banner = document.createElement("div");
+    banner.className = "decompose-py-doc-missing";
+    const icon = document.createElement("span");
+    icon.className = "decompose-py-doc-missing-icon";
+    icon.textContent = "⚠";
+    const text = document.createElement("span");
+    text.textContent = `${doc.file} has not been generated for this domain yet. ${status.blockedReason}`;
+    banner.appendChild(icon);
+    banner.appendChild(text);
+    el.appendChild(banner);
+    return el;
+  }
+
+  const hub = {
+    title: "Engineering Plan",
+    subtitle: doc.file,
+    desc: `${state.domain} — ${grouped.folders.length} layer${grouped.folders.length === 1 ? "" : "s"}, derived from the frozen tree's topological build order (R10).`,
+  };
+  const spokes = grouped.folders.map((folder, folderIdx) => ({
+    title: folder.label,
+    items: folder.files.map((f) => pyFileName(f.label)),
+    onClick: () => setPyBrowserState({ folderIdx, fileIdx: 0 }),
+  }));
+  el.appendChild(renderHubAndSpoke(hub, spokes));
+  return el;
 }
 
 function renderPyCrumbs(grouped, pb) {
@@ -702,6 +848,16 @@ function renderPyCrumbs(grouped, pb) {
   pkgSpan.textContent = grouped.packageName;
   pkgSpan.addEventListener("click", () => setPyBrowserState({}));
   crumbs.appendChild(pkgSpan);
+
+  if (pb.docId != null) {
+    const doc = DOC_ARTIFACTS.find((d) => d.id === pb.docId);
+    crumbs.appendChild(pyCrumbSep());
+    const docSpan = document.createElement("span");
+    docSpan.className = "decompose-py-crumb-current";
+    docSpan.textContent = doc ? doc.file : "";
+    crumbs.appendChild(docSpan);
+    return crumbs;
+  }
 
   if (pb.folderIdx != null && pb.fileIdx != null) {
     const file = grouped.folders[pb.folderIdx].files[pb.fileIdx];
@@ -726,6 +882,36 @@ function renderPyCrumbs(grouped, pb) {
 function renderPyLevel1(grouped) {
   const el = document.createElement("div");
   el.className = "decompose-py-level decompose-py-level-1";
+
+  const docsFolderRow = document.createElement("div");
+  docsFolderRow.className = "decompose-py-folder-row";
+  docsFolderRow.textContent = "docs/";
+  el.appendChild(docsFolderRow);
+
+  const docsChildren = document.createElement("div");
+  docsChildren.className = "decompose-py-children";
+  DOC_ARTIFACTS.forEach((doc) => {
+    const status = docArtifactStatus(doc.id);
+    const row = document.createElement("div");
+    row.className = "decompose-py-file-row";
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = doc.file;
+    row.appendChild(nameSpan);
+    if (status.status === "missing") {
+      const badge = document.createElement("span");
+      badge.className = "decompose-py-doc-badge";
+      badge.textContent = "not generated yet";
+      row.appendChild(badge);
+    }
+    const chev = document.createElement("span");
+    chev.className = "decompose-py-chev";
+    chev.textContent = "›";
+    row.appendChild(chev);
+    row.addEventListener("click", () => setPyBrowserState({ docId: doc.id }));
+    docsChildren.appendChild(row);
+  });
+  el.appendChild(docsChildren);
+
   grouped.folders.forEach((folder, folderIdx) => {
     const folderRow = document.createElement("div");
     folderRow.className = "decompose-py-folder-row";
@@ -1029,7 +1215,7 @@ async function selectDomain(domain) {
   state = {
     ...state, view: "canvas", domain, tree: null, error: null,
     mode: null, pythonRender: null, n8nRender: null, selectedNodeId: null,
-    pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null },
+    pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null, docId: null },
   };
   renderBoard();
   const res = await fetch(`/api/decompose/domains/${encodeURIComponent(domain)}/tree`);

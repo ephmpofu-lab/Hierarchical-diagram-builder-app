@@ -84,16 +84,20 @@ Per `rules/principles/component-decomposition.md` CD11.
   maintained document.
 
 ### Planning Artifacts
-Per `~/.claude/frameworks/universal-prd-framework.md` Section 2 (DP11) and `rules/principles/ui-design.md` UI12.
-- **R38.** The system renders a `docs/` folder in the folder scaffold listing all six of
-  DP11's planning artifacts. Opening an artifact whose content already exists renders it as
-  a hub-and-spoke diagram by default (one central card, up to 6 satellite cards), sourced
-  from that artifact's real content, never placeholder or fabricated text.
+Per `~/.claude/frameworks/universal-prd-framework.md` Section 2 (DP11) and `rules/principles/ui-design.md` UI12. These are the *current domain's own* planning artifacts (the RAG project's PRD, TDD, etc.), sitting in the folder scaffold next to that domain's generated code (`architeq_{domain}/`) — not ARCHITEQ's own self-documentation. ARCHITEQ's own PRD/TDD/etc. (this repo's `ARCHITEQ-PRD.md` and siblings) are never rendered inside the end-user product; they stay governance-side, per `RULES-INDEX.md`.
+- **R38.** The system renders a `docs/` folder in the current domain's folder scaffold
+  listing all six of DP11's planning artifacts for that domain. Opening an artifact whose
+  content already exists renders it as a hub-and-spoke diagram by default (one central card,
+  up to 6 satellite cards), sourced from that domain's own real content, never placeholder
+  or fabricated text, and never ARCHITEQ's own project documentation used as a stand-in.
 - **R39.** Each rendered planning-artifact diagram has a text-view toggle showing the full
   underlying document; the full text is one interaction away, never the default first view.
-- **R40.** An artifact with no real generator behind it yet (see OQ6) renders an explicit
-  "not generated yet" state naming the specific blocking dependency, rather than fabricated
-  or placeholder content — extends WD2 (No Silent Failure) to planning artifacts.
+- **R40.** An artifact with no real per-domain generator behind it yet (see OQ6) renders an
+  explicit "not generated yet" state naming the specific blocking dependency, rather than
+  fabricated or placeholder content — extends WD2 (No Silent Failure) to planning artifacts.
+  Today this is five of the six artifacts (see OQ6); only the Engineering-Plan-equivalent
+  has a real per-domain generator (Modules 5-8, surfaced via 10c's Python folder/file/
+  function browser).
 
 ## 4a. Modules
 
@@ -148,4 +152,4 @@ Each module is the unit `PROGRESS.md` tracks. A module is `[x]` complete only wh
 3. **n8n schema version pin.** `Superseded`, not resolved as originally framed. No tagged release is vendored; see the Constraints and Dependencies sections above for what actually shipped (`rules/n8n_node_schemas.json`, hand-curated) and why a full pinned release turned out not to be mechanically feasible with this stack.
 4. **Output rendering as page vs. panel, confirmed.** The UI directive already resolved this to "panel, not page" (R16 to R19 reflect that), but it is listed here as a reminder that this was a judgment call made under the collapse-stops principle, not an explicit prior user decision, in case it needs revisiting once the canvas is actually in front of the user.
 5. **Component Tree PRD scope, not yet reflected upstream.** `ARCHITEQ-Dual-Tree-Architecture.md` and `ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md` were adopted as addenda before this PRD had a Module 11. `Resolved` in this revision: R24-R34 and Module 11 added above; the Component Tree is confirmed real, grounded, active scope per `RULES-INDEX.md` and `rules/principles/component-decomposition.md`, not something the original Module 1-10 list superseded.
-6. **No real generator exists for 4 of DP11's 6 planning artifacts.** Only the PRD (Universal PRD Framework) and Engineering Plan (Decomposition Engine, Section 4a plus `.agent/plans/`) have real content-generating machinery behind them today. TDD, App Flow, Design Brief, and Backend Schema have no generator — for this project specifically, their content was hand-authored directly (`ARCHITEQ-TDD.md` etc.), not produced by any part of ARCHITEQ itself. Blocks: R38 can only render these as R40's honest "not generated yet" state until this is resolved. Not resolved here — deliberately left open rather than guessed at, since it's a real, undecided scope question (is a generator for these four artifacts even in scope for ARCHITEQ to build, or are they permanently hand-authored inputs the same way the PRD's own Problem/Goal sections are human-written before Stage -3 ever runs on them?).
+6. **No real per-domain generator exists yet for 5 of DP11's 6 planning artifacts.** Only the Engineering-Plan-equivalent has one today: Modules 5-8 (Decomposition Engine, Python/n8n Renderers) already produce it per-domain, and 10c's folder/file/function browser already renders it. The PRD-equivalent's generator is Module 11's Stage -3 (Requirements Engineering) — scoped, grounded, but not yet built. TDD-equivalent, App-Flow-equivalent, Design-Brief-equivalent, and Backend-Schema-equivalent have no generator scoped at all yet beyond CD10's narrow `rationale`-field requirement (which is not a full document). Note this is distinct from ARCHITEQ's *own* meta-documentation (`ARCHITEQ-TDD.md` etc., hand-authored for this repository's own governance, per DP11 applied to ARCHITEQ's own build) — that's a separate, already-satisfied concern, not a per-domain generator. Blocks: R38 renders all five as R40's honest "not generated yet" state until each is resolved. Not resolved here — deliberately left open rather than guessed at, since it's a real, undecided scope question (is a generator for TDD/App-Flow/Design-Brief/Backend-Schema even in scope for ARCHITEQ to build per-domain, given Module 11 already covers the Backend-Schema-equivalent's substance via the Component Tree's Attribute Enumeration — is a separate "Backend Schema" artifact redundant with that, or a distinct rendering of the same underlying data?).

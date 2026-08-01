@@ -2079,6 +2079,136 @@ html[data-inspector-collapsed="true"] .health-footer {
   background: var(--accent-bg);
 }
 
+/* docs/ folder: current domain's planning artifacts (Plan 12a) */
+.decompose-py-doc-badge {
+  font-size: 10.5px;
+  color: var(--warning);
+  margin-left: 6px;
+}
+
+.decompose-py-doc-missing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  max-width: 560px;
+  background: var(--warning-bg);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--warning-text);
+  line-height: 1.5;
+}
+
+.decompose-py-doc-missing-icon {
+  flex-shrink: 0;
+}
+
+/* Hub-and-spoke diagram (UI12): one central card, up to 6 satellites, 3-left/3-right,
+   dashed connector lines drawn from real card positions. Tokens only -- no colors or
+   fonts of its own, per the standing theme decision. */
+.decompose-hub-diagram {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 300px 1fr;
+  grid-template-rows: auto auto auto;
+  gap: 22px;
+  align-items: center;
+  min-height: 420px;
+  max-width: 900px;
+}
+
+.decompose-hub {
+  grid-column: 2;
+  grid-row: 2;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 20px;
+  text-align: center;
+  position: relative;
+  z-index: 2;
+  box-shadow: var(--shadow);
+}
+
+.decompose-hub-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.decompose-hub-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.decompose-hub-desc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-top: 12px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.decompose-spoke {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  position: relative;
+  z-index: 2;
+  width: 250px;
+}
+
+.decompose-spoke-clickable {
+  cursor: pointer;
+}
+
+.decompose-spoke-clickable:hover {
+  border-color: var(--accent);
+}
+
+.decompose-spoke-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.decompose-spoke-item {
+  font-size: 12px;
+  color: var(--text);
+  padding: 2px 0;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.decompose-hub-diagram .pos-tl { grid-column: 1; grid-row: 1; justify-self: end; }
+.decompose-hub-diagram .pos-tr { grid-column: 3; grid-row: 1; justify-self: start; }
+.decompose-hub-diagram .pos-ml { grid-column: 1; grid-row: 2; justify-self: end; }
+.decompose-hub-diagram .pos-mr { grid-column: 3; grid-row: 2; justify-self: start; }
+.decompose-hub-diagram .pos-bl { grid-column: 1; grid-row: 3; justify-self: end; }
+.decompose-hub-diagram .pos-br { grid-column: 3; grid-row: 3; justify-self: start; }
+
+.decompose-hub-connectors {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.decompose-hub-conn {
+  stroke: var(--border);
+  stroke-width: 1.3;
+  stroke-dasharray: 4, 4;
+  fill: none;
+}
+
 /* Node detail drawer (item 5) -- a slide-in overlay, distinct from .inspector-pane
    (that one is a permanently-docked column, not an overlay over the canvas). */
 .decompose-drawer-backdrop {
