@@ -27,6 +27,7 @@ from backend.decompose import engine as decompose_engine
 from backend.intelligence.stages import ReasoningStageError
 from backend.intent import service as intent_service
 from backend.models import (
+    Attribute,
     Capability,
     Component,
     DomainChecklist,
@@ -1079,6 +1080,80 @@ def test_decompose_capability_prompt_includes_capability_and_requirement_ids(mon
 
     assert "Document Ingestion" in captured["prompt"]
     assert "R6" in captured["prompt"]
+
+
+# ---- Module 11 -- Stage 0, Component Attribute Enumeration (11d) ----
+
+_STAGE0_COMPONENT = Component(label="Upload Source", realizes_capability="Document Ingestion", domain="rag")
+
+
+def test_enumerate_attributes_returns_well_formed_items(monkeypatch):
+    mock_response = {"attributes": [
+        {"name": "Max File Size", "type": "integer"},
+        {"name": "Accepted Formats", "type": "list"},
+    ]}
+    monkeypatch.setattr(component_engine, "_ask_json", lambda **kwargs: mock_response)
+
+    result = component_engine.enumerate_attributes(_STAGE0_COMPONENT, "context")
+
+    assert len(result) == 2
+    assert all(isinstance(a, Attribute) for a in result)
+    assert {a.name for a in result} == {"Max File Size", "Accepted Formats"}
+    assert all(a.component_label == "Upload Source" and a.domain == "rag" for a in result)
+
+
+def test_enumerate_attributes_splits_compound_candidate(monkeypatch):
+    call_count = {"n": 0}
+
+    def mock(**kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return {"attributes": [{"name": "Batch Size and Overlap", "type": "integer"}]}
+        return {"attributes": [{"name": "Batch Size", "type": "integer"}, {"name": "Overlap", "type": "integer"}]}
+
+    monkeypatch.setattr(component_engine, "_ask_json", mock)
+
+    result = component_engine.enumerate_attributes(_STAGE0_COMPONENT, "context")
+
+    assert {a.name for a in result} == {"Batch Size", "Overlap"}
+    assert call_count["n"] == 2
+
+
+def test_enumerate_attributes_bounds_recursive_split(monkeypatch):
+    # Every split call returns another compound name -- must stop at MAX_ATTRIBUTE_SPLIT_DEPTH,
+    # not loop forever, and keep the last attempt rather than silently dropping it.
+    def mock(**kwargs):
+        return {"attributes": [{"name": "A and B", "type": "string"}]}
+
+    monkeypatch.setattr(component_engine, "_ask_json", mock)
+
+    result = component_engine.enumerate_attributes(_STAGE0_COMPONENT, "context")
+
+    assert len(result) == 1
+    assert result[0].name == "A and B"  # kept as-is once depth cap is hit
+
+
+def test_check_no_shared_attributes_flags_overlap():
+    attrs = [
+        Attribute(name="Max File Size", type="integer", component_label="Upload Source", domain="rag"),
+        Attribute(name="Max File Size", type="integer", component_label="File Validator", domain="rag"),
+        Attribute(name="Timeout", type="integer", component_label="Upload Source", domain="rag"),
+    ]
+
+    violations = component_engine.check_no_shared_attributes(attrs)
+
+    assert len(violations) == 1
+    assert "Max File Size" in violations[0]
+    assert "Upload Source" in violations[0] and "File Validator" in violations[0]
+
+
+def test_check_no_shared_attributes_passes_with_no_overlap():
+    attrs = [
+        Attribute(name="Max File Size", type="integer", component_label="Upload Source", domain="rag"),
+        Attribute(name="Timeout", type="integer", component_label="File Validator", domain="rag"),
+    ]
+
+    assert component_engine.check_no_shared_attributes(attrs) == []
 
 
 def test_render_python_endpoint_404_for_unknown_domain(authed_client):

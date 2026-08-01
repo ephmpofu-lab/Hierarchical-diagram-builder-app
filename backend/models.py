@@ -1182,4 +1182,11 @@ class Component(BaseModel):
     domain: str
 
 
+class Attribute(BaseModel):
+    name: str
+    type: str
+    component_label: str
+    domain: str
+
+
 Project.model_rebuild()

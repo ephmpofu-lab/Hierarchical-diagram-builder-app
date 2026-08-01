@@ -6,10 +6,13 @@ ARCHITEQ-Dual-Tree-Architecture.md and rules/principles/component-decomposition.
 Stage -3 (Requirements Engineering) is the only stage implemented so far (sub-plan 11a).
 """
 
-from typing import List
+from typing import Dict, List
 
 from ..intelligence.stages import _ask_json
-from ..models import Capability, Component, ExtractedRequirement
+from ..models import Attribute, Capability, Component, ExtractedRequirement
+
+# Same fixed-constant posture as MAX_ATOMICITY_SPLIT_DEPTH (backend/decompose/engine.py).
+MAX_ATTRIBUTE_SPLIT_DEPTH = 3
 
 
 def extract_requirements(
@@ -109,3 +112,84 @@ def decompose_capability(capability: Capability, reasoning_context: str) -> List
             continue
         components.append(Component(label=label, realizes_capability=capability.label, domain=capability.domain))
     return components
+
+
+def _attribute_needs_split(name: str) -> bool:
+    """CD4's own literal test -- deliberately simpler than the Workflow Tree's formal
+    5-criterion Atomicity Test (P1); CD4 states its own single criterion directly."""
+    lowered = f" {name.lower()} "
+    return " and " in lowered or "&" in name
+
+
+def _split_attribute(name: str, type_: str, reasoning_context: str) -> List[dict]:
+    """Stage 0's correction step for a compound attribute -- an AI call, mirroring
+    _split_step's role for atomic steps at the attribute level."""
+    data = _ask_json(
+        system=(
+            "You are the Component Tree's Stage 0 correction step. A candidate component "
+            "attribute has a compound name (it contains 'and' or '&'), meaning it isn't "
+            "actually a single named property with a single type. Split it into 2 or more "
+            "attributes, each with its own single name and single type. "
+            'Respond with strict JSON only: {"attributes": [{"name": str, "type": str}]}'
+        ),
+        prompt=f"Compound attribute: {name} ({type_})\n\nReasoning context:\n{reasoning_context}",
+        max_tokens=500,
+    )
+    return data.get("attributes", [])
+
+
+def enumerate_attributes(component: Component, reasoning_context: str) -> List[Attribute]:
+    """Stage 0 -- enumerates one component's configuration attributes down to single-name,
+    single-type leaves (R27, CD4). A candidate failing _attribute_needs_split is recursively
+    split, bounded by MAX_ATTRIBUTE_SPLIT_DEPTH so a name that can't be cleanly split
+    doesn't loop forever -- the last attempt is kept (never silently dropped), same posture
+    as the Workflow Tree's own atomic-step split loop."""
+    data = _ask_json(
+        system=(
+            "You are enumerating one component's configuration attributes down to the "
+            "smallest meaningful unit. Each attribute must be a single named property with "
+            "a single type (e.g. 'Batch Size: integer') -- never a compound description "
+            "that would require an 'and' to describe its meaning. "
+            'Respond with strict JSON only: {"attributes": [{"name": str, "type": str}]}'
+        ),
+        prompt=f"Component: {component.label}\n\nReasoning context:\n{reasoning_context}",
+        max_tokens=1000,
+    )
+    final_attrs: List[Attribute] = []
+    queue = [(c, 0) for c in data.get("attributes", [])]
+    while queue:
+        candidate, depth = queue.pop(0)
+        name = (candidate.get("name") or "").strip()
+        type_ = (candidate.get("type") or "").strip()
+        if not name or not type_:
+            continue
+        if not _attribute_needs_split(name) or depth >= MAX_ATTRIBUTE_SPLIT_DEPTH:
+            final_attrs.append(Attribute(
+                name=name, type=type_, component_label=component.label, domain=component.domain,
+            ))
+            continue
+        split_pieces = _split_attribute(name, type_, reasoning_context)
+        if not split_pieces:
+            final_attrs.append(Attribute(
+                name=name, type=type_, component_label=component.label, domain=component.domain,
+            ))
+            continue
+        queue.extend((piece, depth + 1) for piece in split_pieces)
+    return final_attrs
+
+
+def check_no_shared_attributes(attributes: List[Attribute]) -> List[str]:
+    """R28/CD5 -- no two components claim the same attribute. Operates over the full set of
+    attributes across every component in a domain, not per-component. Returns one
+    human-readable violation message per attribute name claimed by more than one component;
+    empty if none."""
+    owners: Dict[str, set] = {}
+    for attr in attributes:
+        owners.setdefault(attr.name, set()).add(attr.component_label)
+    violations = []
+    for name, components in owners.items():
+        if len(components) > 1:
+            violations.append(
+                f"Attribute '{name}' is claimed by more than one component: {', '.join(sorted(components))}"
+            )
+    return violations
