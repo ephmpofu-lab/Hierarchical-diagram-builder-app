@@ -57,6 +57,7 @@ This corpus sits alongside, not instead of:
 - `ARCHITEQ-Simulation-Grounding-and-Visual-Fix.md` — the grounding simulation mechanism referenced throughout this corpus
 - `ARCHITEQ-Dual-Tree-Architecture.md` — the Component Tree (Python) vs. Workflow Tree (n8n) split this corpus's `component-decomposition.md` file grounds
 - `ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md` — unbounded tree depth and the node-level completion rollup mechanism (WD11, WD12, CD9)
+- `ARCHITEQ-Data-Architecture-Layer-Spec.md` — the Data Architecture Layer's synchronized-but-separate-layout relationship to the Workflow Layer (R41-R50), including the cross-layer Workflow ID + Node ID + Data ID + Operation compound key
 - `ARCHITEQ-UI-and-Dev-Loop-Directive.md` — the two-screen structure and dev loop this corpus's `ui-design.md` and `dev-process.md` files ground
 - `PROGRESS.md` — module-level tracking against the PRD
 - `~/.claude/CLAUDE.md` and the project's own `CLAUDE.md` — where the Autonomy Default and Documentation Sync rules (DP8, DP10) are actually recorded and enforced day to day

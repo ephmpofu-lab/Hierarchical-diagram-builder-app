@@ -20,6 +20,8 @@ Given a plain-language intent ("I want to develop a ___"), ARCHITEQ produces one
 - ARCHITEQ is not a general-purpose chat assistant. The persistent input on the canvas (per the UI directive) only refines the current tree; it does not serve as an open-ended conversational agent.
 - ARCHITEQ does not host multi-user collaboration, permissions, or team features in this version. Single-user tool.
 - ARCHITEQ does not maintain a live connection to a running n8n instance. Node schemas are vendored, not fetched live (per the node-schema decision already made).
+- ARCHITEQ does not execute the generated SQL DDL against a real database, and does not support database dialects other than PostgreSQL in this version — matches this app's own existing Postgres-backed stack (`backend/db/postgres_*_repository.py`) and the Data Architecture Layer spec's own worked examples (`UUID`, `TIMESTAMPTZ`, `JSONB`).
+- ARCHITEQ's Data Architecture Layer does not model cross-system data lineage, master data management, or data governance beyond what a single domain's own Workflow Tree derives. It is a workflow-derived entity model, not an enterprise data catalog.
 
 ## 4. Requirements
 
@@ -99,6 +101,49 @@ Per `~/.claude/frameworks/universal-prd-framework.md` Section 2 (DP11) and `rule
   has a real per-domain generator (Modules 5-8, surfaced via 10c's Python folder/file/
   function browser).
 
+### Data Architecture Layer
+Per `docs/ARCHITEQ-Data-Architecture-Layer-Spec.md`. A second, synchronized architectural
+layer alongside the Workflow Layer — not an independent ERD page. The Workflow ID in every
+compound key below is realized as the domain name (this app's own real, already-unique
+"one workflow per domain" unit); Node ID is the real `TaskTreeNode.id` at the Atomic step
+level (see the spec doc's own "Grounding note," added during PRD integration).
+- **R41.** A domain's Data Architecture is always derived from that domain's own
+  already-frozen Workflow Tree; it is never authored independently of, or before, that
+  Workflow Tree exists.
+- **R42.** Every Atomic step is classified by its data-persistence operation (`CREATE`,
+  `READ`, `WRITE`, `UPDATE`, `DELETE`, `QUERY`, or `TRANSIENT` for a step that only
+  passes/transforms non-persisted data). A persistent data entity is proposed only for a
+  step classified as touching persistent data, never automatically for every step's output.
+- **R43.** Every persistent data entity receives a stable Data ID, unique within its domain,
+  reused identically whenever more than one Atomic step touches the same real-world entity
+  — never a duplicate entity for the same underlying object.
+- **R44.** Every workflow-to-data relationship is identified by the compound key domain +
+  Atomic step id + Data ID + operation type, never by Atomic step id or Data ID alone (an
+  Atomic step id is only unique within its own domain).
+- **R45.** Every persistent data entity's definition (name, attributes, types, primary key,
+  foreign keys, constraints, relationships, cardinality) lives in one canonical model; the
+  rendered ERD, the generated SQL DDL, and the workflow-to-data mappings are all derived
+  from that same model, never independently authored or allowed to drift apart.
+- **R46.** The Data Architecture has its own layout, independent of the Workflow Tree's/n8n
+  canvas's layout — entities are arranged by their own data relationships, never forced to
+  mirror workflow node positions.
+- **R47.** The canvas supports two prominence states, Workflow-active/Data-underlay and
+  Data-active/Workflow-underlay; the inactive layer renders at reduced (approximately
+  10-20%) prominence as a labeled reference (real workflow/domain names and node ids, never
+  a decorative placeholder), never at equal visual weight to the active layer.
+- **R48.** When the Workflow Layer is active, a data-touching Atomic step shows a compact
+  anchor naming its Data ID and operation (e.g. "D02 WRITE"); cross-layer relationship
+  lines are not permanently drawn, only revealed on hover/select of either a node or an
+  entity, and hidden again on deselect.
+- **R49.** Selecting an Atomic step highlights every data entity and operation it touches;
+  selecting a data entity highlights every Atomic step (across every domain that references
+  it, per R44's compound key) that creates, reads, writes, updates, deletes, or queries it
+  — traceability works in both directions.
+- **R50.** Selecting a data entity opens a detail panel showing its id, name, description,
+  database/platform, attributes with types, primary/foreign keys, constraints,
+  relationships, workflow usage (every referencing Atomic step and its operation), and its
+  generated SQL DDL.
+
 ## 4a. Modules
 
 Requirements are grouped into modules so Plan/Build/Test/Commit cycles and `PROGRESS.md` can track status at a buildable grain, not just as one long requirement list. Module order follows the dependency order in `ARCHITEQ-Build-Directive.md` Section 6 — each module is buildable once the ones before it are committed.
@@ -116,6 +161,7 @@ Requirements are grouped into modules so Plan/Build/Test/Commit cycles and `PROG
 - **Module 10: UI Shell (Home/Canvas, Detail Panel, Persistent Input)** — R16, R17, R18, R19
 - **Module 11: Dual Tree Architecture (Component Tree)** — R24 to R37. Depends on Modules 1 to 10 (reconciles against the Workflow Tree per R29). Rated Complex; built as a sequence of sub-plans per `~/.claude/CLAUDE.md`'s Development Loop, not as one item.
 - **Module 12: Planning Artifact Diagram Engine** — R38 to R40. Depends on the PRD (this document) existing as real content to render (already true). Partially buildable now: the `docs/` folder, hub-and-spoke diagram rendering, and R40's honest-unavailable state are real, unblocked work; actually generating TDD/App Flow/Design Brief/Backend Schema content is blocked on OQ6.
+- **Module 13: Data Architecture Layer** — R41 to R50. Depends on Modules 1 to 10 (a domain's Workflow Tree must already be frozen; the canvas the new layer attaches to already exists). Rated Complex; built as a sequence of sub-plans per `~/.claude/CLAUDE.md`'s Development Loop, not as one item, mirroring Module 11's own precedent for a Complex, tree-derived layer.
 
 Each module is the unit `PROGRESS.md` tracks. A module is `[x]` complete only when every requirement listed under it has passed Test and been Committed.
 
@@ -127,6 +173,7 @@ Each module is the unit `PROGRESS.md` tracks. A module is `[x]` complete only wh
 - UI must follow the collapsed-screen structure in `ARCHITEQ-UI-and-Dev-Loop-Directive.md` Part 1. No additional pages without first checking whether the workflow can be a state or panel instead.
 - Development must follow the PRD → Plan → Build → Test → Commit loop in `ARCHITEQ-UI-and-Dev-Loop-Directive.md` Part 2, one build-priority item at a time.
 - Documents and generated output text must follow existing standing formatting rules: no en-dashes, no underscores in prose, no AI-sounding filler phrases, concise text.
+- Generated SQL DDL targets PostgreSQL only (per the Non-Goals above); the Workflow ID half of every cross-layer compound key (R44) is the domain name, and the Node ID half is the real `TaskTreeNode.id` — no new "multiple workflows per domain" concept is introduced to satisfy the spec doc's own generic "WF01/WF02" framing (see `docs/ARCHITEQ-Data-Architecture-Layer-Spec.md`'s own grounding note).
 
 ## 6. Dependencies
 
@@ -136,6 +183,7 @@ Each module is the unit `PROGRESS.md` tracks. A module is `[x]` complete only wh
 - Depends on the existing Tool A hierarchical diagram builder (Python FastAPI backend, vanilla JS/SVG frontend, from the SKAIDO Architect project) for the SVG rendering component in R15. `Confirmed` as an existing asset, not to be rebuilt from scratch.
 - Depends on `rules/n8n_node_schemas.json`, a hand-curated node schema set maintained in this repo, for R13. `Corrected`: no dependency on n8n's live API or a downloadable GitHub catalog exists, per the Constraints section above.
 - Depends on the project's own PRD (this document) as the Stage -3 (Requirements Engineering) input for Module 11's Component Tree.
+- Depends on `docs/ARCHITEQ-Data-Architecture-Layer-Spec.md` for the exact Data Architecture Layer behavior (R41-R50); depends on a domain's Workflow Tree already being frozen (R41) and on the existing n8n canvas (10a-10b) as the surface the new layer's prominence toggle attaches to.
 
 ## 7. Success Criteria
 
@@ -153,3 +201,5 @@ Each module is the unit `PROGRESS.md` tracks. A module is `[x]` complete only wh
 4. **Output rendering as page vs. panel, confirmed.** The UI directive already resolved this to "panel, not page" (R16 to R19 reflect that), but it is listed here as a reminder that this was a judgment call made under the collapse-stops principle, not an explicit prior user decision, in case it needs revisiting once the canvas is actually in front of the user.
 5. **Component Tree PRD scope, not yet reflected upstream.** `ARCHITEQ-Dual-Tree-Architecture.md` and `ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md` were adopted as addenda before this PRD had a Module 11. `Resolved` in this revision: R24-R34 and Module 11 added above; the Component Tree is confirmed real, grounded, active scope per `RULES-INDEX.md` and `rules/principles/component-decomposition.md`, not something the original Module 1-10 list superseded.
 6. **No real per-domain generator exists yet for 5 of DP11's 6 planning artifacts.** Only the Engineering-Plan-equivalent has one today: Modules 5-8 (Decomposition Engine, Python/n8n Renderers) already produce it per-domain, and 10c's folder/file/function browser already renders it. The PRD-equivalent's generator is Module 11's Stage -3 (Requirements Engineering) — scoped, grounded, but not yet built. TDD-equivalent, App-Flow-equivalent, Design-Brief-equivalent, and Backend-Schema-equivalent have no generator scoped at all yet beyond CD10's narrow `rationale`-field requirement (which is not a full document). Note this is distinct from ARCHITEQ's *own* meta-documentation (`ARCHITEQ-TDD.md` etc., hand-authored for this repository's own governance, per DP11 applied to ARCHITEQ's own build) — that's a separate, already-satisfied concern, not a per-domain generator. Blocks: R38 renders all five as R40's honest "not generated yet" state until each is resolved. Not resolved here — deliberately left open rather than guessed at, since it's a real, undecided scope question (is a generator for TDD/App-Flow/Design-Brief/Backend-Schema even in scope for ARCHITEQ to build per-domain, given Module 11 already covers the Backend-Schema-equivalent's substance via the Component Tree's Attribute Enumeration — is a separate "Backend Schema" artifact redundant with that, or a distinct rendering of the same underlying data?).
+7. **Data Architecture Layer's "multiple workflows" framing, resolved.** The spec doc's own examples (`WF01`, `WF02`) read as if one domain could contain several independently-numbered workflows; ARCHITEQ has no such concept (one domain = one Workflow Tree = one exportable n8n workflow). `Resolved`, not left open: Workflow ID is realized as the domain name (already the real cross-domain uniqueness unit this app uses everywhere), Node ID as the real Atomic step id — see the spec doc's own added grounding note and `ARCHITEQ-PRD.md`'s Data Architecture Layer section above.
+8. **Data-persistence-operation classification granularity, not yet decided.** Whether Stage 5 (R42's CRUD/TRANSIENT classification) issues one AI call per Atomic step or one batched call per Sub-task is a real cost/latency design choice, not yet made — deferred to whichever sub-plan actually builds Stage 5, following this corpus's own precedent of resolving such calls at build time against the real prompt/token-budget tradeoffs rather than guessing here.
