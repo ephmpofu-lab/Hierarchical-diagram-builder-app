@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 
 from . import concept, storage, tree
 from .agents.agent import ALL_AGENTS
@@ -42,6 +42,7 @@ from .knowledge.ingestion import parse_markdown
 from .knowledge.qa import run_qa
 from .knowledge.retrieval import retrieve as retrieve_knowledge
 from .render.n8n_exporter import export_workflow
+from .render.python_exporter import export_python_package
 from .render.python_renderer import render_python
 from .taxonomy import repository as taxonomy_repo
 from .validator.service import validate_tree
@@ -1263,6 +1264,19 @@ def api_render_python(body: DomainRenderRequest, user: AuthenticatedUser = Depen
     if domain_tree is None:
         raise HTTPException(status_code=404, detail=f"No frozen task tree for domain '{body.domain}' yet")
     return render_python(domain_tree)
+
+
+@router.post("/decompose/render/python/export")
+def api_export_python_package(body: DomainRenderRequest, user: AuthenticatedUser = Depends(require_auth)):
+    domain_tree = taxonomy_repo.load_tree(body.domain)
+    if domain_tree is None:
+        raise HTTPException(status_code=404, detail=f"No frozen task tree for domain '{body.domain}' yet")
+    zip_bytes = export_python_package(body.domain, domain_tree)
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{body.domain}_python.zip"'},
+    )
 
 
 @router.post("/decompose/render/n8n", response_model=N8nWorkflow)

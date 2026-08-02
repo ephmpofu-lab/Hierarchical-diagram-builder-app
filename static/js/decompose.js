@@ -762,12 +762,33 @@ function renderN8nConfigureSection(mapped) {
   return container;
 }
 
+async function downloadPythonPackage(domain) {
+  const res = await fetch("/api/decompose/render/python/export", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ domain }),
+  });
+  if (!res.ok) return;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${domain}_python.zip`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function renderOutputSection() {
   const section = document.createElement("div");
   section.className = "decompose-output-section";
 
   if (state.mode === "python") {
     section.appendChild(renderPythonBrowser());
+    const downloadBtn = document.createElement("button");
+    downloadBtn.className = "btn btn-small";
+    downloadBtn.textContent = "Download Python package (.zip)";
+    downloadBtn.addEventListener("click", () => downloadPythonPackage(state.domain));
+    section.appendChild(downloadBtn);
     return section;
   }
 

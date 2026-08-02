@@ -15,7 +15,9 @@ taxonomy/checklist writes use a __WP_DECOMPOSE_TEST__-prefixed domain name and c
 try/finally so the real `rag` domain files are never touched.
 """
 
+import io
 import uuid
+import zipfile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -40,7 +42,9 @@ from backend.models import (
     Variable,
 )
 from backend.render import node_mapper
+from backend.render import python_renderer as python_renderer_module
 from backend.render.n8n_exporter import export_workflow
+from backend.render.python_exporter import export_python_package
 from backend.render.python_renderer import (
     render_component_tree,
     render_component_tree_roadmap,
@@ -1515,6 +1519,42 @@ def test_render_component_tree_roadmap_nests_by_capability_component_attribute()
 def test_render_python_endpoint_404_for_unknown_domain(authed_client):
     response = authed_client.post("/api/decompose/render/python", json={"domain": "__definitely_not_a_real_domain__"})
     assert response.status_code == 404
+
+
+# ---- Module 10 -- Real Python Export (10g) ----
+
+def test_export_python_package_produces_real_folder_file_structure():
+    tree = taxonomy_repo.load_tree("rag")
+    zip_bytes = export_python_package("rag", tree)
+
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        names = zf.namelist()
+        assert "architeq_rag/__init__.py" in names
+        real_layers = {tree.nodes[lid].label for lid in tree.root_ids}
+        for layer_label in real_layers:
+            folder_slug = python_renderer_module._function_name(layer_label)
+            assert f"architeq_rag/{folder_slug}/__init__.py" in names
+        py_files = [n for n in names if n.endswith(".py") and not n.endswith("__init__.py")]
+        assert py_files  # at least one real module file
+        for name in py_files:
+            content = zf.read(name).decode("utf-8")
+            assert "def " in content
+
+
+def test_export_python_endpoint_404_for_unknown_domain(authed_client):
+    response = authed_client.post(
+        "/api/decompose/render/python/export", json={"domain": "__definitely_not_a_real_domain__"}
+    )
+    assert response.status_code == 404
+
+
+def test_export_python_endpoint_returns_real_downloadable_zip(authed_client):
+    response = authed_client.post("/api/decompose/render/python/export", json={"domain": "rag"})
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert "attachment" in response.headers["content-disposition"]
+    with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+        assert "architeq_rag/__init__.py" in zf.namelist()
 
 
 # ---------- Unit tests: Node Mapper + JSON Exporter ----------
