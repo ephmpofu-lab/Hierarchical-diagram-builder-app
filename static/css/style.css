@@ -2504,7 +2504,8 @@ html[data-inspector-collapsed="true"] .health-footer {
 }
 
 .decompose-drawer-variables,
-.decompose-drawer-rules {
+.decompose-drawer-rules,
+.decompose-drawer-data-anchors {
   list-style: none;
   margin: 0 0 16px;
   padding: 0;

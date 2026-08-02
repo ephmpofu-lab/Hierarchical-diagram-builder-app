@@ -638,6 +638,30 @@ function renderNodeDetailPanel() {
     drawer.appendChild(rulesList);
   }
 
+  // Data section (13i, R49 Workflow->Data direction) -- real DataAnchor rows for this
+  // node, shown whenever a Data Architecture is loaded, regardless of which layer
+  // (Workflow/Data) is currently the active one.
+  if (state.dataArchitecture) {
+    const matchingAnchors = state.dataArchitecture.anchors.filter((a) => a.node_id === node.id);
+    if (matchingAnchors.length > 0) {
+      const dataLabel = document.createElement("div");
+      dataLabel.className = "reasoning-section-label";
+      dataLabel.textContent = "Data";
+      drawer.appendChild(dataLabel);
+      const dataList = document.createElement("ul");
+      dataList.className = "decompose-drawer-data-anchors";
+      const entityById = {};
+      for (const e of state.dataArchitecture.entities) entityById[e.id] = e;
+      for (const anchor of matchingAnchors) {
+        const entity = entityById[anchor.data_id];
+        const item = document.createElement("li");
+        item.textContent = `${anchor.data_id} ${entity ? entity.name : "?"} — ${anchor.operation}`;
+        dataList.appendChild(item);
+      }
+      drawer.appendChild(dataList);
+    }
+  }
+
   if (node.notes) {
     const notesLabel = document.createElement("div");
     notesLabel.className = "reasoning-section-label";
