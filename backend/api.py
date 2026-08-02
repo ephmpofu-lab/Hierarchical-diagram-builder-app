@@ -46,6 +46,8 @@ from .render.python_exporter import export_python_package
 from .render.python_renderer import render_python
 from .component import engine as component_engine
 from .component import repository as component_repo
+from .data_architecture import engine as data_architecture_engine
+from .data_architecture import repository as data_architecture_repo
 from .taxonomy import repository as taxonomy_repo
 from .validator.service import validate_tree
 from .models import (
@@ -80,6 +82,10 @@ from .models import (
     ComponentTreeApproveRequest,
     ComponentTreeDraftRequest,
     ComponentTreeDraftResult,
+    DataArchitecture,
+    DataArchitectureApproveRequest,
+    DataArchitectureDraftRequest,
+    DataArchitectureDraftResult,
     DomainDraftRequest,
     DomainDraftResult,
     DomainRenderRequest,
@@ -1302,6 +1308,40 @@ def api_get_component_tree(domain: str, user: AuthenticatedUser = Depends(requir
     if tree is None:
         raise HTTPException(status_code=404, detail=f"No frozen Component Tree for domain '{domain}' yet")
     return tree
+
+
+@router.post("/decompose/domains/{domain}/data-architecture/draft", response_model=DataArchitectureDraftResult)
+def api_draft_data_architecture(domain: str, body: DataArchitectureDraftRequest, user: AuthenticatedUser = Depends(require_auth)):
+    """Sub-plan 13e -- Stage 5/6, mirroring api_draft_component_tree's shape. Requires the
+    domain's Workflow Tree to already be frozen (R41: always derived, never authored
+    independently)."""
+    workflow_tree = taxonomy_repo.load_tree(domain)
+    if workflow_tree is None:
+        raise HTTPException(status_code=404, detail=f"No frozen Workflow Tree for domain '{domain}' yet")
+    architecture, validation = data_architecture_engine.propose_data_architecture(domain, workflow_tree, body.reasoning_context)
+    return DataArchitectureDraftResult(domain=domain, architecture=architecture, validation=validation)
+
+
+@router.post("/decompose/domains/{domain}/data-architecture/approve", response_model=DataArchitectureDraftResult, status_code=201)
+def api_approve_data_architecture(domain: str, body: DataArchitectureApproveRequest, user: AuthenticatedUser = Depends(require_auth)):
+    """Explicit human approval, never automatic -- mirrors api_approve_component_tree's
+    own re-validate-before-save posture exactly."""
+    workflow_tree = taxonomy_repo.load_tree(domain)
+    if workflow_tree is None:
+        raise HTTPException(status_code=404, detail=f"No frozen Workflow Tree for domain '{domain}' yet")
+    validation = data_architecture_engine.validate_data_architecture(body.architecture, workflow_tree)
+    if not validation.passed:
+        raise HTTPException(status_code=422, detail=[v.model_dump() for v in validation.violations])
+    data_architecture_repo.save_data_architecture(body.architecture)
+    return DataArchitectureDraftResult(domain=domain, architecture=body.architecture, validation=validation)
+
+
+@router.get("/decompose/domains/{domain}/data-architecture", response_model=DataArchitecture)
+def api_get_data_architecture(domain: str, user: AuthenticatedUser = Depends(require_auth)):
+    architecture = data_architecture_repo.load_data_architecture(domain)
+    if architecture is None:
+        raise HTTPException(status_code=404, detail=f"No frozen Data Architecture for domain '{domain}' yet")
+    return architecture
 
 
 @router.post("/decompose/render/python", response_model=List[RenderedCodeBlock])

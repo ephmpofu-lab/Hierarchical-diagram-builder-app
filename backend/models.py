@@ -1367,4 +1367,18 @@ class DataArchitecture(BaseModel):
     anchors: List[DataAnchor] = Field(default_factory=list)
 
 
+class DataArchitectureDraftRequest(BaseModel):
+    reasoning_context: str = ""
+
+
+class DataArchitectureDraftResult(BaseModel):
+    domain: str
+    architecture: DataArchitecture
+    validation: ValidationResult
+
+
+class DataArchitectureApproveRequest(BaseModel):
+    architecture: DataArchitecture
+
+
 Project.model_rebuild()

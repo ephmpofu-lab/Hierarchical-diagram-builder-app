@@ -2,6 +2,11 @@
 and ARCHITEQ-PRD.md R41-R50. AI calls are mocked throughout, matching this project's own
 established convention (tests/test_engineering_decomposition.py's own docstring)."""
 
+import pytest
+from fastapi.testclient import TestClient
+
+from app import app
+from backend.auth import AuthenticatedUser, require_auth
 from backend.data_architecture import engine as data_architecture_engine
 from backend.data_architecture import repository as data_architecture_repo
 from backend.models import (
@@ -13,12 +18,24 @@ from backend.models import (
     DomainTaskTree,
     TaskTreeNode,
 )
+from backend.taxonomy import repository as taxonomy_repo
+
+TEST_DOMAIN = "__wp_data_architecture_test__"
+
+
+@pytest.fixture
+def authed_client():
+    app.dependency_overrides[require_auth] = lambda: AuthenticatedUser(
+        id="wp-data-architecture-test-user", email="data-architecture@example.com", role="EnterpriseArchitect"
+    )
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.clear()
 
 
 def _atomic(id_, label, *, consumes=None, produces=None, notes=""):
     return TaskTreeNode(id=id_, label=label, level="Atomic step", consumes=consumes, produces=produces, notes=notes)
-
-TEST_DOMAIN = "__wp_data_architecture_test__"
 
 
 def _sample_architecture() -> DataArchitecture:
@@ -197,7 +214,7 @@ def test_render_sql_ddl_marks_pk_not_null_and_leaves_plain_columns_bare():
 # ---- propose_data_architecture Orchestrator (13d) ----
 
 def _workflow_tree_fixture() -> DomainTaskTree:
-    return DomainTaskTree(domain="rag", root_ids=[], nodes={
+    return DomainTaskTree(domain=TEST_DOMAIN, root_ids=[], nodes={
         "a1": _atomic("a1", "Store Document", produces="document"),
         "a2": _atomic("a2", "Split Text Into Chunks", consumes="document", produces="chunks"),
         "a3": _atomic("a3", "Normalize Whitespace", consumes="chunks", produces="chunks"),
@@ -278,3 +295,65 @@ def test_validate_data_architecture_catches_anchor_to_nonexistent_step():
     result = data_architecture_engine.validate_data_architecture(architecture, tree)
     assert not result.passed
     assert any("nonexistent Atomic step" in v.message for v in result.violations)
+
+
+# ---- Data Architecture API (13e) ----
+
+def test_draft_data_architecture_endpoint_404_without_workflow_tree(authed_client):
+    response = authed_client.post(
+        "/api/decompose/domains/__definitely_not_a_real_domain__/data-architecture/draft",
+        json={"reasoning_context": ""},
+    )
+    assert response.status_code == 404
+
+
+def test_draft_approve_get_data_architecture_endpoints_end_to_end(authed_client, monkeypatch):
+    workflow_tree = _workflow_tree_fixture()
+    try:
+        taxonomy_repo.save_tree(workflow_tree)
+        monkeypatch.setattr(data_architecture_engine, "_ask_json", _data_architecture_stage_mock)
+
+        draft_response = authed_client.post(
+            f"/api/decompose/domains/{TEST_DOMAIN}/data-architecture/draft",
+            json={"reasoning_context": ""},
+        )
+        assert draft_response.status_code == 200
+        draft_body = draft_response.json()
+        assert draft_body["validation"]["passed"]
+
+        approve_response = authed_client.post(
+            f"/api/decompose/domains/{TEST_DOMAIN}/data-architecture/approve",
+            json={"architecture": draft_body["architecture"]},
+        )
+        assert approve_response.status_code == 201
+
+        get_response = authed_client.get(f"/api/decompose/domains/{TEST_DOMAIN}/data-architecture")
+        assert get_response.status_code == 200
+        assert get_response.json()["domain"] == TEST_DOMAIN
+    finally:
+        taxonomy_repo._TAXONOMIES_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
+        data_architecture_repo._DATA_ARCHITECTURES_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
+
+
+def test_approve_data_architecture_endpoint_rejects_invalid_architecture(authed_client):
+    workflow_tree = _workflow_tree_fixture()
+    try:
+        taxonomy_repo.save_tree(workflow_tree)
+        bad_architecture = {
+            "domain": TEST_DOMAIN,
+            "entities": [
+                {"id": "D01", "name": "documents", "domain": TEST_DOMAIN, "attributes": [
+                    {"name": "id", "type": "UUID", "is_primary_key": True},
+                ]},
+            ],
+            "anchors": [
+                {"domain": TEST_DOMAIN, "node_id": "__nonexistent__", "node_label": "?", "data_id": "D01", "operation": "WRITE"},
+            ],
+        }
+        response = authed_client.post(
+            f"/api/decompose/domains/{TEST_DOMAIN}/data-architecture/approve",
+            json={"architecture": bad_architecture},
+        )
+        assert response.status_code == 422
+    finally:
+        taxonomy_repo._TAXONOMIES_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
