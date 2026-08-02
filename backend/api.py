@@ -76,6 +76,7 @@ from .models import (
     DomainDraftRequest,
     DomainDraftResult,
     DomainRenderRequest,
+    DomainSummary,
     DomainTaskTree,
     GovernanceActionRequest,
     GovernanceAssessmentResult,
@@ -1212,9 +1213,9 @@ def api_parse_intent(body: IntentRequest, user: AuthenticatedUser = Depends(requ
     return parse_intent(body.text.strip())
 
 
-@router.get("/decompose/domains", response_model=List[str])
+@router.get("/decompose/domains", response_model=List[DomainSummary])
 def api_list_domains(user: AuthenticatedUser = Depends(require_auth)):
-    return taxonomy_repo.list_domains()
+    return taxonomy_repo.list_domain_summaries()
 
 
 @router.get("/decompose/domains/{domain}/tree", response_model=DomainTaskTree)

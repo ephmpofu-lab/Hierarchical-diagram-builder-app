@@ -892,7 +892,18 @@ def test_intent_endpoint_returns_result(authed_client, monkeypatch):
 def test_domains_endpoint_lists_known_domains(authed_client):
     response = authed_client.get("/api/decompose/domains")
     assert response.status_code == 200
-    assert "rag" in response.json()
+    body = response.json()
+    assert any(d["domain"] == "rag" for d in body)
+
+
+def test_domains_endpoint_reports_real_atomic_step_count(authed_client):
+    response = authed_client.get("/api/decompose/domains")
+    body = response.json()
+    rag_summary = next(d for d in body if d["domain"] == "rag")
+    real_tree = taxonomy_repo.load_tree("rag")
+    real_count = sum(1 for n in real_tree.nodes.values() if n.level == "Atomic step")
+    assert rag_summary["atomic_step_count"] == real_count
+    assert rag_summary["last_touched"]  # a real ISO timestamp, non-empty
 
 
 def test_get_domain_tree_404_for_unknown_domain(authed_client):

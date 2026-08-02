@@ -32,9 +32,24 @@
 const SVG_NS = "http://www.w3.org/2000/svg";
 const decomposeBoard = document.getElementById("decomposeBoard");
 
+// 10f -- static, real example prompts (the reference mockup's own 3); fill the intent
+// input on click, never auto-submit.
+const DECOMPOSE_EXAMPLE_PROMPTS = [
+  "I want to develop a RAG",
+  "I want to automate invoice processing",
+  "I want to build a support ticket triage system",
+];
+
+function formatDate(iso) {
+  // Same convention library.js's own recent-projects list already established --
+  // absolute date, not a fuzzy "N hours ago" precision claim.
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
 let state = {
   view: "home", // "home" | "drafting" | "reviewing_draft" | "canvas"
-  knownDomains: [],
+  knownDomains: [], // List[DomainSummary] (10f) -- {domain, last_touched, atomic_step_count}
   domain: null,
   lastIntentText: "",
   draft: null, // { domain, checklist, tree, validation } from POST .../draft
@@ -106,6 +121,22 @@ function renderHomeView() {
   decomposeBoard.appendChild(inputRow);
   input.focus();
 
+  // 10f -- example chips fill the input, they never auto-submit or skip a screen (that
+  // was the reference mockup's own click-through demo shortcut, not real product behavior).
+  const examples = document.createElement("div");
+  examples.className = "examples";
+  for (const text of DECOMPOSE_EXAMPLE_PROMPTS) {
+    const chip = document.createElement("div");
+    chip.className = "example-chip";
+    chip.textContent = text;
+    chip.addEventListener("click", () => {
+      input.value = text;
+      input.focus();
+    });
+    examples.appendChild(chip);
+  }
+  decomposeBoard.appendChild(examples);
+
   if (state.error) {
     const errorBox = document.createElement("div");
     errorBox.className = "reasoning-empty-state";
@@ -123,14 +154,19 @@ function renderHomeView() {
 
     const historyList = document.createElement("div");
     historyList.className = "launchpad-recent-list";
-    for (const domain of state.knownDomains) {
+    for (const summary of state.knownDomains) {
       const row = document.createElement("div");
       row.className = "launchpad-recent-row";
       const name = document.createElement("span");
       name.className = "launchpad-recent-name";
-      name.textContent = domain;
-      name.addEventListener("click", () => selectDomain(domain));
+      name.textContent = summary.domain;
+      name.addEventListener("click", () => selectDomain(summary.domain));
       row.appendChild(name);
+      const meta = document.createElement("span");
+      meta.className = "launchpad-recent-meta";
+      const stepWord = summary.atomic_step_count === 1 ? "atomic step" : "atomic steps";
+      meta.textContent = `${formatDate(summary.last_touched)} · ${summary.atomic_step_count} ${stepWord}`;
+      row.appendChild(meta);
       historyList.appendChild(row);
     }
     decomposeBoard.appendChild(historyList);

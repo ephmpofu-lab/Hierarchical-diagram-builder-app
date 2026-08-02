@@ -8,10 +8,11 @@ storage facade -- everything else in this pipeline calls through this module, ne
 the filesystem directly."""
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ..models import DomainChecklist, DomainTaskTree
+from ..models import DomainChecklist, DomainSummary, DomainTaskTree
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _TAXONOMIES_DIR = _REPO_ROOT / "taxonomies"
@@ -27,6 +28,20 @@ def list_domains() -> List[str]:
     if not _TAXONOMIES_DIR.exists():
         return []
     return sorted(p.stem for p in _TAXONOMIES_DIR.glob("*.json"))
+
+
+def list_domain_summaries() -> List[DomainSummary]:
+    """10f -- the home screen's history list. Real, cheap facts already on disk: the tree
+    file's own mtime, and a real count of the tree's own Atomic step nodes. No fabricated
+    "mode" or "validation status" field -- see DomainSummary's own docstring for why."""
+    summaries = []
+    for domain in list_domains():
+        path = _TAXONOMIES_DIR / f"{domain}.json"
+        tree = load_tree(domain)
+        atomic_step_count = sum(1 for n in tree.nodes.values() if n.level == "Atomic step") if tree else 0
+        last_touched = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+        summaries.append(DomainSummary(domain=domain, last_touched=last_touched, atomic_step_count=atomic_step_count))
+    return summaries
 
 
 def load_tree(domain: str) -> Optional[DomainTaskTree]:

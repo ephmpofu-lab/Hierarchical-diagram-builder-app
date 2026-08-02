@@ -902,6 +902,18 @@ class DomainRenderRequest(BaseModel):
     domain: str
 
 
+class DomainSummary(BaseModel):
+    """10f -- real, already-on-disk facts about one frozen domain for the home screen's
+    history list. Deliberately NOT a "mode" or "validated/N issues" field: this app never
+    persists which render mode was last used per domain, and a domain only appears here
+    once its tree is frozen, which by construction already passed the Validator (R9) --
+    there is no real "open issues" state a listed domain could be in."""
+
+    domain: str
+    last_touched: str  # ISO timestamp, the tree file's own mtime
+    atomic_step_count: int
+
+
 class RefineTreeRequest(BaseModel):
     instruction: str
 
