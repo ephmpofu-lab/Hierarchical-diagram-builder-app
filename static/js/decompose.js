@@ -951,6 +951,28 @@ function renderErdDiagram(architecture) {
   return wrap;
 }
 
+// Shared by both prominence directions (13g: faint Data reference while Workflow is
+// active; 13h: faint Workflow reference while Data is active) -- a real, labeled reference
+// panel, never a decorative placeholder, at reduced (~15%) prominence (R47).
+function renderFaintUnderlay(title, items) {
+  const panel = document.createElement("div");
+  panel.className = "decompose-faint-underlay";
+  const heading = document.createElement("div");
+  heading.className = "decompose-faint-underlay-title";
+  heading.textContent = title;
+  panel.appendChild(heading);
+  const list = document.createElement("div");
+  list.className = "decompose-faint-underlay-list";
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "decompose-faint-underlay-row";
+    row.textContent = item;
+    list.appendChild(row);
+  }
+  panel.appendChild(list);
+  return panel;
+}
+
 async function selectDataLayer(layer) {
   state = { ...state, workflowDataLayer: layer };
   renderBoard();
@@ -1018,6 +1040,10 @@ function renderOutputSection() {
   diagramWrap.className = "decompose-n8n-diagram-wrap";
   diagramWrap.appendChild(renderN8nDiagram(state.n8nRender));
   section.appendChild(diagramWrap);
+  if (state.dataArchitecture && state.dataArchitecture.entities.length > 0) {
+    const entityLabels = state.dataArchitecture.entities.map((e) => `${e.id} ${e.name}`);
+    section.appendChild(renderFaintUnderlay("Data Layer (reference)", entityLabels));
+  }
   const downloadBtn = document.createElement("button");
   downloadBtn.className = "btn btn-small";
   downloadBtn.textContent = "Download workflow.json";
@@ -1769,6 +1795,23 @@ function renderN8nDiagram(workflow) {
       badge.setAttribute("class", "decompose-n8n-needs-config-badge");
       badge.setAttribute("pointer-events", "none");
       group.appendChild(badge);
+    }
+
+    // Compact Data Anchors (13g, R48) -- only when Workflow is the active layer and the
+    // Data Architecture has already been fetched (13f's lazy-fetch posture); one line per
+    // real DataAnchor matching this node's real step_id, never rendered for a node with none.
+    if (state.workflowDataLayer === "workflow" && state.dataArchitecture) {
+      const matchingAnchors = state.dataArchitecture.anchors.filter((a) => a.node_id === node.step_id);
+      matchingAnchors.forEach((anchor, index) => {
+        const anchorText = document.createElementNS(SVG_NS, "text");
+        anchorText.setAttribute("x", node.position[0] + padding + boxWidth / 2);
+        anchorText.setAttribute("y", node.position[1] + padding + boxHeight + 14 + index * 13);
+        anchorText.setAttribute("text-anchor", "middle");
+        anchorText.setAttribute("class", "decompose-n8n-anchor-text");
+        anchorText.setAttribute("pointer-events", "none");
+        anchorText.textContent = `${anchor.data_id} ${anchor.operation}`;
+        group.appendChild(anchorText);
+      });
     }
 
     viewport.appendChild(group);

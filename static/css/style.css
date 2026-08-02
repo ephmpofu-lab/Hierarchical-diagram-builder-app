@@ -1881,6 +1881,42 @@ html[data-inspector-collapsed="true"] .health-footer {
   font-size: 11px;
 }
 
+.decompose-n8n-anchor-text {
+  fill: var(--warning-text);
+  font-size: 10px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.decompose-faint-underlay {
+  opacity: 0.15;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-top: 8px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.decompose-faint-underlay-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.decompose-faint-underlay-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.decompose-faint-underlay-row {
+  font-size: 12px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  color: var(--text);
+}
+
 .decompose-output-section {
   display: flex;
   flex-direction: column;
