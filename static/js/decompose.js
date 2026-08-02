@@ -973,6 +973,27 @@ function renderFaintUnderlay(title, items) {
   return panel;
 }
 
+function _buildWorkflowUnderlayItems(tree) {
+  // 13h -- the REAL workflow (spec section 11: never a decorative placeholder), one row
+  // per real Layer, its real Atomic step labels joined left to right.
+  const items = [];
+  for (const layerId of tree.root_ids) {
+    const layer = tree.nodes[layerId];
+    if (!layer) continue;
+    const stepLabels = [];
+    for (const subId of layer.children) {
+      const sub = tree.nodes[subId];
+      if (!sub) continue;
+      for (const atomicId of sub.children) {
+        const atomic = tree.nodes[atomicId];
+        if (atomic) stepLabels.push(atomic.label);
+      }
+    }
+    items.push(`${layer.label}: ${stepLabels.join(" → ")}`);
+  }
+  return items;
+}
+
 async function selectDataLayer(layer) {
   state = { ...state, workflowDataLayer: layer };
   renderBoard();
@@ -1033,6 +1054,10 @@ function renderOutputSection() {
       return section;
     }
     section.appendChild(renderErdDiagram(state.dataArchitecture));
+    if (state.tree) {
+      const workflowItems = _buildWorkflowUnderlayItems(state.tree);
+      section.appendChild(renderFaintUnderlay(`Workflow Layer (reference): ${state.domain}`, workflowItems));
+    }
     return section;
   }
 
