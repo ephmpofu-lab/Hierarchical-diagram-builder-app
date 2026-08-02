@@ -10,6 +10,7 @@ from backend.models import (
     DataAttribute,
     DataEntity,
     DataRelationship,
+    DomainTaskTree,
     TaskTreeNode,
 )
 
@@ -191,3 +192,89 @@ def test_render_sql_ddl_marks_pk_not_null_and_leaves_plain_columns_bare():
     assert "metadata JSONB" in sql
     assert "metadata JSONB NOT NULL" not in sql
     assert "metadata JSONB PRIMARY KEY" not in sql
+
+
+# ---- propose_data_architecture Orchestrator (13d) ----
+
+def _workflow_tree_fixture() -> DomainTaskTree:
+    return DomainTaskTree(domain="rag", root_ids=[], nodes={
+        "a1": _atomic("a1", "Store Document", produces="document"),
+        "a2": _atomic("a2", "Split Text Into Chunks", consumes="document", produces="chunks"),
+        "a3": _atomic("a3", "Normalize Whitespace", consumes="chunks", produces="chunks"),
+    })
+
+
+def _data_architecture_stage_mock(**kwargs):
+    system = kwargs.get("system", "")
+    if "classifying one workflow Atomic step" in system:
+        prompt = kwargs.get("prompt", "")
+        if "Store Document" in prompt:
+            return {"operation": "WRITE"}
+        if "Split Text Into Chunks" in prompt:
+            return {"operation": "WRITE"}
+        return {"operation": "TRANSIENT"}  # Normalize Whitespace
+    if "deriving the persistent data model" in system:
+        return {
+            "entities": [
+                {"name": "documents", "description": "", "attributes": [
+                    {"name": "id", "type": "UUID", "is_primary_key": True, "is_foreign_key": False, "references_entity_name": None, "nullable": False},
+                ]},
+                {"name": "document_chunks", "description": "", "attributes": [
+                    {"name": "id", "type": "UUID", "is_primary_key": True, "is_foreign_key": False, "references_entity_name": None, "nullable": False},
+                ]},
+            ],
+            "step_entity_map": {"a1": "documents", "a2": "document_chunks"},
+        }
+    raise AssertionError(f"unexpected system prompt: {system}")
+
+
+def test_propose_data_architecture_happy_path(monkeypatch):
+    tree = _workflow_tree_fixture()
+    monkeypatch.setattr(data_architecture_engine, "_ask_json", _data_architecture_stage_mock)
+
+    architecture, validation = data_architecture_engine.propose_data_architecture("rag", tree, "context")
+
+    assert validation.passed
+    assert len(architecture.entities) == 2
+    assert len(architecture.anchors) == 2
+
+
+def test_propose_data_architecture_transient_step_gets_no_anchor(monkeypatch):
+    tree = _workflow_tree_fixture()
+    monkeypatch.setattr(data_architecture_engine, "_ask_json", _data_architecture_stage_mock)
+
+    architecture, _ = data_architecture_engine.propose_data_architecture("rag", tree, "context")
+
+    assert all(a.node_id != "a3" for a in architecture.anchors)
+
+
+def test_validate_data_architecture_catches_duplicate_entity_names():
+    tree = _workflow_tree_fixture()
+    architecture = DataArchitecture(
+        domain="rag",
+        entities=[
+            DataEntity(id="D01", name="documents", domain="rag", attributes=[
+                DataAttribute(name="id", type="UUID", is_primary_key=True),
+            ]),
+            DataEntity(id="D02", name="documents", domain="rag", attributes=[
+                DataAttribute(name="id", type="UUID", is_primary_key=True),
+            ]),
+        ],
+    )
+    result = data_architecture_engine.validate_data_architecture(architecture, tree)
+    assert not result.passed
+    assert any("more than one entity" in v.message for v in result.violations)
+
+
+def test_validate_data_architecture_catches_anchor_to_nonexistent_step():
+    tree = _workflow_tree_fixture()
+    architecture = DataArchitecture(
+        domain="rag",
+        entities=[DataEntity(id="D01", name="documents", domain="rag", attributes=[
+            DataAttribute(name="id", type="UUID", is_primary_key=True),
+        ])],
+        anchors=[DataAnchor(domain="rag", node_id="__nonexistent__", node_label="?", data_id="D01", operation="WRITE")],
+    )
+    result = data_architecture_engine.validate_data_architecture(architecture, tree)
+    assert not result.passed
+    assert any("nonexistent Atomic step" in v.message for v in result.violations)

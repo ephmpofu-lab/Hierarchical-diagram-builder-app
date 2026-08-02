@@ -7,7 +7,17 @@ view from an already-frozen Workflow Tree, never authored independently of it (R
 from typing import Dict, List, Optional, Tuple
 
 from ..intelligence.stages import _ask_json
-from ..models import DataAnchor, DataAttribute, DataEntity, DataRelationship, TaskTreeNode
+from ..models import (
+    DataAnchor,
+    DataArchitecture,
+    DataAttribute,
+    DataEntity,
+    DataRelationship,
+    DomainTaskTree,
+    PrincipleViolation,
+    TaskTreeNode,
+    ValidationResult,
+)
 
 _VALID_OPERATIONS = {"CREATE", "READ", "WRITE", "UPDATE", "DELETE", "QUERY"}
 
@@ -205,3 +215,78 @@ def render_sql_ddl(entities: List[DataEntity]) -> str:
         statements.append(f"CREATE TABLE {entity.name} (\n{body}\n);")
 
     return "\n\n".join(statements)
+
+
+# ============================================================================
+# propose_data_architecture orchestrator (sub-plan 13d) -- ties Stage 5 + Stage 6 +
+# validation into one real, persistable DataArchitecture, mirroring
+# backend/component/engine.py::propose_component_tree's exact retry shape.
+# ============================================================================
+
+MAX_DATA_ARCHITECTURE_RETRIES = 3
+
+
+def validate_data_architecture(architecture: DataArchitecture, workflow_tree: DomainTaskTree) -> ValidationResult:
+    """A real, independent safety net over Stage 6's own internal dedup -- same reasoning
+    check_attribute_leaf (11h) gave for the Component Tree side: an inner loop trying to
+    prevent a problem is not the same as a whole-result check that actually catches it."""
+    messages: List[str] = []
+
+    seen_names: Dict[str, str] = {}
+    for entity in architecture.entities:
+        if not entity.name.strip():
+            messages.append(f"Data entity '{entity.id}' has no name")
+        elif not any(a.is_primary_key for a in entity.attributes):
+            messages.append(f"Data entity '{entity.name}' ({entity.id}) has no primary key attribute")
+        if entity.name in seen_names and seen_names[entity.name] != entity.id:
+            messages.append(
+                f"Data entity name '{entity.name}' is claimed by more than one entity "
+                f"({seen_names[entity.name]} and {entity.id}) -- must be deduplicated (R43)"
+            )
+        seen_names.setdefault(entity.name, entity.id)
+
+    entity_ids = {e.id for e in architecture.entities}
+    step_ids = {n.id for n in workflow_tree.nodes.values() if n.level == "Atomic step"}
+    for anchor in architecture.anchors:
+        if anchor.node_id not in step_ids:
+            messages.append(f"Data anchor references a nonexistent Atomic step id '{anchor.node_id}' (R44)")
+        if anchor.data_id not in entity_ids:
+            messages.append(f"Data anchor references a nonexistent Data entity id '{anchor.data_id}' (R44)")
+
+    violations = [PrincipleViolation(principle_id="DA", message=m) for m in messages]
+    return ValidationResult(passed=not violations, violations=violations)
+
+
+def propose_data_architecture(
+    domain: str, workflow_tree: DomainTaskTree, reasoning_context: str
+) -> Tuple[DataArchitecture, ValidationResult]:
+    """Orchestrates Stage 5 (classify every real Atomic step) -> Stage 6 (derive the
+    deduplicated entity set for the whole domain in one call) -> validation, retrying the
+    whole pass with the specific violations appended to context on failure, bounded by
+    MAX_DATA_ARCHITECTURE_RETRIES -- same posture as propose_tree/propose_component_tree's
+    own outer retry loops."""
+    context = reasoning_context
+    atomic_steps = [n for n in workflow_tree.nodes.values() if n.level == "Atomic step"]
+    architecture = DataArchitecture(domain=domain)
+
+    for _ in range(MAX_DATA_ARCHITECTURE_RETRIES):
+        classified_steps: List[Tuple[TaskTreeNode, str]] = []
+        for step in atomic_steps:
+            operation = classify_atomic_step_operation(step, context)
+            if operation is not None:
+                classified_steps.append((step, operation))
+
+        entities, anchors, relationships = derive_data_entities(domain, classified_steps, context)
+        architecture = DataArchitecture(
+            domain=domain, entities=entities, anchors=anchors, relationships=relationships,
+        )
+        result = validate_data_architecture(architecture, workflow_tree)
+        if result.passed:
+            return architecture, result
+        violation_lines = "\n".join(f"- {v.message}" for v in result.violations)
+        context = (
+            f"{reasoning_context}\n\nYour previous attempt had these violations -- avoid "
+            f"them this time:\n{violation_lines}"
+        )
+
+    return architecture, result  # last attempt, even if still failing -- caller surfaces violations
