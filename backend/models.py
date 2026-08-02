@@ -1267,4 +1267,38 @@ class ComponentTreeDocumentation(BaseModel):
     not_applicable: bool = False
 
 
+class ComponentTree(BaseModel):
+    """11l -- the frozen, versioned Component Tree for one domain, produced by
+    propose_component_tree (Stages -3 through 0) and reused identically afterward, mirroring
+    DomainTaskTree's exact role for the Workflow Tree. Bundles the already-real
+    ExtractedRequirement/Capability/Component/Attribute lists (11a-11d) plus the Output
+    Documentation Gate's own artifact (11j) into one persistable object -- none of these
+    field types are new, only the container is."""
+
+    domain: str
+    version: int = 1
+    requirements: List[ExtractedRequirement] = Field(default_factory=list)
+    capabilities: List[Capability] = Field(default_factory=list)
+    components: List[Component] = Field(default_factory=list)
+    attributes: List[Attribute] = Field(default_factory=list)
+    documentation: Optional[ComponentTreeDocumentation] = None
+
+
+class ComponentTreeDraftRequest(BaseModel):
+    prd_text: str  # never invented -- the real PRD text Stage -3 extracts requirements
+    # from, supplied by the caller (mirrors DomainDraftRequest's own reasoning_context-only
+    # shape, extended with the one genuinely new required input this pipeline needs)
+    reasoning_context: str = ""
+
+
+class ComponentTreeDraftResult(BaseModel):
+    domain: str
+    tree: ComponentTree
+    validation: ValidationResult
+
+
+class ComponentTreeApproveRequest(BaseModel):
+    tree: ComponentTree
+
+
 Project.model_rebuild()

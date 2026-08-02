@@ -7,16 +7,19 @@ Stage -3 (Requirements Engineering) is the only stage implemented so far (sub-pl
 """
 
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from ..intelligence.stages import _ask_json
 from ..models import (
     Attribute,
     Capability,
     Component,
+    ComponentTree,
     ComponentTreeDocumentation,
     DomainTaskTree,
     ExtractedRequirement,
+    PrincipleViolation,
+    ValidationResult,
 )
 
 # A runaway-loop safety bound, NOT a depth ceiling (R21/CD9, amended by
@@ -389,3 +392,78 @@ def check_ui_documentation_gate(
             "the App-Flow/Design-Brief-equivalent as not applicable (R33/CD10)"
         ]
     return []
+
+
+# ============================================================================
+# propose_component_tree orchestrator (sub-plan 11l) -- ties Stages -3 through 0 together
+# into one frozen ComponentTree object, mirroring backend/decompose/engine.py::propose_tree's
+# exact retry shape for the Workflow Tree. Named as deferred in every one of 11a-11k's own
+# plan files; this is the piece that makes R24-R33 usable end to end.
+# ============================================================================
+
+MAX_COMPONENT_TREE_RETRIES = 3
+
+
+def validate_component_tree(
+    tree: ComponentTree, workflow_tree: DomainTaskTree, include_documentation_gate: bool = True
+) -> ValidationResult:
+    """Wraps every existing check_* function's plain-string messages into
+    PrincipleViolation, inventing no new validation logic. `include_documentation_gate`
+    defaults True (the approve/freeze-time posture, CD10's own predicate); the draft-time
+    retry loop below passes False, since `documentation` genuinely doesn't exist yet mid-
+    authoring (CD10: "evaluated at freeze time... not a precondition before Stage -3
+    starts")."""
+    messages: List[str] = []
+    messages += check_no_shared_attributes(tree.attributes)
+    messages += check_attribute_leaf(tree.attributes)
+    messages += check_tree_reconciliation(tree.attributes, workflow_tree)
+    messages += check_component_rationale_gate(tree.components)
+    if include_documentation_gate:
+        messages += check_ui_documentation_gate(tree.components, tree.documentation)
+    violations = [PrincipleViolation(principle_id="CD", message=m) for m in messages]
+    return ValidationResult(passed=not violations, violations=violations)
+
+
+def propose_component_tree(
+    domain: str, prd_text: str, reasoning_context: str, workflow_tree: DomainTaskTree
+) -> Tuple[ComponentTree, ValidationResult]:
+    """Orchestrates Stage -3 (Requirements Engineering) -> Stage -2 (Capability
+    Identification) -> Stage -1 (Functional Decomposition) -> Stage 0 (Attribute
+    Enumeration). CD3's breadth-first rule is enforced here: every capability is decomposed
+    into components first, only then is any component's attributes enumerated -- never
+    interleaved. On a failing draft-time validation (shared attributes, still-compound
+    attribute names, unreconciled Workflow Tree variables, or a missing rationale on a
+    component already flagged as needing one), retries the whole chain with the specific
+    violations appended to the reasoning context, bounded by MAX_COMPONENT_TREE_RETRIES --
+    same posture as propose_tree's own outer retry loop, for the same reason (simpler, and
+    this pipeline is one-time-per-domain anyway)."""
+    context = reasoning_context
+    tree = ComponentTree(domain=domain)
+    for _ in range(MAX_COMPONENT_TREE_RETRIES):
+        requirements = extract_requirements(domain, prd_text, context)
+        capabilities = identify_capabilities(domain, requirements, context)
+
+        components: List[Component] = []
+        for capability in capabilities:
+            components.extend(decompose_capability(capability, context))
+
+        attributes: List[Attribute] = []
+        for component in components:
+            attributes.extend(enumerate_attributes(component, context))
+
+        tree = ComponentTree(
+            domain=domain, requirements=requirements, capabilities=capabilities,
+            components=components, attributes=attributes,
+        )
+        result = validate_component_tree(tree, workflow_tree, include_documentation_gate=False)
+        if result.passed:
+            compute_component_tree_rollup(capabilities, components, attributes)
+            return tree, result
+        violation_lines = "\n".join(f"- {v.message}" for v in result.violations)
+        context = (
+            f"{reasoning_context}\n\nYour previous attempt had these violations -- avoid "
+            f"them this time:\n{violation_lines}"
+        )
+
+    compute_component_tree_rollup(tree.capabilities, tree.components, tree.attributes)
+    return tree, result  # last attempt, even if still failing -- caller surfaces violations

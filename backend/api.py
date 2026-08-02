@@ -44,6 +44,8 @@ from .knowledge.retrieval import retrieve as retrieve_knowledge
 from .render.n8n_exporter import export_workflow
 from .render.python_exporter import export_python_package
 from .render.python_renderer import render_python
+from .component import engine as component_engine
+from .component import repository as component_repo
 from .taxonomy import repository as taxonomy_repo
 from .validator.service import validate_tree
 from .models import (
@@ -74,6 +76,10 @@ from .models import (
     DiscoveryTurnRequest,
     DomainApproveRequest,
     DomainChecklist,
+    ComponentTree,
+    ComponentTreeApproveRequest,
+    ComponentTreeDraftRequest,
+    ComponentTreeDraftResult,
     DomainDraftRequest,
     DomainDraftResult,
     DomainRenderRequest,
@@ -1256,6 +1262,46 @@ def api_approve_domain(domain: str, body: DomainApproveRequest, user: Authentica
     taxonomy_repo.save_checklist(body.checklist)
     taxonomy_repo.save_tree(body.tree)
     return DomainDraftResult(domain=domain, checklist=body.checklist, tree=body.tree, validation=validation)
+
+
+@router.post("/decompose/domains/{domain}/component-tree/draft", response_model=ComponentTreeDraftResult)
+def api_draft_component_tree(domain: str, body: ComponentTreeDraftRequest, user: AuthenticatedUser = Depends(require_auth)):
+    """Sub-plan 11l -- Stages -3 through 0, mirroring api_draft_domain's shape. Requires
+    the domain's Workflow Tree to already be frozen (CD6's Reconciliation Rule needs a real
+    tree to check attributes against) -- 404 if not, rather than reconciling against
+    nothing."""
+    workflow_tree = taxonomy_repo.load_tree(domain)
+    if workflow_tree is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No frozen Workflow Tree for domain '{domain}' yet -- Component Tree reconciliation (CD6) needs one to check against",
+        )
+    tree, validation = component_engine.propose_component_tree(domain, body.prd_text, body.reasoning_context, workflow_tree)
+    return ComponentTreeDraftResult(domain=domain, tree=tree, validation=validation)
+
+
+@router.post("/decompose/domains/{domain}/component-tree/approve", response_model=ComponentTreeDraftResult, status_code=201)
+def api_approve_component_tree(domain: str, body: ComponentTreeApproveRequest, user: AuthenticatedUser = Depends(require_auth)):
+    """Explicit human approval, never automatic -- mirrors api_approve_domain's own
+    re-validate-before-save posture exactly, including the full Output Documentation Gate
+    (CD10) this time, since `documentation` only genuinely exists once a human supplies it
+    before freezing."""
+    workflow_tree = taxonomy_repo.load_tree(domain)
+    if workflow_tree is None:
+        raise HTTPException(status_code=404, detail=f"No frozen Workflow Tree for domain '{domain}' yet")
+    validation = component_engine.validate_component_tree(body.tree, workflow_tree, include_documentation_gate=True)
+    if not validation.passed:
+        raise HTTPException(status_code=422, detail=[v.model_dump() for v in validation.violations])
+    component_repo.save_component_tree(body.tree)
+    return ComponentTreeDraftResult(domain=domain, tree=body.tree, validation=validation)
+
+
+@router.get("/decompose/domains/{domain}/component-tree", response_model=ComponentTree)
+def api_get_component_tree(domain: str, user: AuthenticatedUser = Depends(require_auth)):
+    tree = component_repo.load_component_tree(domain)
+    if tree is None:
+        raise HTTPException(status_code=404, detail=f"No frozen Component Tree for domain '{domain}' yet")
+    return tree
 
 
 @router.post("/decompose/render/python", response_model=List[RenderedCodeBlock])

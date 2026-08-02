@@ -25,6 +25,7 @@ from fastapi.testclient import TestClient
 from app import app
 from backend.auth import AuthenticatedUser, require_auth
 from backend.component import engine as component_engine
+from backend.component import repository as component_repo
 from backend.decompose import engine as decompose_engine
 from backend.intelligence.stages import ReasoningStageError
 from backend.intent import service as intent_service
@@ -32,6 +33,7 @@ from backend.models import (
     Attribute,
     Capability,
     Component,
+    ComponentTree,
     ComponentTreeDocumentation,
     DomainChecklist,
     DomainTaskTree,
@@ -1519,6 +1521,185 @@ def test_render_component_tree_roadmap_nests_by_capability_component_attribute()
 def test_render_python_endpoint_404_for_unknown_domain(authed_client):
     response = authed_client.post("/api/decompose/render/python", json={"domain": "__definitely_not_a_real_domain__"})
     assert response.status_code == 404
+
+
+# ---- Module 11 -- propose_component_tree Orchestrator (11l) ----
+
+def _component_tree_workflow_fixture() -> DomainTaskTree:
+    return DomainTaskTree(domain=TEST_DOMAIN, root_ids=["l1"], nodes={
+        "l1": TaskTreeNode(id="l1", label="Resolution", level="Layer", children=["s1"]),
+        "s1": TaskTreeNode(id="s1", label="Resolve Intent", level="Sub-task", parent_id="l1", children=["a1"]),
+        "a1": TaskTreeNode(
+            id="a1", label="Classify Intent", level="Atomic step", parent_id="s1",
+            variables=[Variable(name="Confidence Threshold", default="0.8")],
+        ),
+    })
+
+
+def _component_tree_stage_mock(**kwargs):
+    system = kwargs.get("system", "")
+    if "extracting functional and non-functional requirements" in system:
+        return {"requirements": [{"text": "Accepts a free-text intent.", "prd_requirement_id": "R1"}]}
+    if "grouping a list of extracted requirements into discrete capabilities" in system:
+        return {"capabilities": [{"label": "Intent Resolution", "traced_requirement_ids": ["R1"]}]}
+    if "decomposing one capability into the components" in system:
+        return {"components": [{"label": "Resolver"}]}
+    if "enumerating one component's configuration attributes" in system:
+        return {"attributes": [{"name": "Confidence Threshold", "type": "float"}]}
+    raise AssertionError(f"unexpected system prompt: {system}")
+
+
+def test_propose_component_tree_happy_path(monkeypatch):
+    workflow_tree = _component_tree_workflow_fixture()
+    monkeypatch.setattr(component_engine, "_ask_json", _component_tree_stage_mock)
+
+    tree, validation = component_engine.propose_component_tree(TEST_DOMAIN, "PRD text", "context", workflow_tree)
+
+    assert validation.passed
+    assert tree.domain == TEST_DOMAIN
+    assert len(tree.requirements) == 1
+    assert len(tree.capabilities) == 1
+    assert len(tree.components) == 1
+    assert len(tree.attributes) == 1
+    assert tree.attributes[0].name == "Confidence Threshold"
+
+
+def test_propose_component_tree_follows_cd3_breadth_first_order(monkeypatch):
+    workflow_tree = _component_tree_workflow_fixture()
+    call_order = []
+
+    def mock(**kwargs):
+        system = kwargs.get("system", "")
+        if "extracting functional and non-functional requirements" in system:
+            return {"requirements": [
+                {"text": "req a", "prd_requirement_id": "R1"}, {"text": "req b", "prd_requirement_id": "R2"},
+            ]}
+        if "grouping a list of extracted requirements into discrete capabilities" in system:
+            return {"capabilities": [
+                {"label": "Cap A", "traced_requirement_ids": ["R1"]},
+                {"label": "Cap B", "traced_requirement_ids": ["R2"]},
+            ]}
+        if "decomposing one capability into the components" in system:
+            call_order.append("decompose")
+            label = "Comp A" if "Cap A" in kwargs.get("prompt", "") else "Comp B"
+            return {"components": [{"label": label}]}
+        if "enumerating one component's configuration attributes" in system:
+            call_order.append("enumerate")
+            name = "Threshold A" if "Comp A" in kwargs.get("prompt", "") else "Threshold B"
+            return {"attributes": [{"name": name, "type": "float"}]}
+        raise AssertionError(f"unexpected system prompt: {system}")
+
+    monkeypatch.setattr(component_engine, "_ask_json", mock)
+    component_engine.propose_component_tree(TEST_DOMAIN, "PRD", "ctx", workflow_tree)
+
+    # Breadth-first (CD3): both capabilities' components are decomposed before either
+    # component's attributes are enumerated -- never interleaved. Only the first attempt's
+    # ordering matters here (the fixture's mismatched attribute names deliberately trigger
+    # reconciliation retries, which is not what this test is checking).
+    assert call_order[:4] == ["decompose", "decompose", "enumerate", "enumerate"]
+
+
+def test_propose_component_tree_retries_on_violation_then_passes(monkeypatch):
+    workflow_tree = _component_tree_workflow_fixture()
+    attempts = {"count": 0}
+
+    def mock(**kwargs):
+        system = kwargs.get("system", "")
+        if "extracting functional and non-functional requirements" in system:
+            return {"requirements": [{"text": "req", "prd_requirement_id": "R1"}]}
+        if "grouping a list of extracted requirements into discrete capabilities" in system:
+            return {"capabilities": [{"label": "Cap A", "traced_requirement_ids": ["R1"]}]}
+        if "decomposing one capability into the components" in system:
+            return {"components": [{"label": "Comp A"}]}
+        if "enumerating one component's configuration attributes" in system:
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                return {"attributes": [{"name": "Nonexistent Field", "type": "string"}]}
+            return {"attributes": [{"name": "Confidence Threshold", "type": "float"}]}
+        raise AssertionError(f"unexpected system prompt: {system}")
+
+    monkeypatch.setattr(component_engine, "_ask_json", mock)
+    tree, validation = component_engine.propose_component_tree(TEST_DOMAIN, "PRD", "ctx", workflow_tree)
+
+    assert attempts["count"] == 2
+    assert validation.passed
+    assert tree.attributes[0].name == "Confidence Threshold"
+
+
+def test_validate_component_tree_documentation_gate_only_at_freeze_time():
+    empty_workflow_tree = DomainTaskTree(domain=TEST_DOMAIN, root_ids=[], nodes={})
+    tree = ComponentTree(
+        domain=TEST_DOMAIN,
+        components=[Component(label="Chat Widget", realizes_capability="UI", domain=TEST_DOMAIN, is_ui_tagged=True)],
+    )
+
+    result = component_engine.validate_component_tree(tree, empty_workflow_tree, include_documentation_gate=True)
+    assert not result.passed
+    assert any("App-Flow" in v.message for v in result.violations)
+
+    result_draft = component_engine.validate_component_tree(tree, empty_workflow_tree, include_documentation_gate=False)
+    assert result_draft.passed
+
+
+def test_draft_component_tree_endpoint_404_without_workflow_tree(authed_client):
+    response = authed_client.post(
+        "/api/decompose/domains/__definitely_not_a_real_domain__/component-tree/draft",
+        json={"prd_text": "PRD", "reasoning_context": ""},
+    )
+    assert response.status_code == 404
+
+
+def test_draft_approve_get_component_tree_endpoints_end_to_end(authed_client, monkeypatch):
+    workflow_tree = _component_tree_workflow_fixture()
+    try:
+        taxonomy_repo.save_tree(workflow_tree)
+        monkeypatch.setattr(component_engine, "_ask_json", _component_tree_stage_mock)
+
+        draft_response = authed_client.post(
+            f"/api/decompose/domains/{TEST_DOMAIN}/component-tree/draft",
+            json={"prd_text": "PRD text", "reasoning_context": ""},
+        )
+        assert draft_response.status_code == 200
+        draft_body = draft_response.json()
+        assert draft_body["validation"]["passed"]
+
+        # No Component in this fixture is UI-tagged, so CD10's own "both-or-neither" rule
+        # requires documentation to explicitly record "not applicable" before it can freeze
+        # (approve's own re-validation includes the Output Documentation Gate, draft's does
+        # not -- see 11l's own scope decision 3).
+        tree_to_approve = draft_body["tree"]
+        tree_to_approve["documentation"] = {"not_applicable": True}
+        approve_response = authed_client.post(
+            f"/api/decompose/domains/{TEST_DOMAIN}/component-tree/approve",
+            json={"tree": tree_to_approve},
+        )
+        assert approve_response.status_code == 201
+
+        get_response = authed_client.get(f"/api/decompose/domains/{TEST_DOMAIN}/component-tree")
+        assert get_response.status_code == 200
+        assert get_response.json()["domain"] == TEST_DOMAIN
+    finally:
+        taxonomy_repo._TAXONOMIES_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
+        component_repo._COMPONENT_TREES_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
+
+
+def test_approve_component_tree_endpoint_rejects_invalid_tree(authed_client):
+    workflow_tree = _component_tree_workflow_fixture()
+    try:
+        taxonomy_repo.save_tree(workflow_tree)
+        bad_tree = {
+            "domain": TEST_DOMAIN,
+            "components": [
+                {"label": "Chat Widget", "realizes_capability": "UI", "domain": TEST_DOMAIN, "is_ui_tagged": True},
+            ],
+        }
+        response = authed_client.post(
+            f"/api/decompose/domains/{TEST_DOMAIN}/component-tree/approve",
+            json={"tree": bad_tree},
+        )
+        assert response.status_code == 422
+    finally:
+        taxonomy_repo._TAXONOMIES_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
 
 
 # ---- Module 10 -- Real Python Export (10g) ----
