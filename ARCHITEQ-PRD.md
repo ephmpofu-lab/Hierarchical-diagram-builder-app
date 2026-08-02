@@ -108,12 +108,12 @@ Requirements are grouped into modules so Plan/Build/Test/Commit cycles and `PROG
 - **Module 3: Domain Checklists & Reference Architecture Mapping** — R3, R20
 - **Module 4: Validator** — R9
 - **Module 5: Decomposition Engine (build order, Stages 0 to 4)** — depends on Modules 1 to 4, no new R-numbers of its own, implements R1 to R9 end to end
+- **Module 5a: Grounding Simulation (Stage 2.5)** — R22, R23. Depends on Module 5. Originally omitted from this list when R22/R23 were added; reordered here (was previously appended after Module 10) to sit in its real dependency position, closing that documentation gap for good.
 - **Module 6: Execution Ordering (topological sort)** — R10
 - **Module 7: Python Renderer** — R11 (mode selection), R12
 - **Module 8: n8n Node Mapper & Renderer** — R13, R14
 - **Module 9: Visual Diagram Renderer** — R15
 - **Module 10: UI Shell (Home/Canvas, Detail Panel, Persistent Input)** — R16, R17, R18, R19
-- **Module 5a: Grounding Simulation (Stage 2.5)** — R22, R23. Depends on Module 5. Omitted from the original module list when R22/R23 were added; listed here to close that gap.
 - **Module 11: Dual Tree Architecture (Component Tree)** — R24 to R37. Depends on Modules 1 to 10 (reconciles against the Workflow Tree per R29). Rated Complex; built as a sequence of sub-plans per `~/.claude/CLAUDE.md`'s Development Loop, not as one item.
 - **Module 12: Planning Artifact Diagram Engine** — R38 to R40. Depends on the PRD (this document) existing as real content to render (already true). Partially buildable now: the `docs/` folder, hub-and-spoke diagram rendering, and R40's honest-unavailable state are real, unblocked work; actually generating TDD/App Flow/Design Brief/Backend Schema content is blocked on OQ6.
 
