@@ -2433,6 +2433,29 @@ html[data-inspector-collapsed="true"] .health-footer {
   margin-bottom: 20px;
 }
 
+.decompose-refine-bar.collapsed {
+  display: inline-flex;
+}
+
+.decompose-refine-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.decompose-refine-pill:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 .decompose-refine-input {
   flex: 1;
   background: var(--surface);

@@ -55,6 +55,8 @@ let state = {
   // entirely inside the single synchronous /draft call -- see 10d's own plan file)
   treeRevealed: false, // (10d) -- whether reviewing_draft's Tree Diagram has already
   // played its streamed layer/sub-task/atomic-step reveal for the current draft
+  refineBarExpanded: false, // (10e) -- collapsed-pill vs. expanded-fields state for the
+  // persistent refine bar; reset whenever domain changes
   refining: false,
   submitting: false,
   error: null,
@@ -135,9 +137,49 @@ function renderHomeView() {
   }
 }
 
+// ---- Refine bar collapse/expand + idle-retract (10e) ----
+// Module-level timer, not a state field -- renderBoard() tears down and rebuilds the whole
+// DOM on every state change, so a fired timeout re-queries the *current* DOM/state at fire
+// time rather than trusting a captured element reference from whenever it was armed.
+let refineIdleTimer = null;
+
+function armRefineIdleRetract() {
+  clearTimeout(refineIdleTimer);
+  refineIdleTimer = setTimeout(() => {
+    const input = document.querySelector(".decompose-refine-input");
+    if (state.refineBarExpanded && (!input || input.value.trim() === "")) {
+      collapseRefineBar();
+    }
+  }, 6000);
+}
+
+function collapseRefineBar() {
+  clearTimeout(refineIdleTimer);
+  state = { ...state, refineBarExpanded: false };
+  renderBoard();
+}
+
+function expandRefineBar() {
+  state = { ...state, refineBarExpanded: true };
+  renderBoard();
+  const input = document.querySelector(".decompose-refine-input");
+  if (input) input.focus();
+  armRefineIdleRetract();
+}
+
 function renderRefineBar() {
   const bar = document.createElement("div");
-  bar.className = "decompose-refine-bar";
+  bar.className = `decompose-refine-bar ${state.refineBarExpanded ? "expanded" : "collapsed"}`;
+
+  if (!state.refineBarExpanded) {
+    const pill = document.createElement("div");
+    pill.className = "decompose-refine-pill";
+    pill.textContent = "✦ Refine";
+    pill.addEventListener("click", expandRefineBar);
+    bar.appendChild(pill);
+    return bar;
+  }
+
   const input = document.createElement("input");
   input.type = "text";
   input.className = "decompose-refine-input";
@@ -148,11 +190,15 @@ function renderRefineBar() {
   btn.textContent = state.refining ? "Refining…" : "Refine";
   btn.disabled = state.refining;
   btn.addEventListener("click", () => submitRefine(input.value));
+  input.addEventListener("input", armRefineIdleRetract);
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
       submitRefine(input.value);
     }
+  });
+  input.addEventListener("blur", () => {
+    if (input.value.trim() === "") setTimeout(collapseRefineBar, 200);
   });
   bar.appendChild(input);
   bar.appendChild(btn);
@@ -182,8 +228,11 @@ async function submitRefine(instruction) {
     }
     // Applied and re-frozen server-side -- sync local state to match, and drop any
     // render caches / open detail panel since the tree itself just changed underneath them.
+    // Collapses the refine bar back to a pill on success only -- an error leaves it
+    // expanded so the user can see the message and retry.
+    clearTimeout(refineIdleTimer);
     state = {
-      ...state, refining: false, tree: result.tree,
+      ...state, refining: false, tree: result.tree, refineBarExpanded: false,
       pythonRender: null, n8nRender: null, mode: null, selectedNodeId: null, n8nNodeConfig: {},
     };
   } finally {
@@ -462,7 +511,18 @@ function metaRow(label, value) {
   return row;
 }
 
+// ---- Detail panel idle-retract (10e) ----
+let panelIdleTimer = null;
+
+function armPanelIdleRetract() {
+  clearTimeout(panelIdleTimer);
+  panelIdleTimer = setTimeout(() => {
+    if (state.selectedNodeId) closeNodeDetail();
+  }, 7000);
+}
+
 function closeNodeDetail() {
+  clearTimeout(panelIdleTimer);
   state = { ...state, selectedNodeId: null };
   renderBoard();
 }
@@ -558,6 +618,11 @@ function renderNodeDetailPanel() {
       drawer.appendChild(renderN8nConfigureSection(mapped));
     }
   }
+
+  for (const evt of ["mousemove", "keydown", "input", "click", "scroll"]) {
+    drawer.addEventListener(evt, armPanelIdleRetract);
+  }
+  armPanelIdleRetract();
 
   wrap.appendChild(drawer);
   return wrap;
@@ -1618,9 +1683,11 @@ async function selectMode(mode) {
 }
 
 async function selectDomain(domain) {
+  clearTimeout(refineIdleTimer);
   state = {
     ...state, view: "canvas", domain, tree: null, error: null,
     mode: null, pythonRender: null, n8nRender: null, selectedNodeId: null, n8nNodeConfig: {},
+    refineBarExpanded: false,
     pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null, docId: null },
   };
   renderBoard();
