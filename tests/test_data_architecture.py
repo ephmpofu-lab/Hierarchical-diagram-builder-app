@@ -144,3 +144,50 @@ def test_derive_data_entities_resolves_real_foreign_key_relationship(monkeypatch
 def test_derive_data_entities_empty_input_returns_empty_output():
     entities, anchors, relationships = data_architecture_engine.derive_data_entities("rag", [], "context")
     assert entities == [] and anchors == [] and relationships == []
+
+
+# ---- SQL DDL Generator (13c) ----
+
+def _fk_entity_pair():
+    documents = DataEntity(
+        id="D01", name="documents", domain=TEST_DOMAIN,
+        attributes=[
+            DataAttribute(name="doc_id", type="UUID", is_primary_key=True, nullable=False),
+            DataAttribute(name="filename", type="TEXT", nullable=False),
+        ],
+    )
+    chunks = DataEntity(
+        id="D02", name="document_chunks", domain=TEST_DOMAIN,
+        attributes=[
+            DataAttribute(name="id", type="UUID", is_primary_key=True, nullable=False),
+            DataAttribute(
+                name="document_id", type="UUID", is_foreign_key=True,
+                references_entity="D01", nullable=False,
+            ),
+            DataAttribute(name="metadata", type="JSONB"),
+        ],
+    )
+    return documents, chunks
+
+
+def test_render_sql_ddl_orders_referenced_table_first():
+    documents, chunks = _fk_entity_pair()
+    # Declared in "wrong" order (chunks before documents) -- output must still be correct.
+    sql = data_architecture_engine.render_sql_ddl([chunks, documents])
+    assert sql.index("CREATE TABLE documents") < sql.index("CREATE TABLE document_chunks")
+
+
+def test_render_sql_ddl_uses_real_primary_key_name_not_hardcoded_id():
+    documents, chunks = _fk_entity_pair()
+    sql = data_architecture_engine.render_sql_ddl([documents, chunks])
+    assert "REFERENCES documents(doc_id)" in sql
+
+
+def test_render_sql_ddl_marks_pk_not_null_and_leaves_plain_columns_bare():
+    documents, chunks = _fk_entity_pair()
+    sql = data_architecture_engine.render_sql_ddl([documents, chunks])
+    assert "doc_id UUID PRIMARY KEY" in sql
+    assert "filename TEXT NOT NULL" in sql
+    assert "metadata JSONB" in sql
+    assert "metadata JSONB NOT NULL" not in sql
+    assert "metadata JSONB PRIMARY KEY" not in sql

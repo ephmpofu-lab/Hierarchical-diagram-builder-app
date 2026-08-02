@@ -7,7 +7,7 @@ view from an already-frozen Workflow Tree, never authored independently of it (R
 from typing import Dict, List, Optional, Tuple
 
 from ..intelligence.stages import _ask_json
-from ..models import DataAnchor, DataEntity, DataRelationship, TaskTreeNode
+from ..models import DataAnchor, DataAttribute, DataEntity, DataRelationship, TaskTreeNode
 
 _VALID_OPERATIONS = {"CREATE", "READ", "WRITE", "UPDATE", "DELETE", "QUERY"}
 
@@ -132,3 +132,76 @@ def derive_data_entities(
         ))
 
     return entities, anchors, relationships
+
+
+# ============================================================================
+# SQL DDL Generator (sub-plan 13c, R45/R17-18) -- deterministic, no AI call, a pure
+# function of the canonical DataEntity/DataAttribute model. PostgreSQL only, per the PRD's
+# own Non-Goals addition.
+# ============================================================================
+
+
+def _primary_key_name(entity: DataEntity) -> str:
+    for attr in entity.attributes:
+        if attr.is_primary_key:
+            return attr.name
+    return "id"  # defensive fallback -- shouldn't happen for a well-formed entity
+
+
+def _topological_order_by_fk(entities: List[DataEntity]) -> List[DataEntity]:
+    """A referenced entity's own CREATE TABLE always precedes any table with a FOREIGN KEY
+    into it -- topological sort over the FK graph, mirroring python_renderer.py's own
+    _topological_order shape but keyed on references_entity instead of requires."""
+    by_id = {e.id: e for e in entities}
+    depends_on: Dict[str, set] = {e.id: set() for e in entities}
+    for entity in entities:
+        for attr in entity.attributes:
+            if attr.is_foreign_key and attr.references_entity in by_id and attr.references_entity != entity.id:
+                depends_on[entity.id].add(attr.references_entity)
+
+    ordered: List[DataEntity] = []
+    placed: set = set()
+    remaining = list(entities)
+    while remaining:
+        ready = [e for e in remaining if depends_on[e.id] <= placed]
+        if not ready:
+            # A real dependency cycle (shouldn't happen for a well-formed entity set) --
+            # never silently drop an entity, just fall back to declared order for the rest.
+            ready = remaining
+        ready.sort(key=lambda e: e.id)
+        for entity in ready:
+            ordered.append(entity)
+            placed.add(entity.id)
+            remaining.remove(entity)
+    return ordered
+
+
+def _attribute_ddl(attr: DataAttribute) -> str:
+    column = f"    {attr.name} {attr.type}"
+    if attr.is_primary_key:
+        column += " PRIMARY KEY"
+    elif not attr.nullable:
+        column += " NOT NULL"
+    if attr.default is not None:
+        column += f" DEFAULT {attr.default}"
+    return column
+
+
+def render_sql_ddl(entities: List[DataEntity]) -> str:
+    by_id = {e.id: e for e in entities}
+    ordered = _topological_order_by_fk(entities)
+
+    statements = []
+    for entity in ordered:
+        column_lines = [_attribute_ddl(attr) for attr in entity.attributes]
+        fk_lines = []
+        for attr in entity.attributes:
+            if attr.is_foreign_key and attr.references_entity in by_id:
+                referenced = by_id[attr.references_entity]
+                fk_lines.append(
+                    f"    FOREIGN KEY ({attr.name})\n        REFERENCES {referenced.name}({_primary_key_name(referenced)})"
+                )
+        body = ",\n".join(column_lines + fk_lines)
+        statements.append(f"CREATE TABLE {entity.name} (\n{body}\n);")
+
+    return "\n\n".join(statements)
