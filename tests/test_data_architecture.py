@@ -2,6 +2,7 @@
 and ARCHITEQ-PRD.md R41-R50. AI calls are mocked throughout, matching this project's own
 established convention (tests/test_engineering_decomposition.py's own docstring)."""
 
+from backend.data_architecture import engine as data_architecture_engine
 from backend.data_architecture import repository as data_architecture_repo
 from backend.models import (
     DataAnchor,
@@ -9,7 +10,12 @@ from backend.models import (
     DataAttribute,
     DataEntity,
     DataRelationship,
+    TaskTreeNode,
 )
+
+
+def _atomic(id_, label, *, consumes=None, produces=None, notes=""):
+    return TaskTreeNode(id=id_, label=label, level="Atomic step", consumes=consumes, produces=produces, notes=notes)
 
 TEST_DOMAIN = "__wp_data_architecture_test__"
 
@@ -56,3 +62,85 @@ def test_data_architecture_round_trips_through_save_and_load():
 
 def test_load_data_architecture_returns_none_for_unknown_domain():
     assert data_architecture_repo.load_data_architecture("__definitely_not_a_real_domain__") is None
+
+
+# ---- Stage 5, Persistence Classification (13b) ----
+
+def test_classify_atomic_step_operation_returns_real_operation(monkeypatch):
+    monkeypatch.setattr(data_architecture_engine, "_ask_json", lambda **kwargs: {"operation": "WRITE"})
+    step = _atomic("a1", "Store chunk in database")
+    assert data_architecture_engine.classify_atomic_step_operation(step, "context") == "WRITE"
+
+
+def test_classify_atomic_step_operation_transient_returns_none(monkeypatch):
+    monkeypatch.setattr(data_architecture_engine, "_ask_json", lambda **kwargs: {"operation": "TRANSIENT"})
+    step = _atomic("a1", "Normalize whitespace in text")
+    assert data_architecture_engine.classify_atomic_step_operation(step, "context") is None
+
+
+def test_classify_atomic_step_operation_rejects_invalid_value(monkeypatch):
+    monkeypatch.setattr(data_architecture_engine, "_ask_json", lambda **kwargs: {"operation": "GARBAGE"})
+    step = _atomic("a1", "Some step")
+    assert data_architecture_engine.classify_atomic_step_operation(step, "context") is None
+
+
+# ---- Stage 6, Entity Derivation (13b) ----
+
+def test_derive_data_entities_deduplicates_same_real_entity(monkeypatch):
+    mock_response = {
+        "entities": [
+            {"name": "document_chunks", "description": "Chunked document text", "attributes": [
+                {"name": "id", "type": "UUID", "is_primary_key": True, "is_foreign_key": False, "references_entity_name": None, "nullable": False},
+            ]},
+        ],
+        "step_entity_map": {"a1": "document_chunks", "a2": "document_chunks"},
+    }
+    monkeypatch.setattr(data_architecture_engine, "_ask_json", lambda **kwargs: mock_response)
+
+    steps = [
+        (_atomic("a1", "Split Text Into Chunks", produces="chunks"), "WRITE"),
+        (_atomic("a2", "Attach Chunk Metadata", consumes="chunks"), "UPDATE"),
+    ]
+    entities, anchors, relationships = data_architecture_engine.derive_data_entities("rag", steps, "context")
+
+    assert len(entities) == 1
+    assert entities[0].name == "document_chunks"
+    assert len(anchors) == 2
+    assert {a.node_id: a.operation for a in anchors} == {"a1": "WRITE", "a2": "UPDATE"}
+    assert all(a.data_id == entities[0].id for a in anchors)
+    assert relationships == []
+
+
+def test_derive_data_entities_resolves_real_foreign_key_relationship(monkeypatch):
+    mock_response = {
+        "entities": [
+            {"name": "documents", "description": "", "attributes": [
+                {"name": "id", "type": "UUID", "is_primary_key": True, "is_foreign_key": False, "references_entity_name": None, "nullable": False},
+            ]},
+            {"name": "document_chunks", "description": "", "attributes": [
+                {"name": "id", "type": "UUID", "is_primary_key": True, "is_foreign_key": False, "references_entity_name": None, "nullable": False},
+                {"name": "document_id", "type": "UUID", "is_primary_key": False, "is_foreign_key": True, "references_entity_name": "documents", "nullable": False},
+            ]},
+        ],
+        "step_entity_map": {"a1": "documents", "a2": "document_chunks"},
+    }
+    monkeypatch.setattr(data_architecture_engine, "_ask_json", lambda **kwargs: mock_response)
+
+    steps = [
+        (_atomic("a1", "Store Document", produces="document"), "WRITE"),
+        (_atomic("a2", "Split Text Into Chunks", consumes="document", produces="chunks"), "WRITE"),
+    ]
+    entities, anchors, relationships = data_architecture_engine.derive_data_entities("rag", steps, "context")
+
+    by_name = {e.name: e for e in entities}
+    assert by_name["documents"].id == "D01"
+    assert by_name["document_chunks"].id == "D02"
+    assert len(relationships) == 1
+    assert relationships[0].from_entity == "D01"
+    assert relationships[0].to_entity == "D02"
+    assert relationships[0].cardinality == "1:N"
+
+
+def test_derive_data_entities_empty_input_returns_empty_output():
+    entities, anchors, relationships = data_architecture_engine.derive_data_entities("rag", [], "context")
+    assert entities == [] and anchors == [] and relationships == []
