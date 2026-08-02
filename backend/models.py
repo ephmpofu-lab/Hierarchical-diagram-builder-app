@@ -1301,4 +1301,70 @@ class ComponentTreeApproveRequest(BaseModel):
     tree: ComponentTree
 
 
+# ============================================================================
+# Data Architecture Layer (Module 13) -- a second, synchronized architectural layer
+# alongside the Workflow Tree, per docs/ARCHITEQ-Data-Architecture-Layer-Spec.md and
+# ARCHITEQ-PRD.md R41-R50. Derived from an already-frozen Workflow Tree, never authored
+# independently. Workflow ID is realized as the domain name; Node ID is the real
+# TaskTreeNode.id (Atomic step level only) -- see the spec doc's own grounding note.
+# ============================================================================
+
+
+class DataAttribute(BaseModel):
+    name: str
+    type: str  # a real PostgreSQL type (UUID, TEXT, INTEGER, TIMESTAMPTZ, JSONB, ...)
+    is_primary_key: bool = False
+    is_foreign_key: bool = False
+    references_entity: Optional[str] = None  # the referenced entity's Data ID, if
+    # is_foreign_key -- e.g. "D01"
+    nullable: bool = True
+    default: Optional[str] = None
+
+
+class DataRelationship(BaseModel):
+    from_entity: str  # Data ID, e.g. "D01"
+    to_entity: str  # Data ID, e.g. "D02"
+    cardinality: str  # "1:1" | "1:N" | "N:M"
+
+
+class DataEntity(BaseModel):
+    """R43/R45 -- one persistent data entity, given a stable Data ID unique within its
+    domain and reused identically whenever more than one Atomic step touches the same
+    real-world object (never a duplicate entity for the same object, R43/section 6)."""
+
+    id: str  # stable Data ID, e.g. "D01"
+    name: str  # the real table name, e.g. "documents"
+    description: str = ""
+    database: str = "PostgreSQL"  # this version's only supported dialect, per the PRD's
+    # own Non-Goals addition
+    attributes: List[DataAttribute] = Field(default_factory=list)
+    domain: str
+
+
+class DataAnchor(BaseModel):
+    """R44 -- the compound key: domain (Workflow ID) + node_id (real Atomic step id) +
+    data_id + operation. Never identified by node_id or data_id alone -- an Atomic step id
+    is only unique within its own domain."""
+
+    domain: str
+    node_id: str
+    node_label: str  # denormalized at authoring time, so a UI never needs a second tree
+    # lookup just to show "WF01:N08 -- Split Text Into Chunks -- WRITE"
+    data_id: str
+    operation: str  # CREATE | READ | WRITE | UPDATE | DELETE | QUERY -- a step with no
+    # persistence need simply has no DataAnchor at all; TRANSIENT is never a stored value
+
+
+class DataArchitecture(BaseModel):
+    """The frozen, versioned Data Architecture for one domain, mirroring ComponentTree's
+    exact role -- produced by propose_data_architecture (Stage 5/6) and reused identically
+    afterward."""
+
+    domain: str
+    version: int = 1
+    entities: List[DataEntity] = Field(default_factory=list)
+    relationships: List[DataRelationship] = Field(default_factory=list)
+    anchors: List[DataAnchor] = Field(default_factory=list)
+
+
 Project.model_rebuild()
