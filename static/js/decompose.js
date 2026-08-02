@@ -49,6 +49,12 @@ let state = {
   n8nNodeConfig: {}, // step_id -> {paramName: value}, client-side/session-scoped only
   // (10b-iii) -- confirmed configuration values, merged into effective parameters at
   // badge/download time, never persisted server-side; reset whenever domain changes
+  draftRevealLines: [], // [{text, status: "done"|"pending"|"failed"}] (10d) -- drives the
+  // build-status panel in the "drafting" view; real, computed-from-the-actual-tree lines,
+  // never a fabricated live per-attempt progress feed (propose_tree's own retry loop runs
+  // entirely inside the single synchronous /draft call -- see 10d's own plan file)
+  treeRevealed: false, // (10d) -- whether reviewing_draft's Tree Diagram has already
+  // played its streamed layer/sub-task/atomic-step reveal for the current draft
   refining: false,
   submitting: false,
   error: null,
@@ -1664,8 +1670,18 @@ async function loadKnownDomains() {
   renderBoard();
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function startDrafting(domain) {
-  state = { ...state, view: "drafting", domain, draft: null, error: null };
+  state = {
+    ...state, view: "drafting", domain, draft: null, error: null, treeRevealed: false,
+    draftRevealLines: [
+      { text: `Domain resolved: ${domain}`, status: "done" },
+      { text: "Decomposing into layers, sub-tasks, and atomic steps…", status: "pending" },
+    ],
+  };
   renderBoard();
   try {
     const res = await fetch(`/api/decompose/domains/${encodeURIComponent(domain)}/draft`, {
@@ -1678,10 +1694,69 @@ async function startDrafting(domain) {
       return;
     }
     const draft = await res.json();
+    await revealDraftSummary(draft);
     state = { ...state, view: "reviewing_draft", draft };
   } finally {
     renderBoard();
   }
+}
+
+async function revealDraftSummary(draft) {
+  // 10d -- real, computed-from-the-actual-tree lines only; never a fabricated live
+  // per-attempt progress feed (see 10d's own plan file for why that would be dishonest
+  // given how propose_tree's retry loop actually runs).
+  const tree = draft.tree;
+  const levelCount = (level) => Object.values(tree.nodes).filter((n) => n.level === level).length;
+  const layerCount = tree.root_ids.length;
+  const subTaskCount = levelCount("Sub-task");
+  const atomicCount = levelCount("Atomic step");
+  const violations = draft.validation.violations || [];
+
+  function replaceLine(index, text, status) {
+    const lines = [...state.draftRevealLines];
+    lines[index] = { text, status };
+    state = { ...state, draftRevealLines: lines };
+    renderBoard();
+  }
+  function pushLine(text, status) {
+    state = { ...state, draftRevealLines: [...state.draftRevealLines, { text, status }] };
+    renderBoard();
+  }
+
+  replaceLine(1, "Layers, sub-tasks, and atomic steps decomposed", "done");
+  await sleep(300);
+  pushLine(`${layerCount} Layer${layerCount === 1 ? "" : "s"} instantiated`, "done");
+  await sleep(300);
+  pushLine(`${subTaskCount} Sub-task${subTaskCount === 1 ? "" : "s"} generated`, "done");
+  await sleep(300);
+  pushLine(`${atomicCount} Atomic step${atomicCount === 1 ? "" : "s"} generated`, "done");
+  await sleep(300);
+  pushLine("Grounding simulation complete", "done");
+  await sleep(300);
+  if (violations.length === 0) {
+    pushLine("Atomicity validation passed", "done");
+  } else {
+    pushLine(`Atomicity validation: ${violations.length} issue${violations.length === 1 ? "" : "s"} found`, "failed");
+  }
+  await sleep(500);
+}
+
+function renderBuildStatusPanel(lines) {
+  const panel = document.createElement("div");
+  panel.className = "decompose-build-status";
+  for (const line of lines) {
+    const row = document.createElement("div");
+    row.className = `decompose-bs-line ${line.status}`;
+    const icon = document.createElement("span");
+    icon.className = "decompose-bs-icon";
+    icon.textContent = line.status === "done" ? "✓" : line.status === "failed" ? "✕" : "⏳";
+    row.appendChild(icon);
+    const text = document.createElement("span");
+    text.textContent = line.text;
+    row.appendChild(text);
+    panel.appendChild(row);
+  }
+  return panel;
 }
 
 function renderDraftingView() {
@@ -1689,43 +1764,35 @@ function renderDraftingView() {
   heading.className = "reasoning-section-label";
   heading.textContent = `Drafting a decomposition for '${state.domain}'…`;
   decomposeBoard.appendChild(heading);
+  decomposeBoard.appendChild(renderBuildStatusPanel(state.draftRevealLines));
   const note = document.createElement("div");
   note.className = "reasoning-empty-state";
   note.textContent = "Running the Decomposition Engine's full 4-stage build order for a brand-new domain -- this can take a little while.";
   decomposeBoard.appendChild(note);
 }
 
-function renderTreeOutline(tree) {
-  // Lightweight nested list -- item 3 upgrades this into the real card-based canvas
-  // visualization; this is enough to review a draft before approving it.
-  const list = document.createElement("ul");
-  list.className = "decompose-tree-outline";
-  for (const layerId of tree.root_ids) {
-    const layer = tree.nodes[layerId];
-    if (!layer) continue;
-    const layerItem = document.createElement("li");
-    layerItem.textContent = layer.label;
-    const subList = document.createElement("ul");
-    for (const subId of layer.children) {
-      const sub = tree.nodes[subId];
-      if (!sub) continue;
-      const subItem = document.createElement("li");
-      subItem.textContent = sub.label;
-      const atomicList = document.createElement("ul");
-      for (const atomicId of sub.children) {
-        const atomic = tree.nodes[atomicId];
-        if (!atomic) continue;
-        const atomicItem = document.createElement("li");
-        atomicItem.textContent = atomic.label;
-        atomicList.appendChild(atomicItem);
-      }
-      subItem.appendChild(atomicList);
-      subList.appendChild(subItem);
-    }
-    layerItem.appendChild(subList);
-    list.appendChild(layerItem);
+async function streamRevealTreeNodes(diagramWrap) {
+  // 10d -- Layer nodes fade in, then Sub-task nodes, then Atomic steps one at a time.
+  // Purely a presentation choreography over the already-real, already-correct tree data --
+  // not a claim about live backend progress (see 10d's own plan file).
+  const svg = diagramWrap.querySelector("svg");
+  if (!svg) return;
+  const layerNodes = svg.querySelectorAll(".level-layer");
+  const subNodes = svg.querySelectorAll(".level-sub-task");
+  const atomicNodes = svg.querySelectorAll(".level-atomic-step");
+  for (const n of [...layerNodes, ...subNodes, ...atomicNodes]) {
+    n.style.transition = "opacity 0.25s";
+    n.style.opacity = "0";
   }
-  return list;
+  await sleep(50); // let the hidden state paint before animating
+  for (const n of layerNodes) n.style.opacity = "1";
+  await sleep(300);
+  for (const n of subNodes) n.style.opacity = "1";
+  await sleep(300);
+  for (const n of atomicNodes) {
+    n.style.opacity = "1";
+    await sleep(90);
+  }
 }
 
 function renderReviewingDraftView() {
@@ -1734,7 +1801,15 @@ function renderReviewingDraftView() {
   heading.textContent = `Review draft — ${state.domain}`;
   decomposeBoard.appendChild(heading);
 
-  decomposeBoard.appendChild(renderTreeOutline(state.draft.tree));
+  const diagramWrap = renderTreeDiagram(state.draft.tree, () => {});
+  decomposeBoard.appendChild(diagramWrap);
+  if (!state.treeRevealed) {
+    // Direct mutation, deliberately not a `state = {...}` replace -- this is animation
+    // bookkeeping only and must not trigger a renderBoard() that would wipe the DOM and
+    // restart the reveal mid-flight.
+    state.treeRevealed = true;
+    streamRevealTreeNodes(diagramWrap);
+  }
 
   if (!state.draft.validation.passed) {
     const violationsLabel = document.createElement("div");

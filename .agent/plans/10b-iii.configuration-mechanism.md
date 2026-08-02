@@ -110,4 +110,4 @@ Once this lands, **Module 10b (n8n Node Tile) is fully complete.**
   save), real text-input path (HTTP node's own empty `url` field has no chips as expected,
   Save gated until non-blank, badge clears on save), Code node's `jsCode` text field same
   flow — zero JS errors, screenshot-confirmed layout.
-- [ ] Committed
+- [x] Committed

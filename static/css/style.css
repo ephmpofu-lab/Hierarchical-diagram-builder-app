@@ -2581,18 +2581,47 @@ html[data-inspector-collapsed="true"] .health-footer {
 
 /* Decompose (AMENDMENT 4 item 2) -- a lightweight draft-review outline; item 3 replaces
    this with the real card-based canvas tree visualization. */
-.decompose-tree-outline,
-.decompose-tree-outline ul {
-  list-style: disc;
-  margin: 0 0 12px 20px;
-  padding: 0;
-  color: var(--text);
-  font-size: 13px;
+.decompose-build-status {
+  max-width: 440px;
+  margin: 0 auto 20px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px 18px;
 }
 
-.decompose-tree-outline > li {
-  font-weight: 600;
-  margin-bottom: 8px;
+.decompose-bs-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.decompose-bs-line.done {
+  color: var(--text);
+}
+
+.decompose-bs-line.failed {
+  color: var(--danger-text);
+}
+
+.decompose-bs-icon {
+  width: 16px;
+  text-align: center;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.decompose-bs-line.pending .decompose-bs-icon {
+  display: inline-block;
+  animation: decompose-bs-spin 0.9s linear infinite;
+}
+
+@keyframes decompose-bs-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .decompose-violations-list {
