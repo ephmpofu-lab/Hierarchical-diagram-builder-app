@@ -75,6 +75,11 @@ let state = {
   refining: false,
   submitting: false,
   error: null,
+  workflowDataLayer: "workflow", // "workflow" | "data" (13f-13h) -- which layer is at full
+  // prominence in n8n mode; the other renders as a faint underlay reference
+  dataArchitecture: null, // cached DataArchitecture for the current domain (13f), fetched
+  // once per domain on first switching to the Data layer
+  erdExpanded: {}, // entity id -> bool (13f), which ERD entity boxes are expanded
 };
 
 function renderBoard() {
@@ -270,6 +275,7 @@ async function submitRefine(instruction) {
     state = {
       ...state, refining: false, tree: result.tree, refineBarExpanded: false,
       pythonRender: null, n8nRender: null, mode: null, selectedNodeId: null, n8nNodeConfig: {},
+      dataArchitecture: null, // stale relative to the changed Workflow Tree (R41)
     };
   } finally {
     renderBoard();
@@ -778,6 +784,187 @@ async function downloadPythonPackage(domain) {
   URL.revokeObjectURL(url);
 }
 
+// ---- Data Architecture Layer: ERD Renderer (13f) ----
+// Own FK-driven layered layout (R46), independent of the Tree Diagram's/n8n canvas's own
+// layout constants -- entities with no FK dependency sit at level 0; an entity referencing
+// a level-N entity sits at level N+1 (longest-path layering over the same FK graph
+// backend/data_architecture/engine.py::_topological_order_by_fk already computes
+// server-side, recomputed here client-side over the already-fetched DataArchitecture).
+
+function computeErdLayout(architecture) {
+  const boxWidth = 220;
+  const collapsedHeight = 50;
+  const levelGap = 100;
+  const siblingGap = 40;
+  const byId = {};
+  for (const e of architecture.entities) byId[e.id] = e;
+
+  const levelById = {};
+  function computeLevel(entity, seen) {
+    if (levelById[entity.id] !== undefined) return levelById[entity.id];
+    if (seen.has(entity.id)) return 0; // defensive cycle guard -- shouldn't happen for a
+    // well-formed, validate_data_architecture-checked tree
+    seen.add(entity.id);
+    let maxRefLevel = -1;
+    for (const attr of entity.attributes) {
+      if (attr.is_foreign_key && attr.references_entity && byId[attr.references_entity]) {
+        maxRefLevel = Math.max(maxRefLevel, computeLevel(byId[attr.references_entity], seen));
+      }
+    }
+    const level = maxRefLevel + 1;
+    levelById[entity.id] = level;
+    return level;
+  }
+  for (const entity of architecture.entities) computeLevel(entity, new Set());
+
+  const byLevel = {};
+  for (const entity of architecture.entities) {
+    const level = levelById[entity.id];
+    (byLevel[level] = byLevel[level] || []).push(entity);
+  }
+
+  const positions = {};
+  const maxLevel = Math.max(0, ...Object.values(levelById));
+  for (let level = 0; level <= maxLevel; level++) {
+    const rowEntities = byLevel[level] || [];
+    const totalWidth = rowEntities.length * boxWidth + Math.max(0, rowEntities.length - 1) * siblingGap;
+    let cursorX = -totalWidth / 2;
+    for (const entity of rowEntities) {
+      positions[entity.id] = { x: cursorX, y: level * (collapsedHeight + levelGap) };
+      cursorX += boxWidth + siblingGap;
+    }
+  }
+  let minX = Infinity;
+  for (const pos of Object.values(positions)) minX = Math.min(minX, pos.x);
+  const shift = Number.isFinite(minX) ? -minX + 20 : 20;
+  for (const pos of Object.values(positions)) pos.x += shift;
+
+  return { positions, boxWidth, collapsedHeight };
+}
+
+function renderErdDiagram(architecture) {
+  const { positions, boxWidth, collapsedHeight } = computeErdLayout(architecture);
+  const byId = {};
+  for (const e of architecture.entities) byId[e.id] = e;
+  const padding = 40;
+  const attrRowHeight = 22;
+
+  function entityHeight(entity) {
+    if (!state.erdExpanded[entity.id]) return collapsedHeight;
+    return 40 + entity.attributes.length * attrRowHeight;
+  }
+
+  let maxX = 0;
+  let maxY = 0;
+  for (const entity of architecture.entities) {
+    const pos = positions[entity.id];
+    maxX = Math.max(maxX, pos.x + boxWidth);
+    maxY = Math.max(maxY, pos.y + entityHeight(entity));
+  }
+  const totalWidth = maxX + padding * 2;
+  const totalHeight = maxY + padding * 2;
+
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("width", totalWidth);
+  svg.setAttribute("height", totalHeight);
+  svg.setAttribute("viewBox", `0 0 ${totalWidth} ${totalHeight}`);
+  svg.classList.add("decompose-erd-diagram");
+
+  // Relationship lines drawn first (R20: rounded orthogonal routing, never a raw diagonal).
+  for (const rel of architecture.relationships) {
+    const fromEntity = byId[rel.from_entity];
+    const toEntity = byId[rel.to_entity];
+    if (!fromEntity || !toEntity) continue;
+    const fromPos = positions[fromEntity.id];
+    const toPos = positions[toEntity.id];
+    const start = { x: fromPos.x + boxWidth / 2 + padding, y: fromPos.y + entityHeight(fromEntity) + padding };
+    const end = { x: toPos.x + boxWidth / 2 + padding, y: toPos.y + padding };
+    const midY = start.y + (end.y - start.y) / 2;
+    const waypoints = [start, { x: start.x, y: midY }, { x: end.x, y: midY }, end];
+
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", roundedPolylinePath(waypoints, 10));
+    path.setAttribute("class", "decompose-erd-relationship");
+    svg.appendChild(path);
+
+    const label = document.createElementNS(SVG_NS, "text");
+    label.setAttribute("x", (start.x + end.x) / 2 + 8);
+    label.setAttribute("y", midY - 4);
+    label.setAttribute("class", "decompose-erd-cardinality-label");
+    label.textContent = rel.cardinality;
+    svg.appendChild(label);
+  }
+
+  for (const entity of architecture.entities) {
+    const pos = positions[entity.id];
+    const height = entityHeight(entity);
+    const expanded = !!state.erdExpanded[entity.id];
+
+    const group = document.createElementNS(SVG_NS, "g");
+    group.setAttribute("class", "decompose-erd-entity");
+    group.addEventListener("click", () => {
+      state = { ...state, erdExpanded: { ...state.erdExpanded, [entity.id]: !expanded } };
+      renderBoard();
+    });
+
+    const rect = document.createElementNS(SVG_NS, "rect");
+    rect.setAttribute("x", pos.x + padding);
+    rect.setAttribute("y", pos.y + padding);
+    rect.setAttribute("width", boxWidth);
+    rect.setAttribute("height", height);
+    rect.setAttribute("rx", 8);
+    rect.setAttribute("class", "decompose-erd-entity-rect");
+    group.appendChild(rect);
+
+    const title = document.createElementNS(SVG_NS, "text");
+    title.setAttribute("x", pos.x + padding + 10);
+    title.setAttribute("y", pos.y + padding + 20);
+    title.setAttribute("class", "decompose-erd-entity-title");
+    title.textContent = `${entity.id} ${entity.name}`;
+    group.appendChild(title);
+
+    if (!expanded) {
+      const platform = document.createElementNS(SVG_NS, "text");
+      platform.setAttribute("x", pos.x + padding + 10);
+      platform.setAttribute("y", pos.y + padding + 38);
+      platform.setAttribute("class", "decompose-erd-entity-platform");
+      platform.textContent = entity.database;
+      group.appendChild(platform);
+    } else {
+      entity.attributes.forEach((attr, index) => {
+        const row = document.createElementNS(SVG_NS, "text");
+        row.setAttribute("x", pos.x + padding + 10);
+        row.setAttribute("y", pos.y + padding + 40 + index * attrRowHeight);
+        row.setAttribute("class", "decompose-erd-attribute-row");
+        const badge = attr.is_primary_key ? " PK" : attr.is_foreign_key ? " FK" : "";
+        row.textContent = `${attr.name}: ${attr.type}${badge}`;
+        group.appendChild(row);
+      });
+    }
+
+    svg.appendChild(group);
+  }
+
+  const wrap = document.createElement("div");
+  wrap.className = "decompose-erd-diagram-wrap";
+  wrap.appendChild(svg);
+  return wrap;
+}
+
+async function selectDataLayer(layer) {
+  state = { ...state, workflowDataLayer: layer };
+  renderBoard();
+  if (layer !== "data" || state.dataArchitecture) return;
+  const res = await fetch(`/api/decompose/domains/${encodeURIComponent(state.domain)}/data-architecture`);
+  state = {
+    ...state,
+    dataArchitecture: res.ok
+      ? await res.json()
+      : { domain: state.domain, entities: [], relationships: [], anchors: [] },
+  };
+  renderBoard();
+}
+
 function renderOutputSection() {
   const section = document.createElement("div");
   section.className = "decompose-output-section";
@@ -797,6 +984,36 @@ function renderOutputSection() {
     section.textContent = "Rendering…";
     return section;
   }
+
+  const layerToggle = document.createElement("div");
+  layerToggle.className = "decompose-layer-toggle";
+  for (const layer of ["workflow", "data"]) {
+    const btn = document.createElement("button");
+    btn.className = "btn btn-small" + (state.workflowDataLayer === layer ? " active" : "");
+    btn.textContent = layer === "workflow" ? "Workflow" : "Data";
+    btn.addEventListener("click", () => selectDataLayer(layer));
+    layerToggle.appendChild(btn);
+  }
+  section.appendChild(layerToggle);
+
+  if (state.workflowDataLayer === "data") {
+    if (!state.dataArchitecture) {
+      const loading = document.createElement("div");
+      loading.textContent = "Loading Data Architecture…";
+      section.appendChild(loading);
+      return section;
+    }
+    if (state.dataArchitecture.entities.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "reasoning-empty-state";
+      empty.textContent = "No Data Architecture has been drafted for this domain yet.";
+      section.appendChild(empty);
+      return section;
+    }
+    section.appendChild(renderErdDiagram(state.dataArchitecture));
+    return section;
+  }
+
   const diagramWrap = document.createElement("div");
   diagramWrap.className = "decompose-n8n-diagram-wrap";
   diagramWrap.appendChild(renderN8nDiagram(state.n8nRender));
@@ -1744,7 +1961,7 @@ async function selectDomain(domain) {
   state = {
     ...state, view: "canvas", domain, tree: null, error: null,
     mode: null, pythonRender: null, n8nRender: null, selectedNodeId: null, n8nNodeConfig: {},
-    refineBarExpanded: false,
+    refineBarExpanded: false, workflowDataLayer: "workflow", dataArchitecture: null, erdExpanded: {},
     pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null, docId: null },
   };
   renderBoard();
