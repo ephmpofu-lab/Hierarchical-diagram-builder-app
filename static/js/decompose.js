@@ -80,6 +80,8 @@ let state = {
   dataArchitecture: null, // cached DataArchitecture for the current domain (13f), fetched
   // once per domain on first switching to the Data layer
   erdExpanded: {}, // entity id -> bool (13f), which ERD entity boxes are expanded
+  selectedEntityId: null, // (13j) -- drives the entity detail panel, canvas-state only
+  dataArchitectureSql: null, // cached whole-domain DDL text (13j), fetched once per domain
 };
 
 function renderBoard() {
@@ -538,6 +540,11 @@ function renderCanvasView() {
     const panel = renderNodeDetailPanel();
     if (panel) decomposeBoard.appendChild(panel);
   }
+
+  if (state.selectedEntityId) {
+    const panel = renderEntityDetailPanel();
+    if (panel) decomposeBoard.appendChild(panel);
+  }
 }
 
 function metaRow(label, value) {
@@ -689,6 +696,123 @@ function renderNodeDetailPanel() {
     drawer.addEventListener(evt, armPanelIdleRetract);
   }
   armPanelIdleRetract();
+
+  wrap.appendChild(drawer);
+  return wrap;
+}
+
+// ---- Entity Detail Panel + SQL view (13j, R50, Data -> Workflow half) ----
+
+function closeEntityDetail() {
+  state = { ...state, selectedEntityId: null };
+  renderBoard();
+}
+
+async function ensureDataArchitectureSqlLoaded() {
+  if (state.dataArchitectureSql) return;
+  const res = await fetch(`/api/decompose/domains/${encodeURIComponent(state.domain)}/data-architecture/sql`);
+  state = { ...state, dataArchitectureSql: res.ok ? await res.text() : "" };
+  renderBoard();
+}
+
+function renderEntityDetailPanel() {
+  const architecture = state.dataArchitecture;
+  const entity = architecture && architecture.entities.find((e) => e.id === state.selectedEntityId);
+  if (!entity) return null;
+
+  const wrap = document.createElement("div");
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "decompose-drawer-backdrop";
+  backdrop.addEventListener("click", closeEntityDetail);
+  wrap.appendChild(backdrop);
+
+  const drawer = document.createElement("div");
+  drawer.className = "decompose-drawer";
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "btn btn-small decompose-drawer-close";
+  closeBtn.textContent = "✕";
+  closeBtn.addEventListener("click", closeEntityDetail);
+  drawer.appendChild(closeBtn);
+
+  const title = document.createElement("div");
+  title.className = "decompose-drawer-title";
+  title.textContent = `${entity.id} ${entity.name}`;
+  drawer.appendChild(title);
+
+  const meta = document.createElement("div");
+  meta.className = "decompose-drawer-meta";
+  meta.appendChild(metaRow("Database", entity.database));
+  if (entity.description) meta.appendChild(metaRow("Description", entity.description));
+  drawer.appendChild(meta);
+
+  const attrsLabel = document.createElement("div");
+  attrsLabel.className = "reasoning-section-label";
+  attrsLabel.textContent = "Attributes";
+  drawer.appendChild(attrsLabel);
+  const attrsList = document.createElement("ul");
+  attrsList.className = "decompose-drawer-variables";
+  for (const attr of entity.attributes) {
+    const badge = attr.is_primary_key ? " PK" : attr.is_foreign_key ? " FK" : "";
+    const item = document.createElement("li");
+    item.textContent = `${attr.name}: ${attr.type}${badge}${attr.nullable ? "" : " NOT NULL"}`;
+    attrsList.appendChild(item);
+  }
+  drawer.appendChild(attrsList);
+
+  const relationships = architecture.relationships.filter(
+    (r) => r.from_entity === entity.id || r.to_entity === entity.id
+  );
+  if (relationships.length > 0) {
+    const relLabel = document.createElement("div");
+    relLabel.className = "reasoning-section-label";
+    relLabel.textContent = "Relationships";
+    drawer.appendChild(relLabel);
+    const relList = document.createElement("ul");
+    relList.className = "decompose-drawer-rules";
+    const byId = {};
+    for (const e of architecture.entities) byId[e.id] = e;
+    for (const rel of relationships) {
+      const fromName = (byId[rel.from_entity] || {}).name || rel.from_entity;
+      const toName = (byId[rel.to_entity] || {}).name || rel.to_entity;
+      const item = document.createElement("li");
+      item.textContent = `${fromName} ${rel.cardinality} ${toName}`;
+      relList.appendChild(item);
+    }
+    drawer.appendChild(relList);
+  }
+
+  const usageAnchors = architecture.anchors.filter((a) => a.data_id === entity.id);
+  const usageLabel = document.createElement("div");
+  usageLabel.className = "reasoning-section-label";
+  usageLabel.textContent = "Workflow usage";
+  drawer.appendChild(usageLabel);
+  if (usageAnchors.length === 0) {
+    const none = document.createElement("div");
+    none.className = "decompose-drawer-notes";
+    none.textContent = "No workflow node currently references this entity.";
+    drawer.appendChild(none);
+  } else {
+    const usageList = document.createElement("ul");
+    usageList.className = "decompose-drawer-rules";
+    for (const anchor of usageAnchors) {
+      const item = document.createElement("li");
+      item.textContent = `${anchor.domain}:${anchor.node_id} — ${anchor.node_label} — ${anchor.operation}`;
+      usageList.appendChild(item);
+    }
+    drawer.appendChild(usageList);
+  }
+
+  if (!state.dataArchitectureSql) {
+    const loading = document.createElement("div");
+    loading.className = "decompose-drawer-notes";
+    loading.textContent = "Loading SQL…";
+    drawer.appendChild(loading);
+    ensureDataArchitectureSqlLoaded();
+  } else {
+    drawer.appendChild(renderDrawerSnippet("SQL", state.dataArchitectureSql));
+  }
 
   wrap.appendChild(drawer);
   return wrap;
@@ -875,7 +999,7 @@ function renderErdDiagram(architecture) {
 
   function entityHeight(entity) {
     if (!state.erdExpanded[entity.id]) return collapsedHeight;
-    return 40 + entity.attributes.length * attrRowHeight;
+    return 40 + entity.attributes.length * attrRowHeight + attrRowHeight; // + "View details" row
   }
 
   let maxX = 0;
@@ -964,6 +1088,20 @@ function renderErdDiagram(architecture) {
         row.textContent = `${attr.name}: ${attr.type}${badge}`;
         group.appendChild(row);
       });
+
+      // "View details" -- separate from the click-to-expand/collapse toggle (13f);
+      // stopPropagation so it doesn't also collapse the box (R50/13j).
+      const detailsRow = document.createElementNS(SVG_NS, "text");
+      detailsRow.setAttribute("x", pos.x + padding + 10);
+      detailsRow.setAttribute("y", pos.y + padding + 40 + entity.attributes.length * attrRowHeight);
+      detailsRow.setAttribute("class", "decompose-erd-view-details");
+      detailsRow.textContent = "View details →";
+      detailsRow.addEventListener("click", (evt) => {
+        evt.stopPropagation();
+        state = { ...state, selectedEntityId: entity.id };
+        renderBoard();
+      });
+      group.appendChild(detailsRow);
     }
 
     svg.appendChild(group);
@@ -2054,6 +2192,7 @@ async function selectDomain(domain) {
     ...state, view: "canvas", domain, tree: null, error: null,
     mode: null, pythonRender: null, n8nRender: null, selectedNodeId: null, n8nNodeConfig: {},
     refineBarExpanded: false, workflowDataLayer: "workflow", dataArchitecture: null, erdExpanded: {},
+    selectedEntityId: null, dataArchitectureSql: null,
     pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null, docId: null },
   };
   renderBoard();

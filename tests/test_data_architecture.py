@@ -357,3 +357,23 @@ def test_approve_data_architecture_endpoint_rejects_invalid_architecture(authed_
         assert response.status_code == 422
     finally:
         taxonomy_repo._TAXONOMIES_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)
+
+
+# ---- Data Architecture SQL Endpoint (13j) ----
+
+def test_data_architecture_sql_endpoint_404_for_unfrozen_domain(authed_client):
+    response = authed_client.get(f"/api/decompose/domains/__definitely_not_a_real_domain__/data-architecture/sql")
+    assert response.status_code == 404
+
+
+def test_data_architecture_sql_endpoint_returns_real_synchronized_ddl(authed_client):
+    try:
+        data_architecture_repo.save_data_architecture(_sample_architecture())
+        response = authed_client.get(f"/api/decompose/domains/{TEST_DOMAIN}/data-architecture/sql")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        assert "CREATE TABLE documents" in response.text
+        assert "CREATE TABLE document_chunks" in response.text
+        assert "REFERENCES documents(id)" in response.text
+    finally:
+        data_architecture_repo._DATA_ARCHITECTURES_DIR.joinpath(f"{TEST_DOMAIN}.json").unlink(missing_ok=True)

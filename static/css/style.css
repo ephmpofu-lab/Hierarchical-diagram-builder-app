@@ -1881,6 +1881,12 @@ html[data-inspector-collapsed="true"] .health-footer {
   font-size: 11px;
 }
 
+.decompose-erd-view-details {
+  fill: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+}
+
 .decompose-n8n-anchor-text {
   fill: var(--warning-text);
   font-size: 10px;

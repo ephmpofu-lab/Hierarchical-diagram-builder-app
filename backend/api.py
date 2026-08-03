@@ -1344,6 +1344,17 @@ def api_get_data_architecture(domain: str, user: AuthenticatedUser = Depends(req
     return architecture
 
 
+@router.get("/decompose/domains/{domain}/data-architecture/sql")
+def api_get_data_architecture_sql(domain: str, user: AuthenticatedUser = Depends(require_auth)):
+    """13j -- reuses render_sql_ddl verbatim (R45/R17: SQL never independently derived
+    from the visual/canonical model)."""
+    architecture = data_architecture_repo.load_data_architecture(domain)
+    if architecture is None:
+        raise HTTPException(status_code=404, detail=f"No frozen Data Architecture for domain '{domain}' yet")
+    ddl = data_architecture_engine.render_sql_ddl(architecture.entities)
+    return Response(content=ddl, media_type="text/plain")
+
+
 @router.post("/decompose/render/python", response_model=List[RenderedCodeBlock])
 def api_render_python(body: DomainRenderRequest, user: AuthenticatedUser = Depends(require_auth)):
     domain_tree = taxonomy_repo.load_tree(body.domain)
