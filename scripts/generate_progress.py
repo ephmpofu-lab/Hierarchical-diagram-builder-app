@@ -32,6 +32,7 @@ MODULE_PREFIX_TO_HEADING = {
     "10": "Module 10:",
     "11": "Module 11:",
     "12": "Module 12:",
+    "13": "Module 13:",
 }
 
 _STATUS_LINE_RE = re.compile(r"^- \[( |x)\] (Built|Tested|Committed)\b", re.IGNORECASE)
