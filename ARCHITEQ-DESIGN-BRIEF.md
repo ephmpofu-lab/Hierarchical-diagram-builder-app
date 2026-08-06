@@ -77,6 +77,14 @@ Reused, named idioms — not one-off styling per screen:
 - **Refine bar** — small, persistent, pinned input, always visible on the canvas state;
   visually secondary to the tree itself (this app's equivalent of an embedded assistant
   input, per the UI directive's own Railway-dashboard precedent).
+- **Planning-artifact hub-and-spoke diagram** (`.decompose-hub-diagram`, UI12/DP11) — one
+  central hub card (icon, title, filename, description) with up to six satellite spoke
+  cards in fixed three-left/three-right positions, connected by dashed curves measured from
+  real card positions at render time. The hub icon is a small glyph badge
+  (`.decompose-hub-icon`) reading from the same `--surface-2` token used elsewhere for icon
+  badges, not a new color. Filename/code text in this component uses `var(--font-mono)`
+  (headed by JetBrains Mono), matching the app's one standing named monospace stack rather
+  than a component-local font choice.
 
 ## 5. Screen Style
 

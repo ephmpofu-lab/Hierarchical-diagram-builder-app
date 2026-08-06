@@ -82,6 +82,7 @@ let state = {
   erdExpanded: {}, // entity id -> bool (13f), which ERD entity boxes are expanded
   selectedEntityId: null, // (13j) -- drives the entity detail panel, canvas-state only
   dataArchitectureSql: null, // cached whole-domain DDL text (13j), fetched once per domain
+  planningArtifacts: null,
 };
 
 function renderBoard() {
@@ -1309,6 +1310,7 @@ function renderPythonBrowser() {
   }
 
   const grouped = groupPythonRenderByFile(state.tree, state.pythonRender);
+  if (!state.planningArtifacts) ensurePlanningArtifactsLoaded();
   const pb = state.pyBrowser || { level: 1, folderIdx: null, fileIdx: null, funcId: null };
 
   wrap.appendChild(renderPyCrumbs(grouped, pb));
@@ -1338,7 +1340,15 @@ function pyCrumbSep() {
 }
 
 function setPyBrowserState(next) {
-  state = { ...state, pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null, docId: null, ...next } };
+  state = { ...state, pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null, docId: null, docView: "diagram", ...next } };
+  renderBoard();
+}
+
+async function ensurePlanningArtifactsLoaded() {
+  if (state.planningArtifacts || !state.domain) return;
+  const res = await fetch(`/api/decompose/domains/${encodeURIComponent(state.domain)}/planning-artifacts`);
+  if (!res.ok) return;
+  state = { ...state, planningArtifacts: await res.json() };
   renderBoard();
 }
 
@@ -1358,6 +1368,8 @@ const DOC_ARTIFACTS = [
 ];
 
 function docArtifactStatus(artifactId) {
+  const artifact = (state.planningArtifacts || []).find((item) => item.id === artifactId);
+  if (artifact) return { status: artifact.status, blockedReason: artifact.blocked_reason };
   if (artifactId === "engineering_plan") {
     return { status: "built" };
   }
@@ -1372,6 +1384,17 @@ function docArtifactStatus(artifactId) {
     blockedReason: "No generator scoped for this artifact yet (see ARCHITEQ-PRD.md OQ6).",
   };
 }
+
+// Maps planning_artifacts.py's semantic icon keys to a glyph -- the backend names *what*
+// each artifact is (never presentation), the frontend owns how that renders.
+const DOC_ICON_GLYPHS = {
+  document: "📋",
+  blueprint: "📐",
+  route: "🧭",
+  palette: "🎨",
+  database: "🗄",
+  roadmap: "🗺",
+};
 
 function renderHubAndSpoke(hub, spokes) {
   if (spokes.length > 6) {
@@ -1409,6 +1432,12 @@ function renderHubAndSpoke(hub, spokes) {
 
   const hubEl = document.createElement("div");
   hubEl.className = "decompose-hub";
+  if (hub.icon) {
+    const hubIcon = document.createElement("div");
+    hubIcon.className = "decompose-hub-icon";
+    hubIcon.textContent = DOC_ICON_GLYPHS[hub.icon] || "📄";
+    hubEl.appendChild(hubIcon);
+  }
   const hubTitle = document.createElement("div");
   hubTitle.className = "decompose-hub-title";
   hubTitle.textContent = hub.title;
@@ -1454,14 +1483,16 @@ function renderHubAndSpoke(hub, spokes) {
 function renderDocArtifact(grouped, docId) {
   const el = document.createElement("div");
   el.className = "decompose-py-level decompose-py-level-3";
-  const doc = DOC_ARTIFACTS.find((d) => d.id === docId);
+  const doc = (state.planningArtifacts || DOC_ARTIFACTS).find((d) => d.id === docId);
   const status = docArtifactStatus(docId);
 
   if (status.status === "missing") {
     const banner = document.createElement("div");
     banner.className = "decompose-py-doc-missing";
+    banner.setAttribute("role", "status");
     const icon = document.createElement("span");
     icon.className = "decompose-py-doc-missing-icon";
+    icon.setAttribute("aria-hidden", "true");
     icon.textContent = "⚠";
     const text = document.createElement("span");
     text.textContent = `${doc.file} has not been generated for this domain yet. ${status.blockedReason}`;
@@ -1471,15 +1502,41 @@ function renderDocArtifact(grouped, docId) {
     return el;
   }
 
+  const toggle = document.createElement("div");
+  toggle.className = "decompose-doc-toggle";
+  for (const view of ["diagram", "text"]) {
+    const button = document.createElement("button");
+    button.className = "btn btn-small" + (view === state.pyBrowser.docView ? " active" : "");
+    button.textContent = view === "diagram" ? "Diagram" : "Full text";
+    button.addEventListener("click", () => setPyBrowserState({ docId, docView: view }));
+    toggle.appendChild(button);
+  }
+  el.appendChild(toggle);
+  if (state.pyBrowser.docView === "text") {
+    const text = document.createElement("pre");
+    text.className = "decompose-doc-text";
+    text.textContent = doc.markdown || "No generated text is available for this artifact.";
+    el.appendChild(text);
+    return el;
+  }
+
   const hub = {
-    title: "Engineering Plan",
+    icon: doc.icon,
+    title: doc.title || doc.file,
     subtitle: doc.file,
-    desc: `${state.domain} — ${grouped.folders.length} layer${grouped.folders.length === 1 ? "" : "s"}, derived from the frozen tree's topological build order (R10).`,
+    desc: doc.description
+      || `${state.domain} — ${grouped.folders.length} layer${grouped.folders.length === 1 ? "" : "s"}, derived from the frozen tree's topological build order (R10).`,
   };
-  const spokes = grouped.folders.map((folder, folderIdx) => ({
-    title: folder.label,
-    items: folder.files.map((f) => pyFileName(f.label)),
-    onClick: () => setPyBrowserState({ folderIdx, fileIdx: 0 }),
+  // Engineering Plan spokes stay one-per-Layer so they keep navigating into the real
+  // per-Layer file browser (10c); every other artifact renders the backend's own sections.
+  const sourceSections = docId === "engineering_plan"
+    ? grouped.folders.map((folder) => ({ title: folder.label, items: folder.files.map((f) => pyFileName(f.label)) }))
+    : (doc.sections || []);
+  const spokes = sourceSections.slice(0, 6).map((section, index) => ({
+    title: section.title,
+    items: section.items,
+    onClick: docId === "engineering_plan" && grouped.folders[index]
+      ? () => setPyBrowserState({ folderIdx: index, fileIdx: 0 }) : null,
   }));
   el.appendChild(renderHubAndSpoke(hub, spokes));
   return el;
@@ -1495,7 +1552,7 @@ function renderPyCrumbs(grouped, pb) {
   crumbs.appendChild(pkgSpan);
 
   if (pb.docId != null) {
-    const doc = DOC_ARTIFACTS.find((d) => d.id === pb.docId);
+    const doc = (state.planningArtifacts || DOC_ARTIFACTS).find((d) => d.id === pb.docId);
     crumbs.appendChild(pyCrumbSep());
     const docSpan = document.createElement("span");
     docSpan.className = "decompose-py-crumb-current";
@@ -1535,7 +1592,7 @@ function renderPyLevel1(grouped) {
 
   const docsChildren = document.createElement("div");
   docsChildren.className = "decompose-py-children";
-  DOC_ARTIFACTS.forEach((doc) => {
+  (state.planningArtifacts || DOC_ARTIFACTS).forEach((doc) => {
     const status = docArtifactStatus(doc.id);
     const row = document.createElement("div");
     row.className = "decompose-py-file-row";
@@ -2192,7 +2249,7 @@ async function selectDomain(domain) {
     ...state, view: "canvas", domain, tree: null, error: null,
     mode: null, pythonRender: null, n8nRender: null, selectedNodeId: null, n8nNodeConfig: {},
     refineBarExpanded: false, workflowDataLayer: "workflow", dataArchitecture: null, erdExpanded: {},
-    selectedEntityId: null, dataArchitectureSql: null,
+    selectedEntityId: null, dataArchitectureSql: null, planningArtifacts: null,
     pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null, docId: null },
   };
   renderBoard();

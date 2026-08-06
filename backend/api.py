@@ -48,6 +48,7 @@ from .component import engine as component_engine
 from .component import repository as component_repo
 from .data_architecture import engine as data_architecture_engine
 from .data_architecture import repository as data_architecture_repo
+from .planning_artifacts import build_artifacts
 from .taxonomy import repository as taxonomy_repo
 from .validator.service import validate_tree
 from .models import (
@@ -1353,6 +1354,14 @@ def api_get_data_architecture_sql(domain: str, user: AuthenticatedUser = Depends
         raise HTTPException(status_code=404, detail=f"No frozen Data Architecture for domain '{domain}' yet")
     ddl = data_architecture_engine.render_sql_ddl(architecture.entities)
     return Response(content=ddl, media_type="text/plain")
+
+
+@router.get("/decompose/domains/{domain}/planning-artifacts")
+def api_get_planning_artifacts(domain: str, user: AuthenticatedUser = Depends(require_auth)):
+    workflow_tree = taxonomy_repo.load_tree(domain)
+    if workflow_tree is None:
+        raise HTTPException(status_code=404, detail=f"No frozen Workflow Tree for domain '{domain}' yet")
+    return build_artifacts(domain, workflow_tree, component_repo.load_component_tree(domain), data_architecture_repo.load_data_architecture(domain))
 
 
 @router.post("/decompose/render/python", response_model=List[RenderedCodeBlock])

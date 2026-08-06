@@ -32,6 +32,7 @@
   --shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   --radius: 10px;
   --radius-sm: 8px;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 :root[data-theme="light"] {
@@ -69,6 +70,26 @@
 
 * {
   box-sizing: border-box;
+}
+
+.decompose-doc-toggle {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.decompose-doc-text {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: 12.5px/1.7 var(--font-mono);
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 body {
@@ -2364,6 +2385,18 @@ html[data-inspector-collapsed="true"] .health-footer {
   box-shadow: var(--shadow);
 }
 
+.decompose-hub-icon {
+  width: 42px;
+  height: 42px;
+  margin: 0 auto 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
 .decompose-hub-title {
   font-size: 17px;
   font-weight: 700;
@@ -2374,7 +2407,7 @@ html[data-inspector-collapsed="true"] .health-footer {
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 4px;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-family: var(--font-mono);
 }
 
 .decompose-hub-desc {
@@ -2416,7 +2449,7 @@ html[data-inspector-collapsed="true"] .health-footer {
   font-size: 12px;
   color: var(--text);
   padding: 2px 0;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-family: var(--font-mono);
 }
 
 .decompose-hub-diagram .pos-tl { grid-column: 1; grid-row: 1; justify-self: end; }
