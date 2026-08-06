@@ -64,4 +64,4 @@ One commit, then a second flipping this file's own Committed checkbox.
   actually visible, not just present in the DOM. Full pytest suite green (443 passed after
   this sub-plan's own commit -- one pre-existing self-referential test updated for Module
   10's honest current state, same established pattern, not a regression).
-- [ ] Committed
+- [x] Committed
