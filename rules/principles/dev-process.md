@@ -260,6 +260,40 @@ once work begins
 
 ---
 
+## DP14 — A UI-Facing Change Is Tested Against a Real Rendered Screenshot, Not Just Its Own Code
+
+**Statement:** DP2 requires a passed validation test before commit; for a UI-facing change,
+reading the source that renders a feature, or grepping for the function that builds it, does
+not satisfy DP2's own "verified" bar. A rendered screenshot of the actual served page (an
+automated browser, not a description of what the code should do) is the validation test. When
+a reference design (a mockup, a written checklist) exists, the screenshot is compared against
+it item by item, not eyeballed for a general impression. Adopted directly from this session's
+own experience: two rounds of "verified" based on reading `decompose.js` and confirming a
+function existed both turned out to be proxies for the real question (what actually renders)
+and both missed real, confirmable-by-pixel gaps a screenshot caught on the first pass.
+
+**Grounding:** Restates DP2 (Beck, TDD) at the UI layer, the same relationship DP10 already
+has to WD10 in this corpus — one underlying principle applied at a more specific layer, not a
+new one. Also: this session's own record (three real defects — hardcoded hub-and-spoke
+labels, a stale `sourceSections` fallback, a stray NUL byte silently breaking `grep` — found
+only once real screenshots were taken, none of them caught by reading the code that produced
+them).
+
+**Applies to:** Any sub-plan whose Build step changes rendered output (HTML/CSS/SVG/canvas),
+before that sub-plan's own Status checkboxes may show Tested or Committed.
+
+**Predicate:**
+```
+a UI-facing sub-plan's own Test step records: (a) an automated-browser
+screenshot of the actual served page in the relevant state, (b) if a
+reference design exists, a same-state screenshot of that reference and an
+item-by-item comparison between the two, (c) for any item that fails, the
+file/function where the real behavior is (or isn't) wired in -- never a
+"the code looks right" statement standing in for a., b., or c.
+```
+
+---
+
 ## Summary Table
 
 | ID | Rule | Grounding |
@@ -277,5 +311,6 @@ once work begins
 | DP11 | Six Planning Artifacts Precede Construction, Always in Order | ISO/IEC/IEEE 12207 |
 | DP12 | A Rules-File Change Triggers a Cross-Reference Check | IEEE 828 (Configuration Management) |
 | DP13 | A Roadmap and Checklist Exist Beyond the Current Work Item | Lombardo et al., Product Roadmaps Relaunched, 2017; PMI (WBS 100% Rule) |
+| DP14 | A UI-Facing Change Is Tested Against a Real Rendered Screenshot | Restates DP2 (Beck, TDD) at the UI layer |
 
 This file is referenced from `RULES-INDEX.md`.

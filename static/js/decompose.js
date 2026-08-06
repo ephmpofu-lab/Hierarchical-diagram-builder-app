@@ -1157,10 +1157,8 @@ function _buildWorkflowUnderlayItems(tree) {
   return items;
 }
 
-async function selectDataLayer(layer) {
-  state = { ...state, workflowDataLayer: layer };
-  renderBoard();
-  if (layer !== "data" || state.dataArchitecture) return;
+async function ensureDataArchitectureLoaded() {
+  if (state.dataArchitecture || !state.domain) return;
   const res = await fetch(`/api/decompose/domains/${encodeURIComponent(state.domain)}/data-architecture`);
   state = {
     ...state,
@@ -1169,6 +1167,37 @@ async function selectDataLayer(layer) {
       : { domain: state.domain, entities: [], relationships: [], anchors: [] },
   };
   renderBoard();
+}
+
+async function selectDataLayer(layer) {
+  state = { ...state, workflowDataLayer: layer };
+  renderBoard();
+  if (layer !== "data") return;
+  await ensureDataArchitectureLoaded();
+}
+
+// Fixed categorical palette for distinguishing Layers ("stages") in the legend -- a
+// different visual need from the semantic accent/success/warning/danger tokens (Design
+// Brief: those mean pass/fail/in-progress, not "which of N peer categories is this").
+// Cycles if a domain ever has more than 8 Layers, rather than crashing.
+const N8N_LEGEND_COLORS = ["#60a5fa", "#34d399", "#a78bfa", "#f59e0b", "#f472b6", "#38bdf8", "#facc15", "#fb7185"];
+
+function renderN8nStageLegend(tree) {
+  const legend = document.createElement("div");
+  legend.className = "decompose-n8n-legend";
+  tree.root_ids.forEach((layerId, index) => {
+    const layer = tree.nodes[layerId];
+    if (!layer) return;
+    const item = document.createElement("span");
+    item.className = "decompose-n8n-legend-item";
+    const dot = document.createElement("span");
+    dot.className = "decompose-n8n-legend-dot";
+    dot.style.backgroundColor = N8N_LEGEND_COLORS[index % N8N_LEGEND_COLORS.length];
+    item.appendChild(dot);
+    item.appendChild(document.createTextNode(layer.label));
+    legend.appendChild(item);
+  });
+  return legend;
 }
 
 function renderOutputSection() {
@@ -1191,6 +1220,9 @@ function renderOutputSection() {
     return section;
   }
 
+  const n8nTopbar = document.createElement("div");
+  n8nTopbar.className = "decompose-n8n-topbar";
+
   const layerToggle = document.createElement("div");
   layerToggle.className = "decompose-layer-toggle";
   for (const layer of ["workflow", "data"]) {
@@ -1200,7 +1232,30 @@ function renderOutputSection() {
     btn.addEventListener("click", () => selectDataLayer(layer));
     layerToggle.appendChild(btn);
   }
-  section.appendChild(layerToggle);
+  n8nTopbar.appendChild(layerToggle);
+
+  if (state.tree) n8nTopbar.appendChild(renderN8nStageLegend(state.tree));
+
+  const n8nActions = document.createElement("div");
+  n8nActions.className = "decompose-n8n-actions";
+  const autoArrangeBtn = document.createElement("button");
+  autoArrangeBtn.className = "btn btn-small";
+  autoArrangeBtn.textContent = "↗ Auto-arrange";
+  // Real, not decorative: this layout is already fully deterministic (compute_stage_zones,
+  // R10 topological order) -- there is no manual node-dragging to "undo" -- so "auto-arrange"
+  // is honestly just resetting the canvas's own pan/zoom transform back to that computed
+  // fit, which a fresh renderN8nDiagram() call already does (attachN8nPanZoom starts every
+  // new SVG at scale=1/tx=0/ty=0).
+  autoArrangeBtn.addEventListener("click", () => renderBoard());
+  n8nActions.appendChild(autoArrangeBtn);
+  const exportBtn = document.createElement("button");
+  exportBtn.className = "btn btn-small";
+  exportBtn.textContent = "Export";
+  exportBtn.addEventListener("click", () => downloadWorkflowJson(state.n8nRender, state.domain));
+  n8nActions.appendChild(exportBtn);
+  n8nTopbar.appendChild(n8nActions);
+
+  section.appendChild(n8nTopbar);
 
   if (state.workflowDataLayer === "data") {
     if (!state.dataArchitecture) {
@@ -1232,11 +1287,6 @@ function renderOutputSection() {
     const entityLabels = state.dataArchitecture.entities.map((e) => `${e.id} ${e.name}`);
     section.appendChild(renderFaintUnderlay("Data Layer (reference)", entityLabels));
   }
-  const downloadBtn = document.createElement("button");
-  downloadBtn.className = "btn btn-small";
-  downloadBtn.textContent = "Download workflow.json";
-  downloadBtn.addEventListener("click", () => downloadWorkflowJson(state.n8nRender, state.domain));
-  section.appendChild(downloadBtn);
   return section;
 }
 
@@ -1284,7 +1334,7 @@ function groupPythonRenderByFile(tree, pythonRender) {
 
     let folder = folderIndex.get(layer.id);
     if (!folder) {
-      folder = { label: layer.label, files: [] };
+      folder = { label: layer.label, files: [], layerId: layer.id };
       folderIndex.set(layer.id, folder);
       folders.push(folder);
     }
@@ -1296,6 +1346,18 @@ function groupPythonRenderByFile(tree, pythonRender) {
     }
     file.blocks.push(block);
   }
+
+  // Folders default to pythonRender's own topological (R10, dependency) order, which can
+  // legitimately differ from the checklist's own declared pipeline order -- resort to the
+  // tree's real root_ids sequence (the domain checklist's own canonical Layer order) so
+  // the folder browser reads top-to-bottom the way a human expects a pipeline listed,
+  // same real data, just the tree's own declaration order instead of execution order.
+  const rootOrder = new Map(tree.root_ids.map((id, index) => [id, index]));
+  folders.sort((a, b) => {
+    const aIdx = rootOrder.has(a.layerId) ? rootOrder.get(a.layerId) : Infinity;
+    const bIdx = rootOrder.has(b.layerId) ? rootOrder.get(b.layerId) : Infinity;
+    return aIdx - bIdx;
+  });
 
   return { packageName, folders };
 }
@@ -1614,11 +1676,22 @@ function renderPyLevel1(grouped) {
   });
   el.appendChild(docsChildren);
 
+  // The real architeq_{domain}/ package folder (already computed by groupPythonRenderByFile
+  // as grouped.packageName, already used in the breadcrumb) now also gets its own visible
+  // row here, containing every Layer folder -- previously computed but never rendered, so
+  // Layer folders appeared as flat top-level siblings of docs/ instead of nested inside it.
+  const packageFolderRow = document.createElement("div");
+  packageFolderRow.className = "decompose-py-folder-row";
+  packageFolderRow.textContent = grouped.packageName;
+  el.appendChild(packageFolderRow);
+
+  const packageChildren = document.createElement("div");
+  packageChildren.className = "decompose-py-children";
   grouped.folders.forEach((folder, folderIdx) => {
     const folderRow = document.createElement("div");
     folderRow.className = "decompose-py-folder-row";
     folderRow.textContent = pyFolderName(folder.label);
-    el.appendChild(folderRow);
+    packageChildren.appendChild(folderRow);
 
     const children = document.createElement("div");
     children.className = "decompose-py-children";
@@ -1639,8 +1712,9 @@ function renderPyLevel1(grouped) {
       fileRow.addEventListener("click", () => setPyBrowserState({ folderIdx, fileIdx }));
       children.appendChild(fileRow);
     });
-    el.appendChild(children);
+    packageChildren.appendChild(children);
   });
+  el.appendChild(packageChildren);
   return el;
 }
 
@@ -1891,6 +1965,38 @@ function n8nEffectiveParameters(node) {
   return confirmed ? { ...node.parameters, ...confirmed } : node.parameters;
 }
 
+// Real n8n type -> glyph, covering every type in rules/n8n_node_schemas.json plus the
+// mandatory Code-node fallback (NT3). Never guessed per-node -- one fixed map, same glyph
+// for the same real type everywhere it appears.
+// Glyphs without a trailing U+FE0F variation selector -- some of those render as tofu
+// boxes in a headless/minimal font environment (confirmed via real Playwright screenshot);
+// the base emoji codepoints below render reliably without it.
+const N8N_TYPE_ICONS = {
+  "n8n-nodes-base.httpRequest": "🌐",
+  "n8n-nodes-base.set": "✏",
+  "n8n-nodes-base.if": "🔀",
+  "n8n-nodes-base.merge": "🔗",
+  "n8n-nodes-base.webhook": "⚡",
+  "n8n-nodes-base.postgres": "🗄",
+  "n8n-nodes-base.stopAndError": "🛑",
+  "n8n-nodes-base.extractFromFile": "📄",
+  "n8n-nodes-base.readWriteFile": "💾",
+  "n8n-nodes-base.googleDrive": "📁",
+  "n8n-nodes-base.notion": "📝",
+  "n8n-nodes-base.code": "⌨",
+};
+function n8nTypeIcon(type) {
+  return N8N_TYPE_ICONS[type] || "⌨";
+}
+
+// Real, derived short display id (never fabricated): domain (the real Workflow ID per
+// R44/OQ7's resolution -- never the spec doc's own abstract "WF01" placeholder) + a
+// sequential index over this render's own real node order (already R10's topological
+// order, per node_mapper.py) -- stable for a given render, not a random/UUID label.
+function n8nDisplayId(domain, index) {
+  return `${domain}:N${String(index + 1).padStart(2, "0")}`;
+}
+
 function n8nNeedsConfiguration(node) {
   // A node needs configuration when one of its own real n8n parameters is still sitting at
   // the schema's own empty placeholder (_build_parameters, node_mapper.py, never overlaid a
@@ -1945,7 +2051,7 @@ function renderN8nDiagram(workflow) {
     label.setAttribute("x", zone.x + padding + 10);
     label.setAttribute("y", zone.y + padding + 18);
     label.setAttribute("class", "decompose-n8n-stage-zone-label");
-    label.textContent = zone.label;
+    label.textContent = `STAGE — ${zone.label.toUpperCase()}`;
     viewport.appendChild(label);
   }
 
@@ -1953,7 +2059,7 @@ function renderN8nDiagram(workflow) {
   for (const node of workflow.nodes) nodeByName[node.name] = node;
   const classificationByPair = {};
   for (const c of workflow.connection_classifications || []) {
-    classificationByPair[`${c.source_step_id} ${c.target_step_id}`] = c.classification;
+    classificationByPair[`${c.source_step_id} ${c.target_step_id}`] = c.classification;
   }
 
   function portOf(node, side) {
@@ -1969,17 +2075,32 @@ function renderN8nDiagram(workflow) {
     for (const conn of targets) {
       const target = nodeByName[conn.node];
       if (!source || !target) continue;
-      const classification = classificationByPair[`${source.step_id} ${target.step_id}`] || "adjacent";
+      const classification = classificationByPair[`${source.step_id} ${target.step_id}`] || "adjacent";
       const waypoints = _n8nBuildWaypoints(classification, portOf(source, "output"), portOf(target, "input"));
       const path = document.createElementNS(SVG_NS, "path");
       path.setAttribute("d", roundedPolylinePath(waypoints, N8N_CORNER_RADIUS));
       path.setAttribute("class", "decompose-n8n-connection");
       path.setAttribute("data-classification", classification);
       viewport.appendChild(path);
+
+      // Connection-data label (checklist parity): the real `produces` name the source
+      // Atomic step emits, sourced from the frozen tree already loaded in state.tree --
+      // never invented text. Placed at the path's own midpoint waypoint.
+      const sourceStepNode = state.tree && state.tree.nodes[source.step_id];
+      if (sourceStepNode && sourceStepNode.produces) {
+        const mid = waypoints[Math.floor(waypoints.length / 2)];
+        const labelText = document.createElementNS(SVG_NS, "text");
+        labelText.setAttribute("x", mid.x);
+        labelText.setAttribute("y", mid.y - 6);
+        labelText.setAttribute("text-anchor", "middle");
+        labelText.setAttribute("class", "decompose-n8n-connection-label");
+        labelText.textContent = sourceStepNode.produces;
+        viewport.appendChild(labelText);
+      }
     }
   }
 
-  for (const node of workflow.nodes) {
+  workflow.nodes.forEach((node, nodeIndex) => {
     const group = document.createElementNS(SVG_NS, "g");
     group.addEventListener("mouseenter", (evt) => showN8nHoverPayload(evt, node));
     group.addEventListener("mousemove", (evt) => showN8nHoverPayload(evt, node));
@@ -1990,23 +2111,41 @@ function renderN8nDiagram(workflow) {
     });
     group.classList.add("decompose-n8n-node-group");
 
+    const needsConfig = n8nNeedsConfiguration(node);
+
+    // Real, derived short display id (never the spec doc's own abstract "WF01" placeholder --
+    // Workflow ID is the real domain name per R44/OQ7's resolution).
+    const idLabel = document.createElementNS(SVG_NS, "text");
+    idLabel.setAttribute("x", node.position[0] + padding);
+    idLabel.setAttribute("y", node.position[1] + padding - 6);
+    idLabel.setAttribute("class", "decompose-n8n-node-id-text");
+    idLabel.setAttribute("pointer-events", "none");
+    idLabel.textContent = n8nDisplayId(state.domain, nodeIndex);
+    group.appendChild(idLabel);
+
     const rect = document.createElementNS(SVG_NS, "rect");
     rect.setAttribute("x", node.position[0] + padding);
     rect.setAttribute("y", node.position[1] + padding);
     rect.setAttribute("width", boxWidth);
     rect.setAttribute("height", boxHeight);
     rect.setAttribute("rx", "8");
-    rect.setAttribute("class", "decompose-n8n-node-rect");
+    rect.setAttribute("class", "decompose-n8n-node-rect" + (needsConfig ? " needs-config" : ""));
     group.appendChild(rect);
 
-    // Two distinct labels (CR11): display name and real n8n type, never merged into one.
+    // Real icon per real n8n type (checklist parity) -- prefixed onto the display-name
+    // line rather than a separately positioned badge, so box height/layout stays exactly
+    // what node_mapper.py's compute_stage_zones already assumed (no backend coordination
+    // needed for this frontend-only visual addition).
     const text = document.createElementNS(SVG_NS, "text");
     text.setAttribute("x", node.position[0] + padding + boxWidth / 2);
     text.setAttribute("y", node.position[1] + padding + 22);
     text.setAttribute("text-anchor", "middle");
     text.setAttribute("class", "decompose-n8n-node-text");
     text.setAttribute("pointer-events", "none"); // hover events land on the group, not this text
-    text.textContent = node.name.length > 22 ? `${node.name.slice(0, 20)}…` : node.name;
+    const iconPrefix = `${n8nTypeIcon(node.type)} `;
+    const nameBudget = 20 - iconPrefix.length;
+    const displayName = node.name.length > nameBudget + 2 ? `${node.name.slice(0, nameBudget)}…` : node.name;
+    text.textContent = iconPrefix + displayName;
     group.appendChild(text);
 
     const typeText = document.createElementNS(SVG_NS, "text");
@@ -2031,35 +2170,41 @@ function renderN8nDiagram(workflow) {
       group.appendChild(circle);
     }
 
-    if (n8nNeedsConfiguration(node)) {
-      const badge = document.createElementNS(SVG_NS, "circle");
-      badge.setAttribute("cx", node.position[0] + padding + boxWidth - 10);
-      badge.setAttribute("cy", node.position[1] + padding + 10);
-      badge.setAttribute("r", "5");
-      badge.setAttribute("class", "decompose-n8n-needs-config-badge");
-      badge.setAttribute("pointer-events", "none");
-      group.appendChild(badge);
+    // Below-box info lines (never inside the fixed-height box, so backend zone spacing
+    // never needs to change to make room): needs-setup warning first, then Data Anchors.
+    let belowBoxLine = 0;
+    if (needsConfig) {
+      const warnText = document.createElementNS(SVG_NS, "text");
+      warnText.setAttribute("x", node.position[0] + padding + boxWidth / 2);
+      warnText.setAttribute("y", node.position[1] + padding + boxHeight + 14 + belowBoxLine * 13);
+      warnText.setAttribute("text-anchor", "middle");
+      warnText.setAttribute("class", "decompose-n8n-needs-config-text");
+      warnText.setAttribute("pointer-events", "none");
+      warnText.textContent = "⚠ needs setup";
+      group.appendChild(warnText);
+      belowBoxLine += 1;
     }
 
     // Compact Data Anchors (13g, R48) -- only when Workflow is the active layer and the
-    // Data Architecture has already been fetched (13f's lazy-fetch posture); one line per
-    // real DataAnchor matching this node's real step_id, never rendered for a node with none.
+    // Data Architecture has already been fetched; one line per real DataAnchor matching
+    // this node's real step_id, never rendered for a node with none.
     if (state.workflowDataLayer === "workflow" && state.dataArchitecture) {
       const matchingAnchors = state.dataArchitecture.anchors.filter((a) => a.node_id === node.step_id);
-      matchingAnchors.forEach((anchor, index) => {
+      matchingAnchors.forEach((anchor) => {
         const anchorText = document.createElementNS(SVG_NS, "text");
         anchorText.setAttribute("x", node.position[0] + padding + boxWidth / 2);
-        anchorText.setAttribute("y", node.position[1] + padding + boxHeight + 14 + index * 13);
+        anchorText.setAttribute("y", node.position[1] + padding + boxHeight + 14 + belowBoxLine * 13);
         anchorText.setAttribute("text-anchor", "middle");
         anchorText.setAttribute("class", "decompose-n8n-anchor-text");
         anchorText.setAttribute("pointer-events", "none");
         anchorText.textContent = `${anchor.data_id} ${anchor.operation}`;
         group.appendChild(anchorText);
+        belowBoxLine += 1;
       });
     }
 
     viewport.appendChild(group);
-  }
+  });
 
   svg.appendChild(viewport);
   attachN8nPanZoom(svg, viewport);
@@ -2227,6 +2372,10 @@ function downloadWorkflowJson(workflow, domain) {
 async function selectMode(mode) {
   state = { ...state, mode };
   renderBoard();
+  // Data Anchors (R48) are real per-node content on the n8n canvas's default Workflow-active
+  // view, not something reached only after a separate "Data" click -- fetch eagerly here so
+  // they render on first paint rather than only after a later toggle round-trip.
+  if (mode === "n8n") ensureDataArchitectureLoaded();
   const cacheKey = mode === "python" ? "pythonRender" : "n8nRender";
   if (state[cacheKey]) return; // already fetched for this domain -- no re-fetch on re-toggle
   const res = await fetch(`/api/decompose/render/${mode}`, {

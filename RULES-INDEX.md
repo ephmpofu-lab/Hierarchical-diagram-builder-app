@@ -13,7 +13,7 @@ Shared template across every file: **Statement | Grounding | Applies to | Predic
 | `workflow-design.md` | WD1-WD10 | How any workflow (Python or n8n) is structured, sequenced, and branched | Workflow Patterns (van der Aalst et al.), Dijkstra, Constantine & Yourdon, BPMN |
 | `governance.md` | G1-G10 | Traceability, accountability, auditability, oversight | NIST AI RMF, ISO/IEC 42001, EU AI Act |
 | `ui-design.md` | UI1-UI12 | The Home/Canvas screen, detail panel, tree diagram, planning-artifact rendering | Nielsen heuristics, Fitts's/Hick's Laws, Gestalt principles, WCAG, Miro/Notion/Figma precedent |
-| `dev-process.md` | DP1-DP13 | How ARCHITEQ itself gets built, module by module; also the six-artifact planning sequence and rules-corpus change discipline | Deming (PDCA), Boehm (Spiral Model), Beck (XP/TDD), Poppendieck (Lean), Scrum, ISO/IEC/IEEE 12207, IEEE 828, Lombardo et al. (Roadmaps) |
+| `dev-process.md` | DP1-DP14 | How ARCHITEQ itself gets built, module by module; also the six-artifact planning sequence, rules-corpus change discipline, and real-screenshot verification for UI-facing work | Deming (PDCA), Boehm (Spiral Model), Beck (XP/TDD), Poppendieck (Lean), Scrum, ISO/IEC/IEEE 12207, IEEE 828, Lombardo et al. (Roadmaps) |
 | `decomposition.md` | P1-P8 | The task tree engine (prose companion to the machine-checkable JSON) | SOLID, C4 Model, TDSP, Well-Architected Framework |
 | `prompting.md` | PR1-PR7 | ARCHITEQ's own internal LLM calls (Intent Parser, grounding simulations) | Anthropic prompt engineering guidance, few-shot/chain-of-thought literature |
 | `node-translation.md` | NT1-NT10 | How a validated atomic step becomes a real n8n node, including its display name | Extends WD9, P4, G9; n8n's actual node schema and naming best practice |
@@ -37,14 +37,14 @@ Shared template across every file: **Statement | Grounding | Applies to | Predic
 - Workflow Design: 12
 - Governance: 10
 - UI Design: 12
-- Development Process: 13
+- Development Process: 14
 - Decomposition Engine: 8
 - Prompting: 7
 - Node Translation: 10
 - Component & Requirements Decomposition: 11
 - n8n Canvas Rendering: 18
 
-**Total: 101 grounded rules**, each traceable to a named source, each written as a testable predicate.
+**Total: 102 grounded rules**, each traceable to a named source, each written as a testable predicate.
 
 ---
 
