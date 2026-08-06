@@ -1179,8 +1179,14 @@ async function selectDataLayer(layer) {
 // Fixed categorical palette for distinguishing Layers ("stages") in the legend -- a
 // different visual need from the semantic accent/success/warning/danger tokens (Design
 // Brief: those mean pass/fail/in-progress, not "which of N peer categories is this").
+// The first three entries are reference/architeq-ux-mockup.html's own exact hex values,
+// read directly from its `layerColor` map (Ingestion:--accent #7C8CFF, Preprocessing:--ok
+// #4ECD8E, Embedding:--embed #B98CFF) -- not approximated. The mockup only ever defines
+// three; ARCHITEQ has no fourth-plus token to fall back to (no new color system, per the
+// standing rule), so entries 4-8 are this palette's own extension for domains with more
+// Layers, not sourced from anywhere -- flagged here as exactly that, not mockup-derived.
 // Cycles if a domain ever has more than 8 Layers, rather than crashing.
-const N8N_LEGEND_COLORS = ["#60a5fa", "#34d399", "#a78bfa", "#f59e0b", "#f472b6", "#38bdf8", "#facc15", "#fb7185"];
+const N8N_LEGEND_COLORS = ["#7C8CFF", "#4ECD8E", "#B98CFF", "#f59e0b", "#f472b6", "#38bdf8", "#facc15", "#fb7185"];
 
 function renderN8nStageLegend(tree) {
   const legend = document.createElement("div");
@@ -1936,8 +1942,11 @@ function roundedPolylinePath(points, radius) {
   return d;
 }
 
-const N8N_CORNER_RADIUS = 12;
-const N8N_LANE_OFFSET = 30; // whitespace lane below a row, for local_branch routing (CR6)
+const N8N_CORNER_RADIUS = 14; // reference/architeq-ux-mockup.html's own `cornerR`
+// Mockup's own local_branch lane sits at nodeTop + tileSize(58) + 18 = nodeTop + 76; our own
+// waypoints are measured from port CENTER-y (nodeTop + boxHeight/2), so the equivalent
+// offset from center is 76 - boxHeight/2 = 76 - 29 = 47.
+const N8N_LANE_OFFSET = 47; // whitespace lane below a row, for local_branch routing (CR6)
 
 function _n8nBuildWaypoints(classification, outPort, inPort) {
   switch (classification) {
@@ -1971,14 +1980,23 @@ function n8nEffectiveParameters(node) {
 // Glyphs without a trailing U+FE0F variation selector -- some of those render as tofu
 // boxes in a headless/minimal font environment (confirmed via real Playwright screenshot);
 // the base emoji codepoints below render reliably without it.
+// reference/architeq-ux-mockup.html's own `nodeIcon` map, read directly from its source
+// (keyed there by display type name, re-keyed here by the real n8n type string). Two of
+// our eleven real schema types -- merge, postgres -- have no mockup entry at all (the
+// mockup's own RAG demo never uses them); those two keep their own prior, undocumented-
+// by-the-mockup choice. `code`'s mockup glyph is '⌨️' (with U+FE0F) -- kept WITHOUT the
+// variation selector here, a deliberate, tested exception: with it, this exact codepoint
+// rendered as a tofu box inside this app's own SVG <text> font stack (confirmed via a real
+// screenshot before and after removing it); the fallback '⬛' is the mockup's own exact
+// glyph for a type with no icon entry, empirically confirmed not to be tofu here either.
 const N8N_TYPE_ICONS = {
   "n8n-nodes-base.httpRequest": "🌐",
-  "n8n-nodes-base.set": "✏",
-  "n8n-nodes-base.if": "🔀",
+  "n8n-nodes-base.set": "✎",
+  "n8n-nodes-base.if": "⑂",
   "n8n-nodes-base.merge": "🔗",
   "n8n-nodes-base.webhook": "⚡",
   "n8n-nodes-base.postgres": "🗄",
-  "n8n-nodes-base.stopAndError": "🛑",
+  "n8n-nodes-base.stopAndError": "⛔",
   "n8n-nodes-base.extractFromFile": "📄",
   "n8n-nodes-base.readWriteFile": "💾",
   "n8n-nodes-base.googleDrive": "📁",
@@ -1986,7 +2004,7 @@ const N8N_TYPE_ICONS = {
   "n8n-nodes-base.code": "⌨",
 };
 function n8nTypeIcon(type) {
-  return N8N_TYPE_ICONS[type] || "⌨";
+  return N8N_TYPE_ICONS[type] || "⬛";
 }
 
 // Real, derived short display id (never fabricated): domain (the real Workflow ID per
@@ -2006,8 +2024,27 @@ function n8nNeedsConfiguration(node) {
   return Object.values(n8nEffectiveParameters(node) || {}).some((v) => v === "");
 }
 
+// A node's real Layer, resolved by walking state.tree's real parent_id chain (Atomic step
+// -> Sub-task -> Layer) -- same technique groupPythonRenderByFile already uses. Returns the
+// Layer's index in the tree's own real root_ids order, for the same categorical palette the
+// legend uses (N8N_LEGEND_COLORS), so a node's dot always matches its own stage's legend
+// entry, never a separately-invented per-node color.
+function n8nNodeLayerColorIndex(node) {
+  if (!state.tree) return null;
+  const atomicNode = state.tree.nodes[node.step_id];
+  const subTask = atomicNode && atomicNode.parent_id ? state.tree.nodes[atomicNode.parent_id] : null;
+  const layer = subTask && subTask.parent_id ? state.tree.nodes[subTask.parent_id] : null;
+  if (!layer) return null;
+  const index = state.tree.root_ids.indexOf(layer.id);
+  return index === -1 ? null : index;
+}
+
 function renderN8nDiagram(workflow) {
-  const boxWidth = 180;
+  // Square icon tile, matching reference/architeq-ux-mockup.html's own tileSize exactly
+  // (its computeDefaultPositions/drawN8nFlow) -- the mockup's own gapX/gapY/maxPerRow
+  // numbers (mirrored in node_mapper.py's compute_stage_zones) are only consistent with
+  // a tile this size, not an independently-chosen box shape.
+  const boxWidth = 58;
   const boxHeight = 58;
   const padding = 40;
   const zones = workflow.stage_zones || [];
@@ -2037,23 +2074,30 @@ function renderN8nDiagram(workflow) {
 
   // Stage-zone backgrounds drawn first, behind everything (CR2: visual group only, never
   // a connection anchor -- no connection below ever originates/terminates at a zone).
-  for (const zone of zones) {
+  zones.forEach((zone, zoneIndex) => {
+    // Same categorical palette + index scheme as the legend and each node's own layer-dot,
+    // so a zone's color always matches its Layer's legend entry -- mirrors the mockup's own
+    // layerColor-driven zone fill/stroke/label (its own rx/opacity values).
+    const zoneColor = N8N_LEGEND_COLORS[zoneIndex % N8N_LEGEND_COLORS.length];
     const rect = document.createElementNS(SVG_NS, "rect");
     rect.setAttribute("x", zone.x + padding);
     rect.setAttribute("y", zone.y + padding);
     rect.setAttribute("width", zone.width);
     rect.setAttribute("height", zone.height);
-    rect.setAttribute("rx", "6");
+    rect.setAttribute("rx", "12");
+    rect.setAttribute("fill", zoneColor);
+    rect.setAttribute("stroke", zoneColor);
     rect.setAttribute("class", "decompose-n8n-stage-zone");
     viewport.appendChild(rect);
 
     const label = document.createElementNS(SVG_NS, "text");
     label.setAttribute("x", zone.x + padding + 10);
     label.setAttribute("y", zone.y + padding + 18);
+    label.setAttribute("fill", zoneColor);
     label.setAttribute("class", "decompose-n8n-stage-zone-label");
     label.textContent = `STAGE — ${zone.label.toUpperCase()}`;
     viewport.appendChild(label);
-  }
+  });
 
   const nodeByName = {};
   for (const node of workflow.nodes) nodeByName[node.name] = node;
@@ -2128,34 +2172,34 @@ function renderN8nDiagram(workflow) {
     rect.setAttribute("y", node.position[1] + padding);
     rect.setAttribute("width", boxWidth);
     rect.setAttribute("height", boxHeight);
-    rect.setAttribute("rx", "8");
+    rect.setAttribute("rx", "12");
     rect.setAttribute("class", "decompose-n8n-node-rect" + (needsConfig ? " needs-config" : ""));
     group.appendChild(rect);
 
-    // Real icon per real n8n type (checklist parity) -- prefixed onto the display-name
-    // line rather than a separately positioned badge, so box height/layout stays exactly
-    // what node_mapper.py's compute_stage_zones already assumed (no backend coordination
-    // needed for this frontend-only visual addition).
-    const text = document.createElementNS(SVG_NS, "text");
-    text.setAttribute("x", node.position[0] + padding + boxWidth / 2);
-    text.setAttribute("y", node.position[1] + padding + 22);
-    text.setAttribute("text-anchor", "middle");
-    text.setAttribute("class", "decompose-n8n-node-text");
-    text.setAttribute("pointer-events", "none"); // hover events land on the group, not this text
-    const iconPrefix = `${n8nTypeIcon(node.type)} `;
-    const nameBudget = 20 - iconPrefix.length;
-    const displayName = node.name.length > nameBudget + 2 ? `${node.name.slice(0, nameBudget)}…` : node.name;
-    text.textContent = iconPrefix + displayName;
-    group.appendChild(text);
+    // Per-node layer-color dot (mockup's own layerDot: cx=8,cy=8,r=3.5, top-left inset of
+    // the tile), using the same categorical palette the legend uses so a node's dot always
+    // matches its own stage's legend entry.
+    const layerIndex = n8nNodeLayerColorIndex(node);
+    if (layerIndex !== null) {
+      const layerDot = document.createElementNS(SVG_NS, "circle");
+      layerDot.setAttribute("cx", node.position[0] + padding + 8);
+      layerDot.setAttribute("cy", node.position[1] + padding + 8);
+      layerDot.setAttribute("r", "3.5");
+      layerDot.setAttribute("fill", N8N_LEGEND_COLORS[layerIndex % N8N_LEGEND_COLORS.length]);
+      layerDot.setAttribute("pointer-events", "none");
+      group.appendChild(layerDot);
+    }
 
-    const typeText = document.createElementNS(SVG_NS, "text");
-    typeText.setAttribute("x", node.position[0] + padding + boxWidth / 2);
-    typeText.setAttribute("y", node.position[1] + padding + 40);
-    typeText.setAttribute("text-anchor", "middle");
-    typeText.setAttribute("class", "decompose-n8n-node-type-text");
-    typeText.setAttribute("pointer-events", "none");
-    typeText.textContent = node.type;
-    group.appendChild(typeText);
+    // Real icon per real n8n type, centered in the tile (mockup: font-size 22, centered).
+    const icon = document.createElementNS(SVG_NS, "text");
+    icon.setAttribute("x", node.position[0] + padding + boxWidth / 2);
+    icon.setAttribute("y", node.position[1] + padding + boxHeight / 2 + 2);
+    icon.setAttribute("text-anchor", "middle");
+    icon.setAttribute("dominant-baseline", "central");
+    icon.setAttribute("class", "decompose-n8n-node-icon");
+    icon.setAttribute("pointer-events", "none");
+    icon.textContent = n8nTypeIcon(node.type);
+    group.appendChild(icon);
 
     // Visible input/output ports (CR7) -- every connection's endpoint coincides exactly
     // with one of these, never an approximate edge of the box's bounding rect.
@@ -2170,36 +2214,44 @@ function renderN8nDiagram(workflow) {
       group.appendChild(circle);
     }
 
-    // Below-box info lines (never inside the fixed-height box, so backend zone spacing
-    // never needs to change to make room): needs-setup warning first, then Data Anchors.
-    let belowBoxLine = 0;
-    if (needsConfig) {
-      const warnText = document.createElementNS(SVG_NS, "text");
-      warnText.setAttribute("x", node.position[0] + padding + boxWidth / 2);
-      warnText.setAttribute("y", node.position[1] + padding + boxHeight + 14 + belowBoxLine * 13);
-      warnText.setAttribute("text-anchor", "middle");
-      warnText.setAttribute("class", "decompose-n8n-needs-config-text");
-      warnText.setAttribute("pointer-events", "none");
-      warnText.textContent = "⚠ needs setup";
-      group.appendChild(warnText);
-      belowBoxLine += 1;
-    }
+    // Stacked label lines BELOW the tile (mockup's n8nDisplayLines: name, type, and --
+    // only when unconfigured -- a third "needs setup" line, that one always warn-colored;
+    // one <text> with tspans, never separate elements, so the warning genuinely reads as
+    // an extra line rather than a replacement of the type line).
+    const lines = [node.name, node.type];
+    if (needsConfig) lines.push("⚠ needs setup");
+    const label = document.createElementNS(SVG_NS, "text");
+    label.setAttribute("x", node.position[0] + padding + boxWidth / 2);
+    label.setAttribute("y", node.position[1] + padding + boxHeight + 16);
+    label.setAttribute("text-anchor", "middle");
+    label.setAttribute("class", "decompose-n8n-node-label");
+    label.setAttribute("pointer-events", "none");
+    lines.forEach((line, i) => {
+      const tspan = document.createElementNS(SVG_NS, "tspan");
+      tspan.setAttribute("x", node.position[0] + padding + boxWidth / 2);
+      tspan.setAttribute("dy", i === 0 ? "0" : "13");
+      if (i === 2) tspan.setAttribute("class", "decompose-n8n-node-label-warn");
+      tspan.textContent = line;
+      label.appendChild(tspan);
+    });
+    group.appendChild(label);
 
     // Compact Data Anchors (13g, R48) -- only when Workflow is the active layer and the
     // Data Architecture has already been fetched; one line per real DataAnchor matching
-    // this node's real step_id, never rendered for a node with none.
+    // this node's real step_id, never rendered for a node with none. Starts below the
+    // stacked label block above, whatever that block's real line count is.
     if (state.workflowDataLayer === "workflow" && state.dataArchitecture) {
       const matchingAnchors = state.dataArchitecture.anchors.filter((a) => a.node_id === node.step_id);
-      matchingAnchors.forEach((anchor) => {
+      const anchorStartY = node.position[1] + padding + boxHeight + 16 + lines.length * 13 + 4;
+      matchingAnchors.forEach((anchor, index) => {
         const anchorText = document.createElementNS(SVG_NS, "text");
         anchorText.setAttribute("x", node.position[0] + padding + boxWidth / 2);
-        anchorText.setAttribute("y", node.position[1] + padding + boxHeight + 14 + belowBoxLine * 13);
+        anchorText.setAttribute("y", anchorStartY + index * 13);
         anchorText.setAttribute("text-anchor", "middle");
         anchorText.setAttribute("class", "decompose-n8n-anchor-text");
         anchorText.setAttribute("pointer-events", "none");
         anchorText.textContent = `${anchor.data_id} ${anchor.operation}`;
         group.appendChild(anchorText);
-        belowBoxLine += 1;
       });
     }
 

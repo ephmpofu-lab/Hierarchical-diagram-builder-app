@@ -21,11 +21,19 @@ from .python_renderer import _topological_order
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _SCHEMA_PATH = _REPO_ROOT / "rules" / "n8n_node_schemas.json"
 
-_HORIZONTAL_SPACING = 280.0
-_ROW_HEIGHT = 160.0  # CR6 -- includes whitespace reserved for cross-row routing lanes
-_ZONE_HEADER_HEIGHT = 60.0
-_ZONE_PADDING = 40.0
-_MAX_NODES_PER_ROW = 10  # CR4's own "~9-10 nodes" cap
+# Every value below is read directly from reference/architeq-ux-mockup.html's own
+# computeDefaultPositions() (tileSize/gapX/gapY/maxPerRow/headerH/stagePad*/interStageGap),
+# not transcribed from a written description -- the mockup's own node tile is a 58x58
+# square (matched by the frontend's own node box size), so these numbers are only
+# consistent with that tile size, not an independently-chosen box shape.
+_HORIZONTAL_SPACING = 168.0  # tileSize(58) + gapX(110)
+_ROW_HEIGHT = 150.0  # gapY -- CR6, includes whitespace reserved for cross-row routing lanes
+_ZONE_HEADER_HEIGHT = 34.0  # headerH
+_STAGE_PAD_TOP = 20.0  # stagePadTop
+_STAGE_PAD_BOTTOM = 20.0  # stagePadBottom
+_INTER_STAGE_GAP = 70.0  # interStageGap -- vertical whitespace between one stage's own
+# zone and the next; previously absent here (zones stacked with zero gap between them)
+_MAX_NODES_PER_ROW = 9  # maxPerRow -- CR4's own "~9-10 nodes" cap, mockup's own exact pick
 
 
 def load_schemas() -> dict:
@@ -107,7 +115,8 @@ def compute_stage_zones(tree: DomainTaskTree) -> Tuple[List[N8nStageZone], Dict[
             continue
 
         num_rows = max(1, math.ceil(len(steps) / _MAX_NODES_PER_ROW))
-        zone_height = _ZONE_HEADER_HEIGHT + num_rows * _ROW_HEIGHT + _ZONE_PADDING
+        content_top = cursor_y + _ZONE_HEADER_HEIGHT + _STAGE_PAD_TOP
+        zone_height = _ZONE_HEADER_HEIGHT + _STAGE_PAD_TOP + num_rows * _ROW_HEIGHT + _STAGE_PAD_BOTTOM
         zone_width = min(len(steps), _MAX_NODES_PER_ROW) * _HORIZONTAL_SPACING
         zones.append(N8nStageZone(
             layer_id=layer_id, label=layer.label, x=0.0, y=cursor_y,
@@ -116,9 +125,9 @@ def compute_stage_zones(tree: DomainTaskTree) -> Tuple[List[N8nStageZone], Dict[
 
         for index, step in enumerate(steps):
             row, col = divmod(index, _MAX_NODES_PER_ROW)
-            positions[step.id] = [col * _HORIZONTAL_SPACING, cursor_y + _ZONE_HEADER_HEIGHT + row * _ROW_HEIGHT]
+            positions[step.id] = [col * _HORIZONTAL_SPACING, content_top + row * _ROW_HEIGHT]
 
-        cursor_y += zone_height
+        cursor_y += zone_height + _INTER_STAGE_GAP
 
     return zones, positions
 

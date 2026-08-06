@@ -1827,7 +1827,8 @@ def test_export_workflow_populates_stage_zones_and_classifications():
 
 def _multi_layer_tree_with_row_wrap() -> DomainTaskTree:
     # Layer "l1": 12 chained Atomic steps (a2 requires a1, a3 requires a2, ...) -- forces
-    # 2 rows at the 10-per-row cap (CR4) with a fully deterministic topological order.
+    # 2 rows at the 9-per-row cap (CR4, matching reference/architeq-ux-mockup.html's own
+    # exact maxPerRow) with a fully deterministic topological order.
     # Layer "l2": 3 Atomic steps, to confirm zone stacking (CR15).
     l1_steps = [_atomic("a1", "Step 1", parent_id="s1")]
     for i in range(2, 13):
@@ -1862,10 +1863,13 @@ def test_compute_stage_zones_row_wraps_at_max_nodes_per_row():
     tree = _multi_layer_tree_with_row_wrap()
     zones, positions = node_mapper.compute_stage_zones(tree)
     zone1 = zones[0]
-    single_row_height = node_mapper._ZONE_HEADER_HEIGHT + node_mapper._ROW_HEIGHT + node_mapper._ZONE_PADDING
-    assert zone1.height > single_row_height  # 12 steps at a 10-per-row cap -> 2 rows
-    assert positions["a10"][1] == positions["a1"][1]  # still row 1 (10th of 10)
-    assert positions["a11"][1] > positions["a1"][1]  # wraps to row 2
+    single_row_height = (
+        node_mapper._ZONE_HEADER_HEIGHT + node_mapper._STAGE_PAD_TOP
+        + node_mapper._ROW_HEIGHT + node_mapper._STAGE_PAD_BOTTOM
+    )
+    assert zone1.height > single_row_height  # 12 steps at a 9-per-row cap -> 2 rows
+    assert positions["a9"][1] == positions["a1"][1]  # still row 1 (9th of 9)
+    assert positions["a10"][1] > positions["a1"][1]  # wraps to row 2
 
 
 def test_compute_stage_zones_left_to_right_dependency_order_within_row():
