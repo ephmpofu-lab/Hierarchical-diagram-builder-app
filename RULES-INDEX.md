@@ -58,6 +58,7 @@ This corpus sits alongside, not instead of:
 - `ARCHITEQ-Dual-Tree-Architecture.md` — the Component Tree (Python) vs. Workflow Tree (n8n) split this corpus's `component-decomposition.md` file grounds
 - `ARCHITEQ-Recursive-Depth-and-Completion-Tracking.md` — unbounded tree depth and the node-level completion rollup mechanism (WD11, WD12, CD9)
 - `ARCHITEQ-Data-Architecture-Layer-Spec.md` — the Data Architecture Layer's synchronized-but-separate-layout relationship to the Workflow Layer (R41-R50), including the cross-layer Workflow ID + Node ID + Data ID + Operation compound key
+- `ARCHITEQ-n8n-Canvas-Complete-Spec.md` — the definitive, item-by-item reference for the n8n canvas specifically (layout, node appearance, connections, controls, interactions, Data Architecture Layer prominence toggling), reconstructed from `reference/architeq-ux-mockup.html`'s own full correction history; every item traces to a CR/NT rule id in `n8n-canvas-rules.md`/`node-translation.md` or a named, specific correction — a DP12 cross-reference failure if this doc and those rule files ever disagree
 - `ARCHITEQ-UI-and-Dev-Loop-Directive.md` — the two-screen structure and dev loop this corpus's `ui-design.md` and `dev-process.md` files ground
 - `PROGRESS.md` — module-level tracking against the PRD
 - `~/.claude/CLAUDE.md` and the project's own `CLAUDE.md` — where the Autonomy Default and Documentation Sync rules (DP8, DP10) are actually recorded and enforced day to day
