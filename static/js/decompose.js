@@ -64,6 +64,9 @@ let state = {
   // reset whenever domain changes
   selectedNodeId: null, // drives the slide-in detail panel, canvas-state only
   n8nNodeConfig: {}, // step_id -> {paramName: value}, client-side/session-scoped only
+  n8nManualPositions: {}, // step_id -> {x, y}, world coords, (10k-ii) -- dragged node
+  // overrides layered onto the server-computed layout; client-side/session-scoped only
+  // (same posture as n8nNodeConfig above), cleared by Auto-arrange
   // (10b-iii) -- confirmed configuration values, merged into effective parameters at
   // badge/download time, never persisted server-side; reset whenever domain changes
   draftRevealLines: [], // [{text, status: "done"|"pending"|"failed"}] (10d) -- drives the
@@ -280,6 +283,7 @@ async function submitRefine(instruction) {
     state = {
       ...state, refining: false, tree: result.tree, refineBarExpanded: false,
       pythonRender: null, n8nRender: null, mode: "tree", selectedNodeId: null, n8nNodeConfig: {},
+      n8nManualPositions: {}, // the tree's own structure just changed underneath them
       dataArchitecture: null, // stale relative to the changed Workflow Tree (R41)
     };
   } finally {
@@ -1262,12 +1266,15 @@ function renderOutputSection() {
   const autoArrangeBtn = document.createElement("button");
   autoArrangeBtn.className = "btn btn-small";
   autoArrangeBtn.textContent = "↗ Auto-arrange";
-  // Real, not decorative: this layout is already fully deterministic (compute_stage_zones,
-  // R10 topological order) -- there is no manual node-dragging to "undo" -- so "auto-arrange"
-  // is honestly just resetting the canvas's own pan/zoom transform back to that computed
-  // fit, which a fresh renderN8nDiagram() call already does (attachN8nPanZoom starts every
-  // new SVG at scale=1/tx=0/ty=0).
-  autoArrangeBtn.addEventListener("click", () => renderBoard());
+  // Resets any manually dragged node (10k-ii) back to its computed layered position
+  // (compute_stage_zones, R10 topological order) -- clearing n8nManualPositions before the
+  // re-render is what actually undoes drags; the render itself also resets pan/zoom to the
+  // computed fit as a side effect (attachN8nPanZoom starts every new SVG at
+  // scale=1/tx=0/ty=0), matching this button's own real n8n-canvas precedent.
+  autoArrangeBtn.addEventListener("click", () => {
+    state = { ...state, n8nManualPositions: {} };
+    renderBoard();
+  });
   n8nActions.appendChild(autoArrangeBtn);
   const exportBtn = document.createElement("button");
   exportBtn.className = "btn btn-small";
@@ -2147,13 +2154,32 @@ function renderN8nDiagram(workflow) {
     classificationByPair[`${c.source_step_id} ${c.target_step_id}`] = c.classification;
   }
 
-  function portOf(node, side) {
-    const x = node.position[0] + padding + (side === "output" ? boxWidth : 0);
-    const y = node.position[1] + padding + boxHeight / 2;
+  // Live position store (10k-ii): world (unpadded) coordinates, one entry per node,
+  // manual-drag overrides (state.n8nManualPositions) overlaid on the server-computed
+  // layout. Mutated directly during a drag -- the single source of truth every position
+  // read below goes through, so a mid-drag redraw always sees the current truth.
+  const livePositions = {};
+  for (const node of workflow.nodes) {
+    const manual = state.n8nManualPositions[node.step_id];
+    livePositions[node.step_id] = manual ? { x: manual.x, y: manual.y } : { x: node.position[0], y: node.position[1] };
+  }
+
+  function portOf(worldPos, side) {
+    const x = worldPos.x + padding + (side === "output" ? boxWidth : 0);
+    const y = worldPos.y + padding + boxHeight / 2;
     return { x, y };
   }
 
-  // Connections drawn first so node boxes sit on top of the lines.
+  // Two explicit z-order layers (10k-ii): redrawing a connection during a drag re-appends
+  // fresh elements, which must still land BEHIND every node tile, not just behind whatever
+  // happened to already exist in viewport -- a flat append-to-viewport order can't guarantee
+  // that once redraws start happening out of the original sequence.
+  const connectionsLayer = document.createElementNS(SVG_NS, "g");
+  connectionsLayer.classList.add("decompose-n8n-connections-layer");
+  const nodesLayer = document.createElementNS(SVG_NS, "g");
+  nodesLayer.classList.add("decompose-n8n-nodes-layer");
+
+  const allConnections = [];
   for (const [sourceName, outputs] of Object.entries(workflow.connections)) {
     const source = nodeByName[sourceName];
     const targets = (outputs.main && outputs.main[0]) || [];
@@ -2161,74 +2187,170 @@ function renderN8nDiagram(workflow) {
       const target = nodeByName[conn.node];
       if (!source || !target) continue;
       const classification = classificationByPair[`${source.step_id} ${target.step_id}`] || "adjacent";
-      const waypoints = _n8nBuildWaypoints(classification, portOf(source, "output"), portOf(target, "input"));
-      const pathD = roundedPolylinePath(waypoints, N8N_CORNER_RADIUS);
-      const path = document.createElementNS(SVG_NS, "path");
-      path.setAttribute("d", pathD);
-      path.setAttribute("class", "decompose-n8n-connection");
-      path.setAttribute("data-classification", classification);
-      const isBranch = classification === "local_branch";
-      path.setAttribute("marker-end", `url(#${isBranch ? "n8n-arrow-branch" : "n8n-arrow-primary"})`);
-      viewport.appendChild(path);
-
-      // Animated flow-dot (3.7) -- primary-path connections only (everything except the
-      // local_branch/exception path); direction matches execution order for free, since
-      // waypoints are already built source-output -> target-input (never reversed).
-      if (!isBranch) {
-        const dot = document.createElementNS(SVG_NS, "circle");
-        dot.setAttribute("r", "3");
-        dot.setAttribute("class", "decompose-n8n-flow-dot");
-        const anim = document.createElementNS(SVG_NS, "animateMotion");
-        anim.setAttribute("dur", "1.8s");
-        anim.setAttribute("repeatCount", "indefinite");
-        anim.setAttribute("path", pathD);
-        dot.appendChild(anim);
-        viewport.appendChild(dot);
-      }
-
-      // Connection-data label (checklist parity): the real `produces` name the source
-      // Atomic step emits, sourced from the frozen tree already loaded in state.tree --
-      // never invented text. Placed at the path's own midpoint waypoint.
-      const sourceStepNode = state.tree && state.tree.nodes[source.step_id];
-      if (sourceStepNode && sourceStepNode.produces) {
-        const mid = waypoints[Math.floor(waypoints.length / 2)];
-        const labelText = document.createElementNS(SVG_NS, "text");
-        labelText.setAttribute("x", mid.x);
-        labelText.setAttribute("y", mid.y - 6);
-        labelText.setAttribute("text-anchor", "middle");
-        labelText.setAttribute("class", "decompose-n8n-connection-label");
-        labelText.textContent = sourceStepNode.produces;
-        viewport.appendChild(labelText);
-      }
+      allConnections.push({ source, target, classification });
     }
   }
 
+  // Draws (or redraws) exactly one connection's path + optional flow-dot + optional data
+  // label, tagged with data-edge/data-flow-for/data-edge-label ("source>target", mirroring
+  // reference/architeq-ux-mockup.html's own redrawEdgesFor convention exactly) so a later
+  // drag can find and replace -- never mutate-in-place -- every element belonging to it.
+  function drawN8nConnection({ source, target, classification }) {
+    const edgeKey = `${source.step_id}>${target.step_id}`;
+    const waypoints = _n8nBuildWaypoints(
+      classification, portOf(livePositions[source.step_id], "output"), portOf(livePositions[target.step_id], "input")
+    );
+    const pathD = roundedPolylinePath(waypoints, N8N_CORNER_RADIUS);
+    const isBranch = classification === "local_branch";
+
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", pathD);
+    path.setAttribute("class", "decompose-n8n-connection");
+    path.setAttribute("data-classification", classification);
+    path.setAttribute("data-edge", edgeKey);
+    path.setAttribute("marker-end", `url(#${isBranch ? "n8n-arrow-branch" : "n8n-arrow-primary"})`);
+    connectionsLayer.appendChild(path);
+
+    // Animated flow-dot (3.7) -- primary-path connections only; a fresh element on a fresh
+    // path every time (drawN8nConnection is also how a drag-triggered redraw happens), so
+    // the flow-dot's own <animateMotion> is never asked to pick up a changed path attribute
+    // mid-flight -- sidesteps that SMIL-reliability question entirely rather than risking it.
+    if (!isBranch) {
+      const dot = document.createElementNS(SVG_NS, "circle");
+      dot.setAttribute("r", "3");
+      dot.setAttribute("class", "decompose-n8n-flow-dot");
+      dot.setAttribute("data-flow-for", edgeKey);
+      const anim = document.createElementNS(SVG_NS, "animateMotion");
+      anim.setAttribute("dur", "1.8s");
+      anim.setAttribute("repeatCount", "indefinite");
+      anim.setAttribute("path", pathD);
+      dot.appendChild(anim);
+      connectionsLayer.appendChild(dot);
+    }
+
+    // Connection-data label (checklist parity): the real `produces` name the source Atomic
+    // step emits, sourced from the frozen tree already loaded in state.tree -- never
+    // invented text. Placed at the path's own midpoint waypoint.
+    const sourceStepNode = state.tree && state.tree.nodes[source.step_id];
+    if (sourceStepNode && sourceStepNode.produces) {
+      const mid = waypoints[Math.floor(waypoints.length / 2)];
+      const labelText = document.createElementNS(SVG_NS, "text");
+      labelText.setAttribute("x", mid.x);
+      labelText.setAttribute("y", mid.y - 6);
+      labelText.setAttribute("text-anchor", "middle");
+      labelText.setAttribute("class", "decompose-n8n-connection-label");
+      labelText.setAttribute("data-edge-label", edgeKey);
+      labelText.textContent = sourceStepNode.produces;
+      connectionsLayer.appendChild(labelText);
+    }
+  }
+
+  // Redraws every connection touching stepId (as either source or target): removes the old
+  // path/flow-dot/label by their data-edge* tag, draws each fresh against livePositions'
+  // current values. Called on every drag mousemove for the node being dragged.
+  function redrawN8nEdgesFor(stepId) {
+    for (const conn of allConnections) {
+      if (conn.source.step_id !== stepId && conn.target.step_id !== stepId) continue;
+      const edgeKey = `${conn.source.step_id}>${conn.target.step_id}`;
+      connectionsLayer
+        .querySelectorAll(`[data-edge="${CSS.escape(edgeKey)}"], [data-flow-for="${CSS.escape(edgeKey)}"], [data-edge-label="${CSS.escape(edgeKey)}"]`)
+        .forEach((el) => el.remove());
+      drawN8nConnection(conn);
+    }
+  }
+
+  allConnections.forEach(drawN8nConnection);
+
+  // Attached once per render, cleaned up at the top of the *next* render (below) -- a
+  // window-level listener outlives the SVG that created it (the mouse can leave the
+  // diagram's bounds mid-drag), so a stale one from a prior render must be removed
+  // explicitly or it keeps firing against detached elements and a closed-over state.
+  if (window._n8nDragHandlers) {
+    window.removeEventListener("mousemove", window._n8nDragHandlers.move);
+    window.removeEventListener("mouseup", window._n8nDragHandlers.up);
+  }
+
+  const nodeGroupsByStepId = {};
+  let dragTracking = null; // { stepId, startClientX, startClientY, originX, originY, moved }
+
+  const handleDragMove = (evt) => {
+    if (!dragTracking) return;
+    const scale = panZoom.getScale();
+    const dx = (evt.clientX - dragTracking.startClientX) / scale;
+    const dy = (evt.clientY - dragTracking.startClientY) / scale;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragTracking.moved = true;
+    if (!dragTracking.moved) return;
+    const newPos = { x: dragTracking.originX + dx, y: dragTracking.originY + dy };
+    livePositions[dragTracking.stepId] = newPos;
+    const groupEl = nodeGroupsByStepId[dragTracking.stepId];
+    groupEl.setAttribute("transform", `translate(${newPos.x + padding},${newPos.y + padding})`);
+    redrawN8nEdgesFor(dragTracking.stepId);
+  };
+
+  const handleDragEnd = () => {
+    if (!dragTracking) return;
+    const { stepId, moved } = dragTracking;
+    if (!moved) {
+      // A genuine click, not a drag (5.4) -- same effect as the plain click listener this
+      // replaces: opens the detail panel.
+      state = { ...state, selectedNodeId: stepId };
+      renderBoard();
+    } else {
+      // Position committed silently (no renderBoard): the DOM already reflects the final
+      // drag position directly, and a full re-render here would recreate the SVG and reset
+      // attachN8nPanZoom's pan/zoom to its own defaults -- exactly the jarring reset a
+      // direct-manipulation drag must not cause. The commit just keeps state truthful for
+      // whenever the *next*, unrelated re-render happens.
+      state = {
+        ...state,
+        n8nManualPositions: { ...state.n8nManualPositions, [stepId]: livePositions[stepId] },
+      };
+    }
+    dragTracking = null;
+  };
+
+  window.addEventListener("mousemove", handleDragMove);
+  window.addEventListener("mouseup", handleDragEnd);
+  window._n8nDragHandlers = { move: handleDragMove, up: handleDragEnd };
+
   workflow.nodes.forEach((node, nodeIndex) => {
     const group = document.createElementNS(SVG_NS, "g");
+    const pos = livePositions[node.step_id];
+    group.setAttribute("transform", `translate(${pos.x + padding},${pos.y + padding})`);
+    group.classList.add("decompose-n8n-node-group");
+    nodeGroupsByStepId[node.step_id] = group;
+
     group.addEventListener("mouseenter", (evt) => showN8nHoverPayload(evt, node));
     group.addEventListener("mousemove", (evt) => showN8nHoverPayload(evt, node));
     group.addEventListener("mouseleave", hideN8nHoverPayload);
-    group.addEventListener("click", () => {
-      state = { ...state, selectedNodeId: node.step_id };
-      renderBoard();
+    group.addEventListener("mousedown", (evt) => {
+      if (evt.button !== 0) return; // left button only -- middle stays free for canvas pan
+      evt.stopPropagation();
+      hideN8nHoverPayload();
+      dragTracking = {
+        stepId: node.step_id,
+        startClientX: evt.clientX, startClientY: evt.clientY,
+        originX: livePositions[node.step_id].x, originY: livePositions[node.step_id].y,
+        moved: false,
+      };
     });
-    group.classList.add("decompose-n8n-node-group");
 
     const needsConfig = n8nNeedsConfiguration(node);
 
     // Real, derived short display id (never the spec doc's own abstract "WF01" placeholder --
-    // Workflow ID is the real domain name per R44/OQ7's resolution).
+    // Workflow ID is the real domain name per R44/OQ7's resolution). Local coordinates now
+    // that the group itself carries the node's real position (10k-ii).
     const idLabel = document.createElementNS(SVG_NS, "text");
-    idLabel.setAttribute("x", node.position[0] + padding);
-    idLabel.setAttribute("y", node.position[1] + padding - 6);
+    idLabel.setAttribute("x", "0");
+    idLabel.setAttribute("y", "-6");
     idLabel.setAttribute("class", "decompose-n8n-node-id-text");
     idLabel.setAttribute("pointer-events", "none");
     idLabel.textContent = n8nDisplayId(state.domain, nodeIndex);
     group.appendChild(idLabel);
 
     const rect = document.createElementNS(SVG_NS, "rect");
-    rect.setAttribute("x", node.position[0] + padding);
-    rect.setAttribute("y", node.position[1] + padding);
+    rect.setAttribute("x", "0");
+    rect.setAttribute("y", "0");
     rect.setAttribute("width", boxWidth);
     rect.setAttribute("height", boxHeight);
     rect.setAttribute("rx", "12");
@@ -2241,8 +2363,8 @@ function renderN8nDiagram(workflow) {
     const layerIndex = n8nNodeLayerColorIndex(node);
     if (layerIndex !== null) {
       const layerDot = document.createElementNS(SVG_NS, "circle");
-      layerDot.setAttribute("cx", node.position[0] + padding + 8);
-      layerDot.setAttribute("cy", node.position[1] + padding + 8);
+      layerDot.setAttribute("cx", "8");
+      layerDot.setAttribute("cy", "8");
       layerDot.setAttribute("r", "3.5");
       layerDot.setAttribute("fill", N8N_LEGEND_COLORS[layerIndex % N8N_LEGEND_COLORS.length]);
       layerDot.setAttribute("pointer-events", "none");
@@ -2251,8 +2373,8 @@ function renderN8nDiagram(workflow) {
 
     // Real icon per real n8n type, centered in the tile (mockup: font-size 22, centered).
     const icon = document.createElementNS(SVG_NS, "text");
-    icon.setAttribute("x", node.position[0] + padding + boxWidth / 2);
-    icon.setAttribute("y", node.position[1] + padding + boxHeight / 2 + 2);
+    icon.setAttribute("x", String(boxWidth / 2));
+    icon.setAttribute("y", String(boxHeight / 2 + 2));
     icon.setAttribute("text-anchor", "middle");
     icon.setAttribute("dominant-baseline", "central");
     icon.setAttribute("class", "decompose-n8n-node-icon");
@@ -2263,10 +2385,9 @@ function renderN8nDiagram(workflow) {
     // Visible input/output ports (CR7) -- every connection's endpoint coincides exactly
     // with one of these, never an approximate edge of the box's bounding rect.
     for (const side of ["input", "output"]) {
-      const port = portOf(node, side);
       const circle = document.createElementNS(SVG_NS, "circle");
-      circle.setAttribute("cx", port.x);
-      circle.setAttribute("cy", port.y);
+      circle.setAttribute("cx", side === "output" ? String(boxWidth) : "0");
+      circle.setAttribute("cy", String(boxHeight / 2));
       circle.setAttribute("r", "4");
       circle.setAttribute("class", "decompose-n8n-port");
       circle.setAttribute("pointer-events", "none");
@@ -2280,14 +2401,14 @@ function renderN8nDiagram(workflow) {
     const lines = [node.name, node.type];
     if (needsConfig) lines.push("⚠ needs setup");
     const label = document.createElementNS(SVG_NS, "text");
-    label.setAttribute("x", node.position[0] + padding + boxWidth / 2);
-    label.setAttribute("y", node.position[1] + padding + boxHeight + 16);
+    label.setAttribute("x", String(boxWidth / 2));
+    label.setAttribute("y", String(boxHeight + 16));
     label.setAttribute("text-anchor", "middle");
     label.setAttribute("class", "decompose-n8n-node-label");
     label.setAttribute("pointer-events", "none");
     lines.forEach((line, i) => {
       const tspan = document.createElementNS(SVG_NS, "tspan");
-      tspan.setAttribute("x", node.position[0] + padding + boxWidth / 2);
+      tspan.setAttribute("x", String(boxWidth / 2));
       tspan.setAttribute("dy", i === 0 ? "0" : "13");
       if (i === 2) tspan.setAttribute("class", "decompose-n8n-node-label-warn");
       tspan.textContent = line;
@@ -2301,11 +2422,11 @@ function renderN8nDiagram(workflow) {
     // stacked label block above, whatever that block's real line count is.
     if (state.workflowDataLayer === "workflow" && state.dataArchitecture) {
       const matchingAnchors = state.dataArchitecture.anchors.filter((a) => a.node_id === node.step_id);
-      const anchorStartY = node.position[1] + padding + boxHeight + 16 + lines.length * 13 + 4;
+      const anchorStartY = boxHeight + 16 + lines.length * 13 + 4;
       matchingAnchors.forEach((anchor, index) => {
         const anchorText = document.createElementNS(SVG_NS, "text");
-        anchorText.setAttribute("x", node.position[0] + padding + boxWidth / 2);
-        anchorText.setAttribute("y", anchorStartY + index * 13);
+        anchorText.setAttribute("x", String(boxWidth / 2));
+        anchorText.setAttribute("y", String(anchorStartY + index * 13));
         anchorText.setAttribute("text-anchor", "middle");
         anchorText.setAttribute("class", "decompose-n8n-anchor-text");
         anchorText.setAttribute("pointer-events", "none");
@@ -2314,11 +2435,13 @@ function renderN8nDiagram(workflow) {
       });
     }
 
-    viewport.appendChild(group);
+    nodesLayer.appendChild(group);
   });
 
+  viewport.appendChild(connectionsLayer);
+  viewport.appendChild(nodesLayer);
   svg.appendChild(viewport);
-  attachN8nPanZoom(svg, viewport);
+  const panZoom = attachN8nPanZoom(svg, viewport);
   return svg;
 }
 
@@ -2381,6 +2504,11 @@ function attachN8nPanZoom(svg, viewport) {
     },
     { passive: false }
   );
+
+  // Exposed so node dragging (10k-ii) can divide its own mouse-pixel deltas by the CURRENT
+  // live scale, never a stale copy read once at drag start -- the same bug the mockup's own
+  // node-drag code already had to solve (n8nZoom read fresh on every mousemove).
+  return { getScale: () => scale };
 }
 
 // ---- n8n hover-payload (R31, sub-plan 11g) ----
@@ -2511,6 +2639,7 @@ async function selectDomain(domain) {
   state = {
     ...state, view: "canvas", domain, tree: null, error: null,
     mode: "tree", pythonRender: null, n8nRender: null, selectedNodeId: null, n8nNodeConfig: {},
+    n8nManualPositions: {},
     refineBarExpanded: false, workflowDataLayer: "workflow", dataArchitecture: null, erdExpanded: {},
     selectedEntityId: null, dataArchitectureSql: null, planningArtifacts: null,
     pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null, docId: null },

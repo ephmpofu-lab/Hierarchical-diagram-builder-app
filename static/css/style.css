@@ -2040,7 +2040,11 @@ html[data-inspector-collapsed="true"] .health-footer {
 }
 
 .decompose-n8n-node-group {
-  cursor: pointer;
+  cursor: grab;
+}
+
+.decompose-n8n-node-group:active {
+  cursor: grabbing;
 }
 
 .decompose-n8n-node-rect {
