@@ -63,7 +63,12 @@ view: "home" -> history list entry clicked, OR intent resolves to a known domain
 
 ## 5. Screens/Panels Within `canvas`
 
-- **Tree diagram** — the frozen tree, always visible.
+- **Mode toggle: `Python | n8n | Tree`** — three real, equal modes, not the tree diagram
+  plus two output modes. `Corrected`, per `docs/ARCHITEQ-n8n-Canvas-Complete-Spec.md` 4.1
+  (sub-plan 10k-iv): the tree diagram is no longer permanently stacked above whichever of
+  Python/n8n is selected. Selecting Tree shows the tree diagram alone, full-canvas.
+  Defaults to Tree on domain load (needs no render fetch, unlike Python/n8n).
+- **Tree diagram** — the frozen tree, shown when Tree mode is selected.
 - **Node detail drawer** — clicking any node (Layer, Sub-task, or Atomic step box) slides in
   a fixed-position panel (canvas stays visible behind it, not an overlay that hides it):
   variables, requires/produces, rules, pillar tags, and the mode-specific
@@ -72,8 +77,9 @@ view: "home" -> history list entry clicked, OR intent resolves to a known domain
 - **Refine bar** — a small persistent input pinned to the canvas. Submitting an instruction
   re-validates and re-freezes the tree in place; the canvas re-renders with the updated
   tree, still in `view: "canvas"`.
-- **Output section** — once a mode is picked, ordered Python code blocks or the n8n SVG
-  diagram + a "Download workflow.json" link render below/alongside the tree.
+- **Output section** — once Python or n8n mode is picked, ordered Python code blocks or the
+  n8n SVG diagram + a "Download workflow.json" link render in place of the tree diagram,
+  not alongside it.
 
 ## 6. Settings (hidden)
 
@@ -90,6 +96,7 @@ storage. No nav link anywhere in `decompose.html`.
 | Click history entry | Home, past-decompositions list | Loads that domain's frozen tree directly into `canvas` |
 | Approve draft | `reviewing_draft` state | `POST .../approve`, freezes tree, transitions to `canvas` |
 | Select Python/n8n | Canvas mode toggle | `POST .../render/{mode}`, renders output section |
+| Select Tree | Canvas mode toggle | No request — shows the already-loaded tree diagram alone |
 | Click a tree node | Canvas, any Layer/Sub-task/Atomic-step box | Opens node detail drawer |
 | Submit refine instruction | Canvas, persistent input | `POST .../refine`, re-renders tree in place |
 | Download workflow.json | Canvas, n8n mode output | Client-side `Blob`/`URL.createObjectURL`, no new request |

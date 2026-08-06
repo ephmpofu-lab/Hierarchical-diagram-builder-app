@@ -54,7 +54,9 @@ let state = {
   lastIntentText: "",
   draft: null, // { domain, checklist, tree, validation } from POST .../draft
   tree: null, // the frozen DomainTaskTree, once loaded for the current canvas domain
-  mode: null, // "python" | "n8n" | null, canvas-state only
+  mode: "tree", // "python" | "n8n" | "tree", canvas-state only -- Tree is the default so a
+  // domain shows something immediately without an extra render fetch (4.1: three real,
+  // equal modes, never a permanently-stacked tree diagram alongside whichever is selected)
   pythonRender: null, // cached List[RenderedCodeBlock] for the current domain
   n8nRender: null, // cached N8nWorkflow for the current domain
   pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null, docId: null }, // Python
@@ -277,7 +279,7 @@ async function submitRefine(instruction) {
     clearTimeout(refineIdleTimer);
     state = {
       ...state, refining: false, tree: result.tree, refineBarExpanded: false,
-      pythonRender: null, n8nRender: null, mode: null, selectedNodeId: null, n8nNodeConfig: {},
+      pythonRender: null, n8nRender: null, mode: "tree", selectedNodeId: null, n8nNodeConfig: {},
       dataArchitecture: null, // stale relative to the changed Workflow Tree (R41)
     };
   } finally {
@@ -524,23 +526,29 @@ function renderCanvasView() {
   }
 
   const tree = state.tree;
-  canvasBody.appendChild(renderTreeDiagram(tree, (nodeId) => {
-    state = { ...state, selectedNodeId: nodeId };
-    renderBoard();
-  }));
 
+  // Three real, equal modes (4.1, corrected from ARCHITEQ-APP-FLOW.md:66's "tree diagram
+  // always visible") -- Tree is not a permanent layer stacked above whichever of
+  // Python/n8n is selected; selecting it shows the tree, alone, full-canvas, same as
+  // selecting Python or n8n shows their own output alone.
   const modeToggle = document.createElement("div");
   modeToggle.className = "decompose-mode-toggle";
-  for (const mode of ["python", "n8n"]) {
+  const modeLabels = { python: "Python", n8n: "n8n", tree: "Tree" };
+  for (const mode of ["python", "n8n", "tree"]) {
     const btn = document.createElement("button");
     btn.className = "btn btn-small" + (state.mode === mode ? " active" : "");
-    btn.textContent = mode === "python" ? "Python" : "n8n";
+    btn.textContent = modeLabels[mode];
     btn.addEventListener("click", () => selectMode(mode));
     modeToggle.appendChild(btn);
   }
   canvasBody.appendChild(modeToggle);
 
-  if (state.mode) {
+  if (state.mode === "tree") {
+    canvasBody.appendChild(renderTreeDiagram(tree, (nodeId) => {
+      state = { ...state, selectedNodeId: nodeId };
+      renderBoard();
+    }));
+  } else if (state.mode) {
     canvasBody.appendChild(renderOutputSection());
   }
 
@@ -2475,6 +2483,9 @@ function downloadWorkflowJson(workflow, domain) {
 async function selectMode(mode) {
   state = { ...state, mode };
   renderBoard();
+  // Tree mode needs no fetch -- its data is already in state.tree (real, frozen, already
+  // loaded); unlike Python/n8n, selecting it is never real backend work.
+  if (mode === "tree") return;
   // Data Anchors (R48) are real per-node content on the n8n canvas's default Workflow-active
   // view, not something reached only after a separate "Data" click -- fetch eagerly here so
   // they render on first paint rather than only after a later toggle round-trip.
@@ -2499,7 +2510,7 @@ async function selectDomain(domain) {
   clearTimeout(refineIdleTimer);
   state = {
     ...state, view: "canvas", domain, tree: null, error: null,
-    mode: null, pythonRender: null, n8nRender: null, selectedNodeId: null, n8nNodeConfig: {},
+    mode: "tree", pythonRender: null, n8nRender: null, selectedNodeId: null, n8nNodeConfig: {},
     refineBarExpanded: false, workflowDataLayer: "workflow", dataArchitecture: null, erdExpanded: {},
     selectedEntityId: null, dataArchitectureSql: null, planningArtifacts: null,
     pyBrowser: { level: 1, folderIdx: null, fileIdx: null, funcId: null, docId: null },
