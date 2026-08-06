@@ -2069,6 +2069,32 @@ function renderN8nDiagram(workflow) {
   svg.setAttribute("viewBox", `0 0 ${viewportWidth} ${viewportHeight}`);
   svg.classList.add("decompose-n8n-diagram");
 
+  // Arrowhead markers (3.8) -- exact geometry from reference/architeq-ux-mockup.html's own
+  // <defs> (markerWidth/Height=8, refX=6, refY=3, path M0,0 L6,3 L0,6 Z). Two markers, not
+  // one: primary-path connections get the accent arrowhead, the local_branch connection
+  // gets the warning one, matching each connection's own stroke color (3.5). Defined once
+  // per diagram (a full-repaint re-render discards the old <svg> and these ids with it, so
+  // no duplicate-id risk across renders).
+  const defs = document.createElementNS(SVG_NS, "defs");
+  [
+    ["n8n-arrow-primary", "var(--accent)"],
+    ["n8n-arrow-branch", "var(--warning)"],
+  ].forEach(([id, color]) => {
+    const marker = document.createElementNS(SVG_NS, "marker");
+    marker.setAttribute("id", id);
+    marker.setAttribute("markerWidth", "8");
+    marker.setAttribute("markerHeight", "8");
+    marker.setAttribute("refX", "6");
+    marker.setAttribute("refY", "3");
+    marker.setAttribute("orient", "auto");
+    const arrowPath = document.createElementNS(SVG_NS, "path");
+    arrowPath.setAttribute("d", "M0,0 L6,3 L0,6 Z");
+    arrowPath.setAttribute("fill", color);
+    marker.appendChild(arrowPath);
+    defs.appendChild(marker);
+  });
+  svg.appendChild(defs);
+
   const viewport = document.createElementNS(SVG_NS, "g");
   viewport.classList.add("decompose-n8n-viewport");
 
@@ -2121,11 +2147,29 @@ function renderN8nDiagram(workflow) {
       if (!source || !target) continue;
       const classification = classificationByPair[`${source.step_id} ${target.step_id}`] || "adjacent";
       const waypoints = _n8nBuildWaypoints(classification, portOf(source, "output"), portOf(target, "input"));
+      const pathD = roundedPolylinePath(waypoints, N8N_CORNER_RADIUS);
       const path = document.createElementNS(SVG_NS, "path");
-      path.setAttribute("d", roundedPolylinePath(waypoints, N8N_CORNER_RADIUS));
+      path.setAttribute("d", pathD);
       path.setAttribute("class", "decompose-n8n-connection");
       path.setAttribute("data-classification", classification);
+      const isBranch = classification === "local_branch";
+      path.setAttribute("marker-end", `url(#${isBranch ? "n8n-arrow-branch" : "n8n-arrow-primary"})`);
       viewport.appendChild(path);
+
+      // Animated flow-dot (3.7) -- primary-path connections only (everything except the
+      // local_branch/exception path); direction matches execution order for free, since
+      // waypoints are already built source-output -> target-input (never reversed).
+      if (!isBranch) {
+        const dot = document.createElementNS(SVG_NS, "circle");
+        dot.setAttribute("r", "3");
+        dot.setAttribute("class", "decompose-n8n-flow-dot");
+        const anim = document.createElementNS(SVG_NS, "animateMotion");
+        anim.setAttribute("dur", "1.8s");
+        anim.setAttribute("repeatCount", "indefinite");
+        anim.setAttribute("path", pathD);
+        dot.appendChild(anim);
+        viewport.appendChild(dot);
+      }
 
       // Connection-data label (checklist parity): the real `produces` name the source
       // Atomic step emits, sourced from the frozen tree already loaded in state.tree --

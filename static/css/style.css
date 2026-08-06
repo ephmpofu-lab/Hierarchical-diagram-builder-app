@@ -2147,6 +2147,10 @@ html[data-inspector-collapsed="true"] .health-footer {
   opacity: 0.55;
 }
 
+.decompose-n8n-flow-dot {
+  fill: var(--accent);
+}
+
 /* Fill/stroke/label color are set inline per-zone in JS (renderN8nDiagram), one call per
    real Layer, from the same categorical palette the legend uses -- mirrors the mockup's own
    `layerColor`-driven rect/label fill; only the structural properties that don't vary by

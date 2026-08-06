@@ -40,8 +40,13 @@ def test_compute_module_statuses_against_real_repo_plans():
     # "[x]": sub-plan 12b resolved OQ6, giving all six DP11 artifacts a real generator.
     statuses = compute_module_statuses()
     assert statuses["Module 12:"] == "[x]"
-    # Module 10, 11, and 13 each have their own index file AND every leaf is fully done.
-    assert statuses["Module 10:"] == "[x]"
+    # Module 10 is genuinely back in progress: plan 10k (n8n canvas remaining spec items)
+    # added real new leaves (10k-i.connection-arrowheads-and-flow-animation.md, currently
+    # Built+Tested but not yet Committed) on top of the already-fully-done 10a-10j leaves --
+    # "[-]" here is the honest, correct rollup, not a regression; will return to "[x]" once
+    # 10k's own sub-plans are all committed, the same way this line was updated for Module
+    # 12 once 12b actually landed.
+    assert statuses["Module 10:"] == "[-]"
     assert statuses["Module 11:"] == "[x]"
     assert statuses["Module 13:"] == "[x]"
 
