@@ -133,6 +133,21 @@ Reconstructed from every decision made building and correcting `reference/archit
 
 ---
 
+## 8. KNOWN FAILURE PATTERNS — check for the shape recurring, not just the instance already fixed
+
+Three real bugs were found and fixed during this project's routing/layout work. Each is recorded below not as "this specific thing is now fixed" but as the *general mistake shape* that produced it — because a checklist item can be satisfied superficially while the underlying reasoning error resurfaces somewhere new. When reviewing any new canvas feature, check whether it repeats one of these patterns, not just whether the three original instances are still fixed.
+
+**8.1. Pattern: choosing behavior by comparing the wrong two quantities.**
+The original diagonal-sweep bug: curve shape was chosen by comparing horizontal vs. vertical *distance* between two points, when the actual deciding factor should have been *which ports the connection uses* (a fixed, positional fact, not a measured one). Distance comparisons are fragile — they silently misfire whenever the actual layout produces an unusual distance ratio, not just at the one input that was originally tested against. **Check:** anywhere a rendering decision is made by comparing two computed distances/sizes rather than referring to a fixed, declared property.
+
+**8.2. Pattern: using a geometric/positional fact as a proxy for a semantic/visual-weight fact.**
+The "elbow-as-muted" bug: `route: 'elbow'` (a geometry fact — which ports, which curve shape) was used as a stand-in for `kind: 'branch'` (a semantic fact — primary path vs. secondary). They happened to correlate in the first test case, so a genuinely primary cross-stage connection got the same faint treatment as a real branch, purely because it crossed a row boundary. **Check:** anywhere two properties that happen to correlate in the current example are conflated into one — e.g., "this element is in Data-layer mode" silently used as a stand-in for "this element should be non-interactive," when Data-layer-active and non-interactive should be two independently declared properties, not one inferred from the other.
+
+**8.3. Pattern: computing a grouping/bounding box from wherever elements already landed, instead of allocating the grouping's space first.**
+The stage-overlap bug: stage bounding boxes were computed *after* nodes were positioned, by finding the min/max coordinates of each stage's nodes — which breaks the moment a stage's nodes land in more than one disconnected region (as Preprocessing did, spanning the tail of one row and the head of the next). The eventual real fix (CR15) was to allocate each stage's vertical zone *first*, then position nodes inside it — never the reverse. **Check:** anywhere a container, group, or bounding region is computed by measuring already-placed content, rather than being allocated space before that content is placed.
+
+---
+
 ## Cross-reference
 
 Every numbered item above that cites a rule ID (CR1-18, NT1-10) is checkable against `rules/principles/n8n-canvas-rules.md` and `rules/principles/node-translation.md` directly — if this document and those files ever disagree, treat it as a DP12 cross-reference failure and flag it, don't silently pick one.
