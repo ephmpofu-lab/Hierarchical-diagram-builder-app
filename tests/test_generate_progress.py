@@ -40,11 +40,11 @@ def test_compute_module_statuses_against_real_repo_plans():
     # "[x]": sub-plan 12b resolved OQ6, giving all six DP11 artifacts a real generator.
     statuses = compute_module_statuses()
     assert statuses["Module 12:"] == "[x]"
-    # Module 10: 10k-i (connection arrowheads + flow animation) is now fully Built/Tested/
-    # Committed, so Module 10 is back to "[x]" -- expect this to dip to "[-]" again, and
-    # this line to need another honest update, each time a new 10k-* sub-plan file exists
-    # mid-build, the same way it already did for 10k-i itself and for Module 12/12b before.
-    assert statuses["Module 10:"] == "[x]"
+    # Module 10: 10k-iii (dot-grid canvas background) is a new leaf, Built+Tested but not
+    # yet Committed at the time this line is checked -- "[-]" is the honest rollup. Expect
+    # this to oscillate [x]/[-] across each of 10k's remaining sub-plans (iv, ii), same as
+    # it already has for 10k-i and for Module 12/12b before that -- not a regression.
+    assert statuses["Module 10:"] == "[-]"
     assert statuses["Module 11:"] == "[x]"
     assert statuses["Module 13:"] == "[x]"
 

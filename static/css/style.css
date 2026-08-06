@@ -1768,6 +1768,21 @@ html[data-inspector-collapsed="true"] .health-footer {
   margin: 0;
 }
 
+/* Dot-grid canvas surface (1.7): exact spacing/dot-size from reference/architeq-ux-
+   mockup.html's own .tree-scroll (radial-gradient circle, 1px dot, 22px grid). Mockup's own
+   dot color (#202226) sits ~21/255 per channel above its own --bg (#0B0C0F) -- a real,
+   perceptible-but-subtle step. --surface-2 (#1a1a1a) is only ~4/255 above this app's real
+   --bg (#161616): tried first, confirmed via a real zoomed screenshot to be genuinely
+   invisible, not just subtle -- "present in every state" isn't satisfied by a value no one
+   can actually see. --border (#3a3a3a, ~36/255 above --bg) is the existing token whose own
+   standing role is already "a visible but subtle structural cue" (every hairline border in
+   the app), the closest match to the mockup's own relative contrast -- re-verified visible
+   at this value. */
+.decompose-canvas-body {
+  background-image: radial-gradient(circle, var(--border) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
 /* Real tree diagram (AMENDMENT 5, Fix D) -- replaces the old flat-card layer/sub-task
    layout entirely. Same overflow-x:auto scroll-container pattern as the n8n SVG diagram
    (.decompose-n8n-diagram-wrap) -- a wide tree scrolls, it never gets squashed illegible. */

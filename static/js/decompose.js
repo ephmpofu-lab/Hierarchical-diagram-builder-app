@@ -496,15 +496,22 @@ function renderCanvasView() {
   topRow.appendChild(backBtn);
   decomposeBoard.appendChild(topRow);
 
+  // Dot-grid canvas surface (1.7): the visual cue that this is a pannable surface, not a
+  // fixed page -- present under every canvas state (loading/error/populated, both modes),
+  // scoped to the canvas body only (never the Home screen, which isn't a pannable surface).
+  const canvasBody = document.createElement("div");
+  canvasBody.className = "decompose-canvas-body";
+  decomposeBoard.appendChild(canvasBody);
+
   if (state.tree) {
-    decomposeBoard.appendChild(renderRefineBar());
+    canvasBody.appendChild(renderRefineBar());
   }
 
   if (state.error) {
     const errorBox = document.createElement("div");
     errorBox.className = "reasoning-empty-state";
     errorBox.textContent = state.error;
-    decomposeBoard.appendChild(errorBox);
+    canvasBody.appendChild(errorBox);
     if (!state.tree) return;
   }
 
@@ -512,12 +519,12 @@ function renderCanvasView() {
     const loading = document.createElement("div");
     loading.className = "reasoning-empty-state";
     loading.textContent = "Loading tree…";
-    decomposeBoard.appendChild(loading);
+    canvasBody.appendChild(loading);
     return;
   }
 
   const tree = state.tree;
-  decomposeBoard.appendChild(renderTreeDiagram(tree, (nodeId) => {
+  canvasBody.appendChild(renderTreeDiagram(tree, (nodeId) => {
     state = { ...state, selectedNodeId: nodeId };
     renderBoard();
   }));
@@ -531,20 +538,20 @@ function renderCanvasView() {
     btn.addEventListener("click", () => selectMode(mode));
     modeToggle.appendChild(btn);
   }
-  decomposeBoard.appendChild(modeToggle);
+  canvasBody.appendChild(modeToggle);
 
   if (state.mode) {
-    decomposeBoard.appendChild(renderOutputSection());
+    canvasBody.appendChild(renderOutputSection());
   }
 
   if (state.selectedNodeId) {
     const panel = renderNodeDetailPanel();
-    if (panel) decomposeBoard.appendChild(panel);
+    if (panel) canvasBody.appendChild(panel);
   }
 
   if (state.selectedEntityId) {
     const panel = renderEntityDetailPanel();
-    if (panel) decomposeBoard.appendChild(panel);
+    if (panel) canvasBody.appendChild(panel);
   }
 }
 
