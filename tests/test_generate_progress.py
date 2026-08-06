@@ -35,14 +35,15 @@ def test_parse_leaf_status_all_combinations(tmp_path):
 
 def test_compute_module_statuses_against_real_repo_plans():
     # A real, verifiable assertion against this repo's own actual current state, not a
-    # fixture -- Module 12 has exactly one real leaf (12a, fully done) but no top-level
-    # index plan file, so it must compute to "[-]" (real progress), never a false "[x]"
-    # that would overclaim the still-unplanned remaining 5 of 6 DP11 artifacts.
+    # fixture -- Module 12 now has both leaves (12a, 12b) fully done and its own top-level
+    # index plan file (12.planning-artifact-diagram-engine.md), so it correctly computes to
+    # "[x]": sub-plan 12b resolved OQ6, giving all six DP11 artifacts a real generator.
     statuses = compute_module_statuses()
-    assert statuses["Module 12:"] == "[-]"
-    # Module 10 and 11 each have their own index file AND every leaf is fully done.
+    assert statuses["Module 12:"] == "[x]"
+    # Module 10, 11, and 13 each have their own index file AND every leaf is fully done.
     assert statuses["Module 10:"] == "[x]"
     assert statuses["Module 11:"] == "[x]"
+    assert statuses["Module 13:"] == "[x]"
 
 
 def test_compute_module_statuses_caps_at_in_progress_without_an_index_file(tmp_path, monkeypatch):
