@@ -150,4 +150,4 @@ One commit, then a second flipping this file's own Committed checkbox.
   Full pytest suite green (443 passed after this sub-plan's own commit -- one pre-existing
   self-referential test updated for Module 10's honest current state, same established
   pattern).
-- [ ] Committed
+- [x] Committed

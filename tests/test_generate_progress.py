@@ -40,9 +40,9 @@ def test_compute_module_statuses_against_real_repo_plans():
     # "[x]": sub-plan 12b resolved OQ6, giving all six DP11 artifacts a real generator.
     statuses = compute_module_statuses()
     assert statuses["Module 12:"] == "[x]"
-    # Module 10: 10k-ii (the last of 10k's four sub-plans) is a new leaf, Built+Tested but
-    # not yet Committed -- "[-]" is the honest rollup, same established oscillation pattern.
-    assert statuses["Module 10:"] == "[-]"
+    # Module 10: all four of 10k's sub-plans (i, iii, iv, ii) are now fully Built/Tested/
+    # Committed -- Module 10 is back to "[x]" for good (no more 10k-* leaves pending).
+    assert statuses["Module 10:"] == "[x]"
     assert statuses["Module 11:"] == "[x]"
     assert statuses["Module 13:"] == "[x]"
 
